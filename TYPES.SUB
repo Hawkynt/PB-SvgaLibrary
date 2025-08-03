@@ -4,6 +4,11 @@
 ' Contains all TYPE definitions and global variable structures
 ' =============================================================================
 
+' Graphics Mode Constants
+%SVGA_MODE13 = 0                ' VGA Mode 13h (320x200x256)
+%SVGA_MODEX = 1                 ' Mode-X variants
+%SVGA_VESA = 2                  ' VESA modes
+
 ' Screen and Display Context
 TYPE SVGAScreen
     XRes AS WORD                ' Current X resolution
@@ -26,8 +31,8 @@ TYPE VESAContext
     TransparentColor AS WORD    ' Transparent color index
     OneLoadOnly AS BYTE         ' Load-once flag
     BMPMode AS INTEGER          ' BMP display mode
-    ModeXActive AS BYTE         ' Mode-X active flag
     ModeXType AS BYTE           ' Mode-X variant (0-7)
+    CurrentMode AS BYTE         ' Current graphics mode: 0=Mode13, 1=ModeX, 2=VESA
 END TYPE
 
 ' Mode-X specific context
@@ -117,4 +122,5 @@ SUB InitializeSVGAContexts
     WindowSystemContext.Current = 0
     VESASystemContext.OneLoadOnly = 0
     VESASystemContext.TransparentColor = 0
+    VESASystemContext.CurrentMode = %SVGA_MODE13   ' Default to Mode 13h
 END SUB

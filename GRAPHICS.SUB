@@ -13,14 +13,14 @@
 '   FillColor - Fill color (BYVAL)
 ' Returns: Nothing
 ' =============================================================================
-SUB BAR (BYVAL X1 AS WORD, BYVAL Y1 AS WORD, BYVAL X2 AS WORD, BYVAL Y2 AS WORD, BYVAL BorderColor AS LONG, BYVAL FillColor AS LONG)
+SUB BAR (BYVAL X1 AS WORD, BYVAL Y1 AS WORD, BYVAL X2 AS WORD, BYVAL Y2 AS WORD, BYVAL BorderColor AS BYTE, BYVAL FillColor AS BYTE)
     DIM TempX AS WORD, TempY AS WORD, ScanLine AS WORD
     
     ' Ensure coordinates are properly ordered
     IF Y2 < Y1 THEN SWAP Y1, Y2
     IF X2 < X1 THEN SWAP X1, X2
     
-    IF VESASystemContext.ModeXActive THEN
+    IF VESASystemContext.CurrentMode = %SVGA_MODEX THEN
         ' Fill the interior using optimized Mode-X horizontal line drawing
         FOR ScanLine = Y1 TO Y2
             CALL HLINEMODEX(X1, X2, ScanLine, FillColor)
@@ -56,14 +56,14 @@ END SUB
 '   FillColor - Fill color (BYVAL, 0 = no fill)
 ' Returns: Nothing
 ' =============================================================================
-SUB BAR3D (BYVAL X1 AS WORD, BYVAL Y1 AS WORD, BYVAL X2 AS WORD, BYVAL Y2 AS WORD, BYVAL Depth AS WORD, BYVAL BorderColor AS LONG, BYVAL FillColor AS LONG)
+SUB BAR3D (BYVAL X1 AS WORD, BYVAL Y1 AS WORD, BYVAL X2 AS WORD, BYVAL Y2 AS WORD, BYVAL Depth AS WORD, BYVAL BorderColor AS BYTE, BYVAL FillColor AS BYTE)
     DIM ScanLine AS WORD
     
     ' Ensure coordinates are properly ordered
     IF Y2 < Y1 THEN SWAP Y1, Y2
     IF X2 < X1 THEN SWAP X1, X2
     
-    IF VESASystemContext.ModeXActive THEN
+    IF VESASystemContext.CurrentMode = %SVGA_MODEX THEN
         ' Fill the main face if fill color specified
         IF FillColor > 0 THEN
             FOR ScanLine = Y1 TO Y2
@@ -107,7 +107,7 @@ END SUB
 '   Color - Color for both border and fill (BYVAL)
 ' Returns: Nothing
 ' =============================================================================
-SUB BOX (BYVAL X1 AS WORD, BYVAL Y1 AS WORD, BYVAL X2 AS WORD, BYVAL Y2 AS WORD, BYVAL Color AS LONG)
+SUB BOX (BYVAL X1 AS WORD, BYVAL Y1 AS WORD, BYVAL X2 AS WORD, BYVAL Y2 AS WORD, BYVAL Color AS BYTE)
     CALL BAR(X1, Y1, X2, Y2, Color, Color)
 END SUB
 
@@ -122,7 +122,7 @@ END SUB
 '   FillMode - 0=outline, 1=filled (BYVAL)
 ' Returns: Nothing
 ' =============================================================================
-SUB CIRCLEDRAW (BYVAL CenterX AS WORD, BYVAL CenterY AS WORD, BYVAL RadiusX AS WORD, BYVAL RadiusY AS WORD, BYVAL StartAngle AS SINGLE, BYVAL EndAngle AS SINGLE, BYVAL Color AS LONG, BYVAL FillMode AS BYTE)
+SUB CIRCLEDRAW (BYVAL CenterX AS WORD, BYVAL CenterY AS WORD, BYVAL RadiusX AS WORD, BYVAL RadiusY AS WORD, BYVAL StartAngle AS SINGLE, BYVAL EndAngle AS SINGLE, BYVAL Color AS BYTE, BYVAL FillMode AS BYTE)
     DIM PI AS SINGLE, StepSize AS SINGLE, Angle AS SINGLE
     DIM X AS WORD, Y AS WORD, OldX AS WORD, OldY AS WORD
     DIM FillY AS WORD, FillStartX AS WORD, FillEndX AS WORD
@@ -179,7 +179,7 @@ END SUB
 '   Color - Border color (BYVAL)
 ' Returns: Nothing
 ' =============================================================================
-SUB FRAME (BYVAL X1 AS WORD, BYVAL Y1 AS WORD, BYVAL X2 AS WORD, BYVAL Y2 AS WORD, BYVAL Color AS LONG)
+SUB FRAME (BYVAL X1 AS WORD, BYVAL Y1 AS WORD, BYVAL X2 AS WORD, BYVAL Y2 AS WORD, BYVAL Color AS BYTE)
     ' Ensure coordinates are properly ordered
     IF Y2 < Y1 THEN SWAP Y1, Y2
     IF X2 < X1 THEN SWAP X1, X2
@@ -198,6 +198,6 @@ END SUB
 '   Color - Pixel color (BYVAL)
 ' Returns: Nothing
 ' =============================================================================
-SUB PIXEL (BYVAL X AS WORD, BYVAL Y AS WORD, BYVAL Color AS LONG)
+SUB PIXEL (BYVAL X AS WORD, BYVAL Y AS WORD, BYVAL Color AS BYTE)
     CALL PUTPIXEL(X, Y, Color)
 END SUB

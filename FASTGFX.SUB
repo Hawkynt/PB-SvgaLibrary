@@ -19,7 +19,7 @@ SUB FASTHLINE(BYVAL X1 AS WORD, BYVAL X2 AS WORD, BYVAL Y AS WORD, BYVAL Color A
     IF X1 > X2 THEN SWAP X1, X2
     
     ' Check if Mode-X is active
-    IF VESASystemContext.ModeXActive = 1 THEN
+    IF VESASystemContext.CurrentMode = %SVGA_MODEX THEN
         CALL HLINEMODEX(X1, X2, Y, Color)
     ELSE
         ' Standard VGA Mode 13h optimization
@@ -74,7 +74,7 @@ SUB FASTVLINE(BYVAL X AS WORD, BYVAL Y1 AS WORD, BYVAL Y2 AS WORD, BYVAL Color A
     ' Ensure Y1 <= Y2
     IF Y1 > Y2 THEN SWAP Y1, Y2
     
-    IF VESASystemContext.ModeXActive = 1 THEN
+    IF VESASystemContext.CurrentMode = %SVGA_MODEX THEN
         ' Mode-X vertical line
         FOR CurrentY = Y1 TO Y2
             CALL PUTPIXELMODEX(X, CurrentY, Color)
@@ -136,7 +136,7 @@ END SUB
 ' Note: Uses optimized assembly for maximum speed on 8086+
 ' =============================================================================
 SUB FASTBLOCKXOPY(BYVAL SrcX AS WORD, BYVAL SrcY AS WORD, BYVAL DestX AS WORD, BYVAL DestY AS WORD, BYVAL Width AS WORD, BYVAL Height AS WORD)
-    IF VESASystemContext.ModeXActive = 1 THEN
+    IF VESASystemContext.CurrentMode = %SVGA_MODEX THEN
         ' Use Mode-X optimized copy
         CALL COPYBLOCKMODEX(SrcX, SrcY, DestX, DestY, Width, Height)
     ELSE
@@ -252,7 +252,7 @@ SUB FASTPATTERNFILL(BYVAL X1 AS WORD, BYVAL Y1 AS WORD, BYVAL X2 AS WORD, BYVAL 
             PatternX = (CurrentX - X1) MOD PatternWidth
             PixelColor = ASC(MID$(Pattern, PatternY * PatternWidth + PatternX + 1, 1))
             
-            IF VESASystemContext.ModeXActive = 1 THEN
+            IF VESASystemContext.CurrentMode = %SVGA_MODEX THEN
                 CALL PUTPIXELMODEX(CurrentX, CurrentY, PixelColor)
             ELSE
                 CALL PUTPIXEL(CurrentX, CurrentY, PixelColor)
@@ -282,7 +282,7 @@ SUB FASTSPRITE(BYVAL X AS WORD, BYVAL Y AS WORD, BYVAL SpriteData AS STRING, BYV
                 
                 ' Only draw non-transparent pixels
                 IF PixelColor <> TransColor THEN
-                    IF VESASystemContext.ModeXActive = 1 THEN
+                    IF VESASystemContext.CurrentMode = %SVGA_MODEX THEN
                         CALL PUTPIXELMODEX(X + CurrentX, Y + CurrentY, PixelColor)
                     ELSE
                         CALL PUTPIXEL(X + CurrentX, Y + CurrentY, PixelColor)

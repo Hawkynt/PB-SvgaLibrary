@@ -24,6 +24,7 @@ SUB SETRES (BYVAL XRes AS WORD, BYVAL YRes AS WORD, BYVAL Colors AS WORD)
     ' Handle standard VGA mode 13h (320x200x256)
     IF (XRes = 320) AND (YRes = 200) AND (Colors = 256) THEN
         CALL SETVGA(13)
+        VESASystemContext.CurrentMode = %SVGA_MODE13
         EXIT SUB
     END IF
     
@@ -63,6 +64,7 @@ SUB SETRES (BYVAL XRes AS WORD, BYVAL YRes AS WORD, BYVAL Colors AS WORD)
         ' Check for exact match
         IF XRes = ModeXRes AND YRes = ModeYRes AND Colors = ModeColors THEN
             CALL SETVGA(ModeNumber)
+            VESASystemContext.CurrentMode = %SVGA_VESA
             EXIT SUB
         END IF
         
@@ -111,12 +113,14 @@ SUB SETRES (BYVAL XRes AS WORD, BYVAL YRes AS WORD, BYVAL Colors AS WORD)
     ' Set the best available mode
     IF BestMode > 0 THEN
         CALL SETVGA(BestMode)
+        VESASystemContext.CurrentMode = %SVGA_VESA
         ' Set up coordinate scaling for simulation
         VESASystemContext.XDecrease = BestXDiff / 2
         VESASystemContext.YDecrease = BestYDiff / 2
     ELSE
         ' Fallback to mode 13h if no suitable mode found
         CALL SETVGA(13)
+        VESASystemContext.CurrentMode = %SVGA_MODE13
         EXIT SUB
     END IF
     
@@ -201,6 +205,7 @@ SUB CLOSEVGA
     VESASystemContext.YRes = 0
     VESASystemContext.Window = 0
     VESASystemContext.Offset = 0
+    VESASystemContext.CurrentMode = %SVGA_MODE13  ' Reset to default
     
     ' Reset scaling
     ScaleSystemContext.XScale = 1

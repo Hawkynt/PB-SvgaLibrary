@@ -64,7 +64,7 @@ END SUB
 ' Returns: Nothing
 ' Note: This is the core pixel-setting function used by all drawing operations
 ' =============================================================================
-SUB PUTPIXEL(BYVAL X AS WORD, BYVAL Y AS WORD, BYVAL Color AS WORD)
+SUB PUTPIXEL(BYVAL X AS WORD, BYVAL Y AS WORD, BYVAL Color AS BYTE)
     ' Apply coordinate scaling if active
     IF ScaleSystemContext.XScale <> 1 OR ScaleSystemContext.YScale <> 1 THEN
         X = X * ScaleSystemContext.XScale
@@ -81,7 +81,7 @@ SUB PUTPIXEL(BYVAL X AS WORD, BYVAL Y AS WORD, BYVAL Color AS WORD)
         IF Y < WindowSystemContext.Y1 OR Y > WindowSystemContext.Y2 THEN EXIT SUB
     END IF
     
-    IF VESASystemContext.ModeXActive THEN
+    IF VESASystemContext.CurrentMode = %SVGA_MODEX THEN
         CALL PUTPIXELMODEX(X, Y, Color)
     ELSE
         ' Calculate pixel address and set pixel using VESA banking if needed
@@ -128,7 +128,7 @@ FUNCTION GETPIXEL (BYVAL X AS WORD, BYVAL Y AS WORD) AS BYTE
     X = X - VESASystemContext.XDecrease
     Y = Y - VESASystemContext.YDecrease
     
-    IF VESASystemContext.ModeXActive THEN
+    IF VESASystemContext.CurrentMode = %SVGA_MODEX THEN
         GETPIXEL = GETPIXELMODEX(X, Y)
     ELSE
         ' Calculate pixel address and get pixel value
@@ -168,7 +168,7 @@ END FUNCTION
 ' Note: Uses Bresenham's line algorithm for smooth lines
 ' =============================================================================
 SUB LINEDRAW(BYVAL X1 AS WORD, BYVAL Y1 AS WORD, BYVAL X2 AS WORD, BYVAL Y2 AS WORD, BYVAL Color AS LONG)
-    IF VESASystemContext.ModeXActive THEN
+    IF VESASystemContext.CurrentMode = %SVGA_MODEX THEN
         ' Optimized line drawing for Mode-X
         IF Y1 = Y2 THEN
             ' Horizontal line
@@ -266,7 +266,7 @@ END SUB
 ' Returns: Nothing
 ' =============================================================================
 SUB CLEARSCREEN(BYVAL Color AS BYTE)
-    IF VESASystemContext.ModeXActive THEN
+    IF VESASystemContext.CurrentMode = %SVGA_MODEX THEN
         CALL ClearModeXScreen(Color)
     ELSE
         DIM TotalBytes AS LONG, WindowNumber AS WORD, PixelOffset AS WORD

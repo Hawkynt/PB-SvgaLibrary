@@ -107,7 +107,6 @@ SUB SETMODEX(BYVAL ModeXType AS BYTE)
     END SELECT
     
     ' Update global contexts
-    VESASystemContext.ModeXActive = 1
     VESASystemContext.ModeXType = ModeXType
     SVGAScreenContext.XRes = ModeXSystemContext.XRes
     SVGAScreenContext.YRes = ModeXSystemContext.YRes
@@ -119,6 +118,9 @@ SUB SETMODEX(BYVAL ModeXType AS BYTE)
     ModeXSystemContext.ActivePage = 0
     ModeXSystemContext.VisiblePage = 0
     ModeXSystemContext.PageSize = ModeXSystemContext.LogicalWidth * ModeXSystemContext.YRes
+    
+    ' Set current graphics mode flag
+    VESASystemContext.CurrentMode = %SVGA_MODEX
     
     ' Clear screen
     CALL ClearModeXScreen(0)
@@ -753,4 +755,5 @@ SUB SETMODEXFALLBACK(BYVAL XRes AS WORD, BYVAL YRes AS WORD, BYVAL Colors AS WOR
     ' Already handled by initialization of BestModeXType
     
     CALL SETMODEX(BestModeXType)
+    VESASystemContext.CurrentMode = %SVGA_MODEX
 END SUB

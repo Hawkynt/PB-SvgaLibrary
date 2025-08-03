@@ -102,7 +102,7 @@ END SUB
 ' Returns: Nothing
 ' Note: Requires font to be loaded with INITFONT first
 ' =============================================================================
-SUB VGAPRINT (BYVAL X AS WORD, BYVAL Y AS WORD, BYVAL ForeColor AS LONG, BYVAL BackColor AS LONG, BYVAL Text AS STRING, BYVAL Flags AS BYTE)
+SUB VGAPRINT (BYVAL X AS WORD, BYVAL Y AS WORD, BYVAL ForeColor AS BYTE, BYVAL BackColor AS BYTE, BYVAL Text AS STRING, BYVAL Flags AS BYTE)
     DIM OriginalX AS WORD, OriginalY AS WORD, CharIndex AS WORD, CharCode AS BYTE
     DIM CharData AS STRING, RowIndex AS BYTE, BitPattern AS STRING
     DIM PixelX AS BYTE, ActualX AS WORD, ActualY AS WORD
@@ -170,7 +170,7 @@ END SUB
 ' Returns: Nothing
 ' Note: Similar to VGAPRINT but draws to BMP buffer instead of VGA screen
 ' =============================================================================
-SUB BMPPRINT (BYVAL X AS WORD, BYVAL Y AS WORD, BYVAL ForeColor AS LONG, BYVAL BackColor AS LONG, BYVAL Text AS STRING, BYVAL Flags AS BYTE)
+SUB BMPPRINT (BYVAL X AS WORD, BYVAL Y AS WORD, BYVAL ForeColor AS BYTE, BYVAL BackColor AS BYTE, BYVAL Text AS STRING, BYVAL Flags AS BYTE)
     DIM OriginalX AS WORD, OriginalY AS WORD, CharIndex AS WORD, CharCode AS BYTE
     DIM CharData AS STRING, RowIndex AS BYTE, BitPattern AS STRING
     DIM PixelX AS BYTE, ActualX AS WORD, ActualY AS WORD
