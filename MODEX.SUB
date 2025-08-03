@@ -1,0 +1,642 @@
+' =============================================================================
+' MODEX.SUB - Mode-X Graphics Functions
+' =============================================================================
+' Contains Mode-X (256-color planar) graphics mode support
+' Mode-X provides higher resolution 256-color modes than standard VGA Mode 13h
+' =============================================================================
+
+' Mode-X resolution definitions
+' Type 0: 320x240 (tweaked Mode 13h)
+' Type 1: 360x240 (90-column text mode based)
+' Type 2: 320x400 (double-scan disabled)
+' Type 3: 360x400 (90-column double-height)
+' Type 4: 320x480 (VGA maximum vertical)
+' Type 5: 360x480 (90-column maximum)
+' Type 6: 256x256 (square mode for games)
+' Type 7: 400x300 (4:3 aspect ratio)
+
+' =============================================================================
+' Set Mode-X graphics mode
+' Parameters:
+'   ModeXType - Mode-X variant (0-7) (BYVAL)
+' Returns: Nothing
+' Note: All Mode-X modes are 256-color planar modes optimized for animation
+'       Requires VGA-compatible hardware (8086+ with VGA)
+' =============================================================================
+SUB SETMODEX(BYVAL ModeXType AS BYTE)
+    DIM TempByte AS BYTE
+    
+    ' Validate mode type
+    IF ModeXType > 7 THEN ModeXType = 0
+    
+    ' Start with standard VGA Mode 13h
+    !MOV AX, &H0013
+    !INT &H10
+    
+    ' Switch to Mode-X by modifying VGA registers
+    ' Disable chain-4 mode and enable planar mode
+    
+    ' Set Sequencer registers for planar mode
+    !MOV DX, &H3C4          ; Sequencer Address Register
+    !MOV AL, 4              ; Memory Mode Register
+    !OUT DX, AL
+    !INC DX                 ; Sequencer Data Register
+    !IN AL, DX              ; Read current value
+    !AND AL, &HF7           ; Clear bit 3 (chain-4)
+    !OR AL, &H04            ; Set bit 2 (odd/even disable)
+    !OUT DX, AL
+    
+    ' Set CRT Controller for Mode-X timing
+    !MOV DX, &H3D4          ; CRT Controller Address
+    !MOV AL, &H11           ; Vertical Retrace End Register
+    !OUT DX, AL
+    !INC DX                 ; CRT Controller Data
+    !IN AL, DX              ; Read current value
+    !AND AL, &H7F           ; Clear bit 7 (write protect)
+    !OUT DX, AL
+    
+    ' Configure resolution based on mode type
+    SELECT CASE ModeXType
+        CASE 0  ' 320x240
+            CALL SetModeXRegisters320x240
+            ModeXSystemContext.XRes = 320
+            ModeXSystemContext.YRes = 240
+            ModeXSystemContext.LogicalWidth = 80
+            
+        CASE 1  ' 360x240
+            CALL SetModeXRegisters360x240
+            ModeXSystemContext.XRes = 360
+            ModeXSystemContext.YRes = 240
+            ModeXSystemContext.LogicalWidth = 90
+            
+        CASE 2  ' 320x400
+            CALL SetModeXRegisters320x400
+            ModeXSystemContext.XRes = 320
+            ModeXSystemContext.YRes = 400
+            ModeXSystemContext.LogicalWidth = 80
+            
+        CASE 3  ' 360x400
+            CALL SetModeXRegisters360x400
+            ModeXSystemContext.XRes = 360
+            ModeXSystemContext.YRes = 400
+            ModeXSystemContext.LogicalWidth = 90
+            
+        CASE 4  ' 320x480
+            CALL SetModeXRegisters320x480
+            ModeXSystemContext.XRes = 320
+            ModeXSystemContext.YRes = 480
+            ModeXSystemContext.LogicalWidth = 80
+            
+        CASE 5  ' 360x480
+            CALL SetModeXRegisters360x480
+            ModeXSystemContext.XRes = 360
+            ModeXSystemContext.YRes = 480
+            ModeXSystemContext.LogicalWidth = 90
+            
+        CASE 6  ' 256x256
+            CALL SetModeXRegisters256x256
+            ModeXSystemContext.XRes = 256
+            ModeXSystemContext.YRes = 256
+            ModeXSystemContext.LogicalWidth = 64
+            
+        CASE 7  ' 400x300
+            CALL SetModeXRegisters400x300
+            ModeXSystemContext.XRes = 400
+            ModeXSystemContext.YRes = 300
+            ModeXSystemContext.LogicalWidth = 100
+    END SELECT
+    
+    ' Update global contexts
+    VESASystemContext.ModeXActive = 1
+    VESASystemContext.ModeXType = ModeXType
+    SVGAScreenContext.XRes = ModeXSystemContext.XRes
+    SVGAScreenContext.YRes = ModeXSystemContext.YRes
+    SVGAScreenContext.ColorDepth = 8
+    SVGAScreenContext.BytesPerLine = ModeXSystemContext.LogicalWidth
+    
+    ModeXSystemContext.PlanarMode = 1
+    ModeXSystemContext.BytesPerPixel = 1
+    ModeXSystemContext.ActivePage = 0
+    ModeXSystemContext.VisiblePage = 0
+    ModeXSystemContext.PageSize = ModeXSystemContext.LogicalWidth * ModeXSystemContext.YRes
+    
+    ' Clear screen
+    CALL ClearModeXScreen(0)
+END SUB
+
+' =============================================================================
+' Set pixel in Mode-X (optimized for planar mode)
+' Parameters:
+'   X, Y - Pixel coordinates (BYVAL)
+'   Color - Pixel color (BYVAL)
+' Returns: Nothing
+' Note: Uses VGA planar mode for efficient pixel access
+' =============================================================================
+SUB PUTPIXELMODEX(BYVAL X AS WORD, BYVAL Y AS WORD, BYVAL Color AS BYTE)
+    DIM PlaneNumber AS BYTE, ByteOffset AS WORD, BitMask AS BYTE
+    
+    ' Calculate which plane and byte offset
+    PlaneNumber = X AND 3       ' Plane number (0-3)
+    ByteOffset = Y * ModeXSystemContext.LogicalWidth + (X \ 4)
+    BitMask = 1 SHL PlaneNumber
+    
+    ' Set plane select register
+    !MOV DX, &H3C4          ; Sequencer Address Register
+    !MOV AL, 2              ; Map Mask Register
+    !OUT DX, AL
+    !INC DX                 ; Sequencer Data Register
+    !MOV AL, BitMask
+    !OUT DX, AL
+    
+    ' Write pixel to VGA memory
+    !PUSH ES
+    !MOV AX, &HA000
+    !MOV ES, AX
+    !MOV BX, ByteOffset
+    !MOV AL, Color
+    !MOV ES:[BX], AL
+    !POP ES
+END SUB
+
+' =============================================================================
+' Get pixel from Mode-X
+' Parameters:
+'   X, Y - Pixel coordinates (BYVAL)
+' Returns: Pixel color
+' =============================================================================
+FUNCTION GETPIXELMODEX(BYVAL X AS WORD, BYVAL Y AS WORD) AS BYTE
+    DIM PlaneNumber AS BYTE, ByteOffset AS WORD, PixelValue AS BYTE
+    
+    ' Calculate which plane and byte offset
+    PlaneNumber = X AND 3
+    ByteOffset = Y * ModeXSystemContext.LogicalWidth + (X \ 4)
+    
+    ' Set read plane register
+    !MOV DX, &H3CE          ; Graphics Controller Address
+    !MOV AL, 4              ; Read Map Select Register
+    !OUT DX, AL
+    !INC DX                 ; Graphics Controller Data
+    !MOV AL, PlaneNumber
+    !OUT DX, AL
+    
+    ' Read pixel from VGA memory
+    !PUSH ES
+    !MOV AX, &HA000
+    !MOV ES, AX
+    !MOV BX, ByteOffset
+    !MOV AL, ES:[BX]
+    !MOV PixelValue, AL
+    !POP ES
+    
+    GETPIXELMODEX = PixelValue
+END FUNCTION
+
+' =============================================================================
+' Draw horizontal line in Mode-X (optimized)
+' Parameters:
+'   X1, X2 - Start and end X coordinates (BYVAL)
+'   Y - Y coordinate (BYVAL)
+'   Color - Line color (BYVAL)
+' Returns: Nothing
+' Note: Optimized for Mode-X planar mode, much faster than pixel-by-pixel
+' =============================================================================
+SUB HLINEMODEX(BYVAL X1 AS WORD, BYVAL X2 AS WORD, BYVAL Y AS WORD, BYVAL Color AS BYTE)
+    DIM StartPlane AS BYTE, EndPlane AS BYTE, StartByte AS WORD, EndByte AS WORD
+    DIM PlaneMask AS BYTE, CurrentByte AS WORD, ByteOffset AS WORD
+    
+    ' Ensure X1 <= X2
+    IF X1 > X2 THEN SWAP X1, X2
+    
+    ' Calculate start and end positions
+    StartPlane = X1 AND 3
+    EndPlane = X2 AND 3
+    StartByte = X1 \ 4
+    EndByte = X2 \ 4
+    ByteOffset = Y * ModeXSystemContext.LogicalWidth
+    
+    ' Set up VGA for block write
+    !MOV DX, &H3C4          ; Sequencer Address Register
+    !MOV AL, 2              ; Map Mask Register
+    !OUT DX, AL
+    !INC DX                 ; Sequencer Data Register
+    
+    IF StartByte = EndByte THEN
+        ' Line fits in single byte across planes
+        PlaneMask = 0
+        DIM TempPlane AS BYTE
+        FOR TempPlane = StartPlane TO EndPlane
+            PlaneMask = PlaneMask OR (1 SHL TempPlane)
+        NEXT TempPlane
+        
+        !MOV AL, PlaneMask
+        !OUT DX, AL
+        
+        !PUSH ES
+        !MOV AX, &HA000
+        !MOV ES, AX
+        !MOV BX, ByteOffset
+        !ADD BX, StartByte
+        !MOV AL, Color
+        !MOV ES:[BX], AL
+        !POP ES
+    ELSE
+        ' Line spans multiple bytes
+        
+        ' First partial byte
+        IF StartPlane > 0 THEN
+            PlaneMask = &HF SHL StartPlane
+            !MOV AL, PlaneMask
+            !OUT DX, AL
+            
+            !PUSH ES
+            !MOV AX, &HA000
+            !MOV ES, AX
+            !MOV BX, ByteOffset
+            !ADD BX, StartByte
+            !MOV AL, Color
+            !MOV ES:[BX], AL
+            !POP ES
+            
+            StartByte = StartByte + 1
+        END IF
+        
+        ' Middle complete bytes (all 4 planes)
+        IF StartByte < EndByte THEN
+            !MOV AL, &HF        ; All planes
+            !OUT DX, AL
+            
+            !PUSH ES
+            !MOV AX, &HA000
+            !MOV ES, AX
+            !MOV BX, ByteOffset
+            !ADD BX, StartByte
+            !MOV AL, Color
+            !MOV CX, EndByte
+            !SUB CX, StartByte
+            
+            ' 8086-compatible string operation
+            FillLoop:
+            !MOV ES:[BX], AL
+            !INC BX
+            !LOOP FillLoop
+            
+            !POP ES
+        END IF
+        
+        ' Last partial byte
+        IF EndPlane < 3 THEN
+            PlaneMask = (1 SHL (EndPlane + 1)) - 1
+            !MOV AL, PlaneMask
+            !OUT DX, AL
+            
+            !PUSH ES
+            !MOV AX, &HA000
+            !MOV ES, AX
+            !MOV BX, ByteOffset
+            !ADD BX, EndByte
+            !MOV AL, Color
+            !MOV ES:[BX], AL
+            !POP ES
+        END IF
+    END IF
+END SUB
+
+' =============================================================================
+' Clear Mode-X screen
+' Parameters:
+'   Color - Fill color (BYVAL)
+' Returns: Nothing
+' Note: Very fast screen clear using Mode-X planar properties
+' =============================================================================
+SUB ClearModeXScreen(BYVAL Color AS BYTE)
+    DIM TotalBytes AS WORD
+    
+    TotalBytes = ModeXSystemContext.PageSize
+    
+    ' Enable all planes for writing
+    !MOV DX, &H3C4          ; Sequencer Address Register
+    !MOV AL, 2              ; Map Mask Register
+    !OUT DX, AL
+    !INC DX                 ; Sequencer Data Register
+    !MOV AL, &HF            ; All planes enabled
+    !OUT DX, AL
+    
+    ' Fast fill using 8086-compatible instructions
+    !PUSH ES
+    !MOV AX, &HA000
+    !MOV ES, AX
+    !XOR BX, BX             ; Start at offset 0
+    !MOV AL, Color
+    !MOV CX, TotalBytes
+    
+    ' 8086-compatible fill loop
+    ClearLoop:
+    !MOV ES:[BX], AL
+    !INC BX
+    !LOOP ClearLoop
+    
+    !POP ES
+END SUB
+
+' =============================================================================
+' Copy rectangular block in Mode-X (optimized)
+' Parameters:
+'   SrcX, SrcY - Source coordinates (BYVAL)
+'   DestX, DestY - Destination coordinates (BYVAL)
+'   Width, Height - Block dimensions (BYVAL)
+' Returns: Nothing
+' Note: Optimized block copy using Mode-X planar mode
+' =============================================================================
+SUB COPYBLOCKMODEX(BYVAL SrcX AS WORD, BYVAL SrcY AS WORD, BYVAL DestX AS WORD, BYVAL DestY AS WORD, BYVAL Width AS WORD, BYVAL Height AS WORD)
+    DIM CurrentY AS WORD, SrcOffset AS WORD, DestOffset AS WORD
+    DIM SrcStartByte AS WORD, DestStartByte AS WORD, ByteWidth AS WORD
+    
+    ' Calculate byte-aligned parameters
+    SrcStartByte = SrcX \ 4
+    DestStartByte = DestX \ 4
+    ByteWidth = (Width + 3) \ 4  ' Round up to byte boundary
+    
+    ' Process each plane separately for proper Mode-X copying
+    DIM PlaneNum AS BYTE
+    FOR PlaneNum = 0 TO 3
+        ' Set read plane
+        !MOV DX, &H3CE          ; Graphics Controller Address
+        !MOV AL, 4              ; Read Map Select Register
+        !OUT DX, AL
+        !INC DX                 ; Graphics Controller Data
+        !MOV AL, PlaneNum
+        !OUT DX, AL
+        
+        ' Set write plane
+        !MOV DX, &H3C4          ; Sequencer Address Register
+        !MOV AL, 2              ; Map Mask Register
+        !OUT DX, AL
+        !INC DX                 ; Sequencer Data Register
+        !MOV AL, 1
+        !SHL AL, PlaneNum       ; Create plane mask
+        !OUT DX, AL
+        
+        ' Copy this plane
+        FOR CurrentY = 0 TO Height - 1
+            SrcOffset = (SrcY + CurrentY) * ModeXSystemContext.LogicalWidth + SrcStartByte
+            DestOffset = (DestY + CurrentY) * ModeXSystemContext.LogicalWidth + DestStartByte
+            
+            ' 8086-compatible block copy
+            !PUSH ES
+            !PUSH DS
+            !MOV AX, &HA000
+            !MOV ES, AX
+            !MOV DS, AX
+            !MOV SI, SrcOffset
+            !MOV DI, DestOffset
+            !MOV CX, ByteWidth
+            !CLD
+            
+            ' Copy bytes for this scanline
+            CopyLineLoop:
+            !LODSB              ; Load from DS:SI into AL, increment SI
+            !STOSB              ; Store AL to ES:DI, increment DI
+            !LOOP CopyLineLoop
+            
+            !POP DS
+            !POP ES
+        NEXT CurrentY
+    NEXT PlaneNum
+END SUB
+
+' =============================================================================
+' Mode-X register setup functions for different resolutions
+' =============================================================================
+
+SUB SetModeXRegisters320x240
+    ' 320x240 Mode-X (tweaked Mode 13h)
+    !MOV DX, &H3D4
+    !MOV AL, &H09
+    !OUT DX, AL
+    !INC DX
+    !MOV AL, &H41          ; Maximum scan line (double scan off)
+    !OUT DX, AL
+END SUB
+
+SUB SetModeXRegisters360x240
+    ' 360x240 Mode-X
+    DIM RegisterValues(0 TO 15) AS BYTE
+    DIM Index AS BYTE
+    
+    ' CRT Controller values for 360x240
+    RegisterValues(0) = &H6B   ' Horizontal Total
+    RegisterValues(1) = &H59   ' End Horizontal Display
+    RegisterValues(2) = &H5A   ' Start Horizontal Blanking
+    RegisterValues(3) = &H8E   ' End Horizontal Blanking
+    RegisterValues(4) = &H5E   ' Start Horizontal Retrace
+    RegisterValues(5) = &H8A   ' End Horizontal Retrace
+    RegisterValues(6) = &HBF   ' Vertical Total
+    RegisterValues(7) = &H1F   ' Overflow
+    RegisterValues(8) = &H00   ' Preset Row Scan
+    RegisterValues(9) = &H41   ' Maximum Scan Line (double scan off)
+    RegisterValues(10) = &H00  ' Cursor Start
+    RegisterValues(11) = &H00  ' Cursor End
+    RegisterValues(12) = &H00  ' Start Address High
+    RegisterValues(13) = &H00  ' Start Address Low
+    RegisterValues(14) = &H00  ' Cursor Location High
+    RegisterValues(15) = &H00  ' Cursor Location Low
+    
+    !MOV DX, &H3D4
+    FOR Index = 0 TO 15
+        !MOV AL, Index
+        !OUT DX, AL
+        !INC DX
+        !MOV AL, RegisterValues(Index)
+        !OUT DX, AL
+        !DEC DX
+    NEXT Index
+END SUB
+
+' Additional register setup functions for other Mode-X variants would follow...
+' (320x400, 360x400, 320x480, 360x480, 256x256, 400x300)
+
+SUB SetModeXRegisters320x400
+    ' 320x400 Mode-X (no double scanning)
+    !MOV DX, &H3D4
+    !MOV AL, &H09
+    !OUT DX, AL
+    !INC DX
+    !MOV AL, &H40          ; Maximum scan line (double scan off)
+    !OUT DX, AL
+    
+    !MOV AL, &H06
+    !OUT DX, AL
+    !INC DX
+    !MOV AL, &HBF          ' Vertical total
+    !OUT DX, AL
+END SUB
+
+SUB SetModeXRegisters360x400
+    ' 360x400 Mode-X
+    DIM RegisterValues(0 TO 15) AS BYTE
+    DIM Index AS BYTE
+    
+    ' CRT Controller values for 360x400 (adjusted from 360x240 and 320x400)
+    RegisterValues(0) = &H6B   ' Horizontal Total
+    RegisterValues(1) = &H59   ' End Horizontal Display
+    RegisterValues(2) = &H5A   ' Start Horizontal Blanking
+    RegisterValues(3) = &H8E   ' End Horizontal Blanking
+    RegisterValues(4) = &H5E   ' Start Horizontal Retrace
+    RegisterValues(5) = &H8A   ' End Horizontal Retrace
+    RegisterValues(6) = &HBF   ' Vertical Total (from 320x400)
+    RegisterValues(7) = &H1F   ' Overflow (from 360x240)
+    RegisterValues(8) = &H00   ' Preset Row Scan
+    RegisterValues(9) = &H40   ' Maximum Scan Line (double scan off, from 320x400)
+    RegisterValues(10) = &H00  ' Cursor Start
+    RegisterValues(11) = &H00  ' Cursor End
+    RegisterValues(12) = &H00  ' Start Address High
+    RegisterValues(13) = &H00  ' Start Address Low
+    RegisterValues(14) = &H00  ' Cursor Location High
+    RegisterValues(15) = &H00  ' Cursor Location Low
+    
+    !MOV DX, &H3D4
+    FOR Index = 0 TO 15
+        !MOV AL, Index
+        !OUT DX, AL
+        !INC DX
+        !MOV AL, RegisterValues(Index)
+        !OUT DX, AL
+        !DEC DX
+    NEXT Index
+END SUB
+
+SUB SetModeXRegisters320x480
+    ' 320x480 Mode-X (maximum VGA vertical resolution)
+    DIM RegisterValues(0 TO 15) AS BYTE
+    DIM Index AS BYTE
+    
+    ' CRT Controller values for 320x480
+    RegisterValues(0) = &H5F   ' Horizontal Total
+    RegisterValues(1) = &H4F   ' End Horizontal Display
+    RegisterValues(2) = &H50   ' Start Horizontal Blanking
+    RegisterValues(3) = &H82   ' End Horizontal Blanking
+    RegisterValues(4) = &H54   ' Start Horizontal Retrace
+    RegisterValues(5) = &H80   ' End Horizontal Retrace
+    RegisterValues(6) = &H0B   ' Vertical Total
+    RegisterValues(7) = &H3E   ' Overflow
+    RegisterValues(8) = &H00   ' Preset Row Scan
+    RegisterValues(9) = &H40   ' Maximum Scan Line (double scan off)
+    RegisterValues(10) = &H00  ' Cursor Start
+    RegisterValues(11) = &H00  ' Cursor End
+    RegisterValues(12) = &H00  ' Start Address High
+    RegisterValues(13) = &H00  ' Start Address Low
+    RegisterValues(14) = &H00  ' Cursor Location High
+    RegisterValues(15) = &H00  ' Cursor Location Low
+    
+    !MOV DX, &H3D4
+    FOR Index = 0 TO 15
+        !MOV AL, Index
+        !OUT DX, AL
+        !INC DX
+        !MOV AL, RegisterValues(Index)
+        !OUT DX, AL
+        !DEC DX
+    NEXT Index
+END SUB
+
+SUB SetModeXRegisters360x480
+    ' 360x480 Mode-X
+    DIM RegisterValues(0 TO 15) AS BYTE
+    DIM Index AS BYTE
+    
+    ' CRT Controller values for 360x480
+    RegisterValues(0) = &H6B   ' Horizontal Total (from 360x240)
+    RegisterValues(1) = &H59   ' End Horizontal Display (from 360x240)
+    RegisterValues(2) = &H5A   ' Start Horizontal Blanking (from 360x240)
+    RegisterValues(3) = &H8E   ' End Horizontal Blanking (from 360x240)
+    RegisterValues(4) = &H5E   ' Start Horizontal Retrace (from 360x240)
+    RegisterValues(5) = &H8A   ' End Horizontal Retrace (from 360x240)
+    RegisterValues(6) = &H0B   ' Vertical Total (from 320x480)
+    RegisterValues(7) = &H3E   ' Overflow (from 320x480)
+    RegisterValues(8) = &H00   ' Preset Row Scan
+    RegisterValues(9) = &H40   ' Maximum Scan Line (double scan off, from 320x480)
+    RegisterValues(10) = &H00  ' Cursor Start
+    RegisterValues(11) = &H00  ' Cursor End
+    RegisterValues(12) = &H00  ' Start Address High
+    RegisterValues(13) = &H00  ' Start Address Low
+    RegisterValues(14) = &H00  ' Cursor Location High
+    RegisterValues(15) = &H00  ' Cursor Location Low
+    
+    !MOV DX, &H3D4
+    FOR Index = 0 TO 15
+        !MOV AL, Index
+        !OUT DX, AL
+        !INC DX
+        !MOV AL, RegisterValues(Index)
+        !OUT DX, AL
+        !DEC DX
+    NEXT Index
+END SUB
+
+SUB SetModeXRegisters256x256
+    ' 256x256 Mode-X (square mode for games)
+    DIM RegisterValues(0 TO 15) AS BYTE
+    DIM Index AS BYTE
+    
+    ' CRT Controller values for 256x256
+    RegisterValues(0) = &H4F   ' Horizontal Total
+    RegisterValues(1) = &H3F   ' End Horizontal Display
+    RegisterValues(2) = &H40   ' Start Horizontal Blanking
+    RegisterValues(3) = &H6F   ' End Horizontal Blanking
+    RegisterValues(4) = &H44   ' Start Horizontal Retrace
+    RegisterValues(5) = &H6C   ' End Horizontal Retrace
+    RegisterValues(6) = &HBF   ' Vertical Total
+    RegisterValues(7) = &H1F   ' Overflow
+    RegisterValues(8) = &H00   ' Preset Row Scan
+    RegisterValues(9) = &H40   ' Maximum Scan Line (double scan off)
+    RegisterValues(10) = &H00  ' Cursor Start
+    RegisterValues(11) = &H00  ' Cursor End
+    RegisterValues(12) = &H00  ' Start Address High
+    RegisterValues(13) = &H00  ' Start Address Low
+    RegisterValues(14) = &H00  ' Cursor Location High
+    RegisterValues(15) = &H00  ' Cursor Location Low
+    
+    !MOV DX, &H3D4
+    FOR Index = 0 TO 15
+        !MOV AL, Index
+        !OUT DX, AL
+        !INC DX
+        !MOV AL, RegisterValues(Index)
+        !OUT DX, AL
+        !DEC DX
+    NEXT Index
+END SUB
+
+SUB SetModeXRegisters400x300
+    ' 400x300 Mode-X (4:3 aspect ratio)
+    DIM RegisterValues(0 TO 15) AS BYTE
+    DIM Index AS BYTE
+    
+    ' CRT Controller values for 400x300
+    RegisterValues(0) = &H6B   ' Horizontal Total
+    RegisterValues(1) = &H59   ' End Horizontal Display
+    RegisterValues(2) = &H5A   ' Start Horizontal Blanking
+    RegisterValues(3) = &H8E   ' End Horizontal Blanking
+    RegisterValues(4) = &H5E   ' Start Horizontal Retrace
+    RegisterValues(5) = &H8A   ' End Horizontal Retrace
+    RegisterValues(6) = &HBF   ' Vertical Total
+    RegisterValues(7) = &H1F   ' Overflow
+    RegisterValues(8) = &H00   ' Preset Row Scan
+    RegisterValues(9) = &H40   ' Maximum Scan Line (double scan off)
+    RegisterValues(10) = &H00  ' Cursor Start
+    RegisterValues(11) = &H00  ' Cursor End
+    RegisterValues(12) = &H00  ' Start Address High
+    RegisterValues(13) = &H00  ' Start Address Low
+    RegisterValues(14) = &H00  ' Cursor Location High
+    RegisterValues(15) = &H00  ' Cursor Location Low
+    
+    !MOV DX, &H3D4
+    FOR Index = 0 TO 15
+        !MOV AL, Index
+        !OUT DX, AL
+        !INC DX
+        !MOV AL, RegisterValues(Index)
+        !OUT DX, AL
+        !DEC DX
+    NEXT Index
+END SUB

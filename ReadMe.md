@@ -18,6 +18,7 @@ This library provides a comprehensive set of functions and subroutines for worki
 - **Font Handling:** Load and use custom fonts.
 - **Color Palette Management:** Get and set color palettes.
 - **VESA Modes:** Supports a wide range of VESA graphics modes.
+- **Mode-X Graphics:** Provides optimized 256-color planar modes for animation and specific resolutions.
 - **Windowing:** Create and manage virtual windows within the screen.
 - **Sprite Handling:** Basic sprite manipulation functions.
 
@@ -38,6 +39,7 @@ Here are some of the key functions available in the library:
 | Function | Description |
 |---|---|
 | `SETVGA(mode)` | Initializes a VESA graphics mode. |
+| `SETMODEX(mode)` | Initializes a Mode-X graphics mode. |
 | `CLOSEVGA` | Returns to text mode. |
 | `PUTPIXEL(x, y, color)` | Draws a pixel at the specified coordinates. |
 | `GETPIXEL(x, y)` | Returns the color of the pixel at the specified coordinates. |
@@ -172,10 +174,19 @@ CALL VGAPRINT(x, y, color, bgcolor, "Hello World", flags)
 
 ### ⚙️ Configuration and Compatibility
 
+#### Mode-13h Support
+- **Resolutions:** 320x200
+- **Color Depth:** 8-bit (256 colors) planar
+
+#### Mode-X Support
+- **Resolutions:** 320x240, 360x240, 320x400, 360x400, 320x480, 360x480, 256x256, 400x300
+- **Color Depth:** 8-bit (256 colors) planar
+- **Optimization:** Optimized for animation and efficient pixel/block operations
+
 #### VESA Mode Support
 - **Standard Modes:** 640x480, 800x600, 1024x768, 1280x1024
 - **Color Depths:** 8-bit (256 colors), 16-bit, 24-bit
-- **Fallback:** Automatic fallback to VGA Mode 13h (320x200x256) if VESA unavailable
+- **Fallback:** Automatic fallback to VGA Mode 13h if VESA unavailable
 - **Memory:** EMS (Expanded Memory) support for large graphics buffers
 
 #### Hardware Requirements

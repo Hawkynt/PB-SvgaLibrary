@@ -26,6 +26,20 @@ TYPE VESAContext
     TransparentColor AS WORD    ' Transparent color index
     OneLoadOnly AS BYTE         ' Load-once flag
     BMPMode AS INTEGER          ' BMP display mode
+    ModeXActive AS BYTE         ' Mode-X active flag
+    ModeXType AS BYTE           ' Mode-X variant (0-7)
+END TYPE
+
+' Mode-X specific context
+TYPE ModeXContext
+    XRes AS WORD                ' Mode-X X resolution
+    YRes AS WORD                ' Mode-X Y resolution
+    LogicalWidth AS WORD        ' Logical scanline width
+    PageSize AS WORD            ' Page size in bytes
+    ActivePage AS BYTE          ' Current active page
+    VisiblePage AS BYTE         ' Current visible page
+    PlanarMode AS BYTE          ' Planar mode flag
+    BytesPerPixel AS BYTE       ' Always 1 for Mode-X (256 colors)
 END TYPE
 
 ' EMS Memory Management
@@ -90,6 +104,7 @@ END TYPE
 ' Global library state - single instance of each context
 DIM SVGAScreenContext AS SHARED SVGAScreen
 DIM VESASystemContext AS SHARED VESAContext
+DIM ModeXSystemContext AS SHARED ModeXContext
 DIM EMSMemoryContext AS SHARED EMSContext
 DIM FontSystemContext AS SHARED FontContext
 DIM ImageSystemContext AS SHARED ImageContext
