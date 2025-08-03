@@ -1,0 +1,244 @@
+' =============================================================================
+' FONTS.SUB - Font Loading and Text Rendering Functions
+' =============================================================================
+' Contains font file loading, text rendering, and character display functions
+' =============================================================================
+
+' =============================================================================
+' Load a font file and initialize font system
+' Parameters:
+'   FontFile - Path to font file (BYREF)
+'   DisplayMode - Display mode during loading: 0=silent, 1=verbose, 2=loading animation (BYVAL)
+' Returns: Nothing
+' Note: Font file format is 256 lines, each containing 8 space-separated byte values
+'       representing an 8x8 bitmap for each ASCII character (0-255)
+'       Updates global FontSystemContext
+' =============================================================================
+SUB INITFONT (BYREF FontFile AS STRING, BYVAL DisplayMode AS BYTE)
+    DIM FileHandle AS INTEGER, CharIndex AS WORD, InputLine AS STRING
+    DIM Pos1 AS WORD, Pos2 AS WORD, Pos3 AS WORD, Pos4 AS WORD
+    DIM Pos5 AS WORD, Pos6 AS WORD, Pos7 AS WORD, Pos8 AS WORD
+    DIM Byte1 AS STRING, Byte2 AS STRING, Byte3 AS STRING, Byte4 AS STRING
+    DIM Byte5 AS STRING, Byte6 AS STRING, Byte7 AS STRING, Byte8 AS STRING
+    
+    ' Clear previous font data
+    FontSystemContext.Data = ""
+    
+    ' Display loading information based on mode
+    IF DisplayMode = 1 THEN
+        CLS
+        PRINT "LOAD " + CHR$(34) + UCASE$(FontFile) + CHR$(34) + ",8,1"
+        PRINT "LOADING FROM $2000 TO $3000"
+    ELSEIF DisplayMode = 2 THEN
+        CALL LOADING(0)  ' Start loading animation
+    END IF
+    
+    ' Open font file
+    FileHandle = FREEFILE
+    OPEN "I", #FileHandle, FontFile
+    
+    ' Read 256 character definitions (8 bytes each)
+    FOR CharIndex = 0 TO 255
+        IF NOT EOF(FileHandle) THEN
+            INPUT #FileHandle, InputLine
+            
+            ' Parse space-separated byte values
+            Pos1 = INSTR(InputLine, " ")
+            Pos2 = INSTR(Pos1 + 1, InputLine, " ")
+            Pos3 = INSTR(Pos2 + 1, InputLine, " ")
+            Pos4 = INSTR(Pos3 + 1, InputLine, " ")
+            Pos5 = INSTR(Pos4 + 1, InputLine, " ")
+            Pos6 = INSTR(Pos5 + 1, InputLine, " ")
+            Pos7 = INSTR(Pos6 + 1, InputLine, " ")
+            Pos8 = LEN(InputLine)
+            
+            ' Extract individual byte strings
+            Byte1 = MID$(InputLine, 1, Pos1 - 1)
+            Byte2 = MID$(InputLine, Pos1 + 1, Pos2 - Pos1 - 1)
+            Byte3 = MID$(InputLine, Pos2 + 1, Pos3 - Pos2 - 1)
+            Byte4 = MID$(InputLine, Pos3 + 1, Pos4 - Pos3 - 1)
+            Byte5 = MID$(InputLine, Pos4 + 1, Pos5 - Pos4 - 1)
+            Byte6 = MID$(InputLine, Pos5 + 1, Pos6 - Pos5 - 1)
+            Byte7 = MID$(InputLine, Pos6 + 1, Pos7 - Pos6 - 1)
+            Byte8 = RIGHT$(InputLine, Pos8 - Pos7)
+            
+            ' Convert to binary and append to font data
+            FontSystemContext.Data = FontSystemContext.Data + CHR$(VAL(Byte1)) + CHR$(VAL(Byte2)) + CHR$(VAL(Byte3)) + CHR$(VAL(Byte4)) + CHR$(VAL(Byte5)) + CHR$(VAL(Byte6)) + CHR$(VAL(Byte7)) + CHR$(VAL(Byte8))
+            
+            ' Show progress in verbose mode
+            IF DisplayMode = 1 THEN
+                PRINT CHR$(CharIndex);
+                LOCATE 3, 1
+            END IF
+        ELSE
+            EXIT FOR
+        END IF
+    NEXT CharIndex
+    
+    CLOSE FileHandle
+    
+    ' Complete loading display
+    IF DisplayMode = 1 THEN
+        PRINT
+        PRINT "READY."
+    ELSEIF DisplayMode = 2 THEN
+        CALL LOADING(1)  ' End loading animation
+    END IF
+    
+    ' Set standard 8x8 character dimensions
+    FontSystemContext.CharWidth = 8
+    FontSystemContext.CharHeight = 8
+    FontSystemContext.LoadPath = FontFile
+END SUB
+
+' =============================================================================
+' Print text using loaded bitmap font to VGA screen
+' Parameters:
+'   X, Y - Text position coordinates (BYVAL)
+'   ForeColor - Text color (BYVAL)
+'   BackColor - Background color (BYVAL)
+'   Text - Text string to display (BYREF)
+'   Flags - Display flags: 1=scale coordinates, 2=clear background, 4=use text coordinates (BYVAL)
+' Returns: Nothing
+' Note: Requires font to be loaded with INITFONT first
+' =============================================================================
+SUB VGAPRINT (BYVAL X AS WORD, BYVAL Y AS WORD, BYVAL ForeColor AS LONG, BYVAL BackColor AS LONG, BYREF Text AS STRING, BYVAL Flags AS BYTE)
+    DIM OriginalX AS WORD, OriginalY AS WORD, CharIndex AS WORD, CharCode AS BYTE
+    DIM CharData AS STRING, RowIndex AS BYTE, BitPattern AS STRING
+    DIM PixelX AS BYTE, ActualX AS WORD, ActualY AS WORD
+    
+    ' Store original coordinates
+    OriginalX = X
+    OriginalY = Y
+    
+    ' Convert text coordinates to pixel coordinates if flag 4 is set
+    IF (Flags AND 4) > 0 THEN
+        X = (X - 1) * FontSystemContext.CharWidth
+        Y = (Y - 1) * FontSystemContext.CharHeight
+    END IF
+    
+    ' Process each character in the text
+    FOR CharIndex = 1 TO LEN(Text)
+        CharCode = ASC(MID$(Text, CharIndex, 1))
+        
+        ' Extract 8-byte character pattern from font data
+        CharData = MID$(FontSystemContext.Data, CharCode * 8 + 1, 8)
+        
+        ' Draw each row of the character (8 rows)
+        FOR RowIndex = 1 TO 8
+            DIM ByteValue AS BYTE, BitMask AS BYTE
+            ByteValue = ASC(MID$(CharData, RowIndex, 1))
+            
+            ' Convert byte to binary string for pixel extraction
+            BitPattern = RIGHT$("00000000" + LTRIM$(RTRIM$(BIN$(ByteValue))), 8)
+            
+            ' Draw each pixel in the row (8 pixels)
+            FOR PixelX = 1 TO 8
+                ActualX = X + PixelX - 1
+                ActualY = Y + RowIndex - 1
+                
+                IF MID$(BitPattern, PixelX, 1) = "1" THEN
+                    ' Draw foreground pixel
+                    CALL PUTPIXEL(ActualX, ActualY, ForeColor)
+                ELSE
+                    ' Draw background pixel if flag 2 is set
+                    IF (Flags AND 2) > 0 THEN
+                        CALL PUTPIXEL(ActualX, ActualY, BackColor)
+                    END IF
+                END IF
+            NEXT PixelX
+        NEXT RowIndex
+        
+        ' Advance to next character position
+        X = X + FontSystemContext.CharWidth
+        
+        ' Scale coordinates if flag 1 is set
+        IF (Flags AND 1) > 0 THEN
+            X = OriginalX + (CharIndex * FontSystemContext.CharWidth * 2)
+        END IF
+    NEXT CharIndex
+END SUB
+
+' =============================================================================
+' Print text using loaded bitmap font to BMP buffer
+' Parameters:
+'   X, Y - Text position coordinates (BYVAL)
+'   ForeColor - Text color (BYVAL)
+'   BackColor - Background color (BYVAL)
+'   Text - Text string to display (BYREF)
+'   Flags - Display flags: 1=scale coordinates, 2=clear background, 4=use text coordinates (BYVAL)
+' Returns: Nothing
+' Note: Similar to VGAPRINT but draws to BMP buffer instead of VGA screen
+' =============================================================================
+SUB BMPPRINT (BYVAL X AS WORD, BYVAL Y AS WORD, BYVAL ForeColor AS LONG, BYVAL BackColor AS LONG, BYREF Text AS STRING, BYVAL Flags AS BYTE)
+    DIM OriginalX AS WORD, OriginalY AS WORD, CharIndex AS WORD, CharCode AS BYTE
+    DIM CharData AS STRING, RowIndex AS BYTE, BitPattern AS STRING
+    DIM PixelX AS BYTE, ActualX AS WORD, ActualY AS WORD
+    
+    ' Store original coordinates
+    OriginalX = X
+    OriginalY = Y
+    
+    ' Convert text coordinates to pixel coordinates if flag 4 is set
+    IF (Flags AND 4) > 0 THEN
+        X = (X - 1) * FontSystemContext.CharWidth
+        Y = (Y - 1) * FontSystemContext.CharHeight
+    END IF
+    
+    ' Process each character in the text
+    FOR CharIndex = 1 TO LEN(Text)
+        CharCode = ASC(MID$(Text, CharIndex, 1))
+        
+        ' Extract 8-byte character pattern from font data
+        CharData = MID$(FontSystemContext.Data, CharCode * 8 + 1, 8)
+        
+        ' Draw each row of the character (8 rows)
+        FOR RowIndex = 1 TO 8
+            DIM ByteValue AS BYTE
+            ByteValue = ASC(MID$(CharData, RowIndex, 1))
+            
+            ' Convert byte to binary string for pixel extraction
+            BitPattern = RIGHT$("00000000" + LTRIM$(RTRIM$(BIN$(ByteValue))), 8)
+            
+            ' Draw each pixel in the row (8 pixels)
+            FOR PixelX = 1 TO 8
+                ActualX = X + PixelX - 1
+                ActualY = Y + RowIndex - 1
+                
+                IF MID$(BitPattern, PixelX, 1) = "1" THEN
+                    ' Draw foreground pixel to BMP buffer
+                    CALL PUTBMPPIXEL(ActualX, ActualY, ForeColor)
+                ELSE
+                    ' Draw background pixel if flag 2 is set
+                    IF (Flags AND 2) > 0 THEN
+                        CALL PUTBMPPIXEL(ActualX, ActualY, BackColor)
+                    END IF
+                END IF
+            NEXT PixelX
+        NEXT RowIndex
+        
+        ' Advance to next character position
+        X = X + FontSystemContext.CharWidth
+        
+        ' Scale coordinates if flag 1 is set  
+        IF (Flags AND 1) > 0 THEN
+            X = OriginalX + (CharIndex * FontSystemContext.CharWidth * 2)
+        END IF
+    NEXT CharIndex
+END SUB
+
+' =============================================================================
+' Get current font information
+' Parameters: None
+' Returns: Nothing (information accessed via FontSystemContext)
+' Note: Font dimensions available in FontSystemContext.CharWidth/CharHeight
+'       Font data available in FontSystemContext.Data
+'       Font file path available in FontSystemContext.LoadPath
+' =============================================================================
+SUB GETFONTINFO()
+    ' Font information is available through the global FontSystemContext:
+    ' FontSystemContext.CharWidth - Character width (typically 8)
+    ' FontSystemContext.CharHeight - Character height (typically 8) 
+    ' FontSystemContext.Data - Complete font bitmap data
+    ' FontSystemContext.LoadPath - Path to loaded font file
+END SUB

@@ -1,0 +1,174 @@
+' =============================================================================
+' GRAPHICS.SUB - Core Graphics Drawing Functions
+' =============================================================================
+' Contains basic drawing primitives: lines, boxes, circles, pixels
+' =============================================================================
+
+' =============================================================================
+' Draw a filled rectangle with border
+' Parameters:
+'   X1, Y1 - Top-left corner coordinates (BYVAL)
+'   X2, Y2 - Bottom-right corner coordinates (BYVAL)
+'   BorderColor - Border color (BYVAL)
+'   FillColor - Fill color (BYVAL)
+' Returns: Nothing
+' =============================================================================
+SUB BAR (BYVAL X1 AS WORD, BYVAL Y1 AS WORD, BYVAL X2 AS WORD, BYVAL Y2 AS WORD, BYVAL BorderColor AS LONG, BYVAL FillColor AS LONG)
+    DIM TempX AS WORD, TempY AS WORD, ScanLine AS WORD
+    
+    ' Ensure coordinates are properly ordered
+    IF Y2 < Y1 THEN SWAP Y1, Y2
+    IF X2 < X1 THEN SWAP X1, X2
+    
+    ' Fill the interior
+    FOR ScanLine = Y1 TO Y2
+        CALL LINEDRAW(X1, ScanLine, X2, ScanLine, FillColor)
+    NEXT ScanLine
+    
+    ' Draw the border
+    CALL LINEDRAW(X1, Y1, X2, Y1, BorderColor)  ' Top
+    CALL LINEDRAW(X1, Y1, X1, Y2, BorderColor)  ' Left
+    CALL LINEDRAW(X2, Y2, X1, Y2, BorderColor)  ' Bottom
+    CALL LINEDRAW(X2, Y2, X2, Y1, BorderColor)  ' Right
+END SUB
+
+' =============================================================================
+' Draw a 3D-style bar with depth effect
+' Parameters:
+'   X1, Y1 - Top-left corner coordinates (BYVAL)
+'   X2, Y2 - Bottom-right corner coordinates (BYVAL)
+'   Depth - 3D depth offset (BYVAL)
+'   BorderColor - Border and 3D edge color (BYVAL)
+'   FillColor - Fill color (BYVAL, 0 = no fill)
+' Returns: Nothing
+' =============================================================================
+SUB BAR3D (BYVAL X1 AS WORD, BYVAL Y1 AS WORD, BYVAL X2 AS WORD, BYVAL Y2 AS WORD, BYVAL Depth AS WORD, BYVAL BorderColor AS LONG, BYVAL FillColor AS LONG)
+    DIM ScanLine AS WORD
+    
+    ' Ensure coordinates are properly ordered
+    IF Y2 < Y1 THEN SWAP Y1, Y2
+    IF X2 < X1 THEN SWAP X1, X2
+    
+    ' Fill the main face if fill color specified
+    IF FillColor > 0 THEN
+        FOR ScanLine = Y1 TO Y2
+            CALL LINEDRAW(X1, ScanLine, X2, ScanLine, FillColor)
+        NEXT ScanLine
+    END IF
+    
+    ' Draw main rectangle border
+    CALL LINEDRAW(X1, Y1, X2, Y1, BorderColor)  ' Top
+    CALL LINEDRAW(X1, Y1, X1, Y2, BorderColor)  ' Left
+    CALL LINEDRAW(X2, Y2, X1, Y2, BorderColor)  ' Bottom
+    CALL LINEDRAW(X2, Y2, X2, Y1, BorderColor)  ' Right
+    
+    ' Draw 3D depth lines
+    CALL LINEDRAW(X1, Y1, X1 + Depth, Y1 - Depth, BorderColor)        ' Top-left to back
+    CALL LINEDRAW(X2, Y1, X2 + Depth, Y1 - Depth, BorderColor)        ' Top-right to back
+    CALL LINEDRAW(X1 + Depth, Y1 - Depth, X2 + Depth, Y1 - Depth, BorderColor)  ' Back top edge
+    CALL LINEDRAW(X2, Y2, X2 + Depth, Y2 - Depth, BorderColor)        ' Bottom-right to back
+    CALL LINEDRAW(X2 + Depth, Y1 - Depth, X2 + Depth, Y2 - Depth, BorderColor)  ' Back right edge
+END SUB
+
+' =============================================================================
+' Draw a filled box (wrapper for BAR with same border and fill color)
+' Parameters:
+'   X1, Y1 - Top-left corner coordinates (BYVAL)
+'   X2, Y2 - Bottom-right corner coordinates (BYVAL)
+'   Color - Color for both border and fill (BYVAL)
+' Returns: Nothing
+' =============================================================================
+SUB BOX (BYVAL X1 AS WORD, BYVAL Y1 AS WORD, BYVAL X2 AS WORD, BYVAL Y2 AS WORD, BYVAL Color AS LONG)
+    CALL BAR(X1, Y1, X2, Y2, Color, Color)
+END SUB
+
+' =============================================================================
+' Draw a circle or ellipse (filled or outline)
+' Parameters:
+'   CenterX, CenterY - Center coordinates (BYVAL)
+'   RadiusX, RadiusY - X and Y radius (BYVAL)
+'   StartAngle - Starting angle in degrees (BYVAL)
+'   EndAngle - Ending angle in degrees (BYVAL)
+'   Color - Drawing color (BYVAL)
+'   FillMode - 0=outline, 1=filled (BYVAL)
+' Returns: Nothing
+' =============================================================================
+SUB CIRCLEDRAW (BYVAL CenterX AS WORD, BYVAL CenterY AS WORD, BYVAL RadiusX AS WORD, BYVAL RadiusY AS WORD, BYVAL StartAngle AS SINGLE, BYVAL EndAngle AS SINGLE, BYVAL Color AS LONG, BYVAL FillMode AS BYTE)
+    DIM PI AS SINGLE, StepSize AS SINGLE, Angle AS SINGLE
+    DIM X AS WORD, Y AS WORD, OldX AS WORD, OldY AS WORD
+    DIM FillY AS WORD, FillStartX AS WORD, FillEndX AS WORD
+    
+    PI = 4 * ATN(1)
+    
+    ' Calculate step size based on radius
+    IF (RadiusX + RadiusY) / 2 = 0 THEN 
+        StepSize = 1 
+    ELSE 
+        StepSize = 1 / ((RadiusX + RadiusY) / 64)
+    END IF
+    
+    ' Adjust step direction for reverse drawing
+    IF EndAngle < StartAngle THEN StepSize = -StepSize
+    
+    ' Calculate initial point
+    X = INT(CenterX + RadiusX * COS(StartAngle * PI / 180))
+    Y = INT(CenterY + RadiusY * SIN(StartAngle * PI / 180))
+    
+    IF FillMode = 0 THEN
+        ' Draw outline only
+        FOR Angle = StartAngle TO EndAngle STEP StepSize
+            OldX = X
+            OldY = Y
+            X = INT(CenterX + RadiusX * COS(Angle * PI / 180))
+            Y = INT(CenterY + RadiusY * SIN(Angle * PI / 180))
+            CALL LINEDRAW(OldX, OldY, X, Y, Color)
+        NEXT Angle
+    ELSE
+        ' Draw filled circle by drawing horizontal lines
+        FOR FillY = CenterY - RadiusY TO CenterY + RadiusY
+            ' Calculate X bounds for this Y coordinate
+            IF ABS(FillY - CenterY) <= RadiusY THEN
+                DIM YOffset AS SINGLE
+                YOffset = (FillY - CenterY) / RadiusY
+                IF ABS(YOffset) <= 1 THEN
+                    DIM XOffset AS SINGLE
+                    XOffset = SQR(1 - YOffset * YOffset) * RadiusX
+                    FillStartX = CenterX - INT(XOffset)
+                    FillEndX = CenterX + INT(XOffset)
+                    CALL LINEDRAW(FillStartX, FillY, FillEndX, FillY, Color)
+                END IF
+            END IF
+        NEXT FillY
+    END IF
+END SUB
+
+' =============================================================================
+' Draw a rectangle outline
+' Parameters:
+'   X1, Y1 - Top-left corner coordinates (BYVAL)
+'   X2, Y2 - Bottom-right corner coordinates (BYVAL)
+'   Color - Border color (BYVAL)
+' Returns: Nothing
+' =============================================================================
+SUB FRAME (BYVAL X1 AS WORD, BYVAL Y1 AS WORD, BYVAL X2 AS WORD, BYVAL Y2 AS WORD, BYVAL Color AS LONG)
+    ' Ensure coordinates are properly ordered
+    IF Y2 < Y1 THEN SWAP Y1, Y2
+    IF X2 < X1 THEN SWAP X1, X2
+    
+    ' Draw the four sides
+    CALL LINEDRAW(X1, Y1, X2, Y1, Color)  ' Top
+    CALL LINEDRAW(X1, Y1, X1, Y2, Color)  ' Left
+    CALL LINEDRAW(X2, Y2, X1, Y2, Color)  ' Bottom
+    CALL LINEDRAW(X2, Y2, X2, Y1, Color)  ' Right
+END SUB
+
+' =============================================================================
+' Set a single pixel
+' Parameters:
+'   X, Y - Pixel coordinates (BYVAL)
+'   Color - Pixel color (BYVAL)
+' Returns: Nothing
+' =============================================================================
+SUB PIXEL (BYVAL X AS WORD, BYVAL Y AS WORD, BYVAL Color AS LONG)
+    CALL PUTPIXEL(X, Y, Color)
+END SUB

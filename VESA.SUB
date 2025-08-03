@@ -1,0 +1,326 @@
+' =============================================================================
+' VESA.SUB - VESA Graphics Mode Management
+' =============================================================================
+' Contains VESA BIOS Extension functions for high-resolution graphics modes
+' =============================================================================
+
+' =============================================================================
+' Set graphics resolution using VESA or VGA modes
+' Parameters:
+'   XRes - Desired X resolution (BYVAL)
+'   YRes - Desired Y resolution (BYVAL)
+'   Colors - Desired number of colors (BYVAL)
+' Returns: Nothing
+' Note: Automatically selects best available mode, falls back to simulation if exact mode unavailable
+'       Updates global VESASystemContext and SVGAScreenContext
+' =============================================================================
+SUB SETRES (BYVAL XRes AS WORD, BYVAL YRes AS WORD, BYVAL Colors AS WORD)
+    DIM VESAInfo AS STRING, ModeInfo AS STRING
+    DIM FarOffset AS WORD, FarSegment AS WORD
+    DIM ModeIndex AS WORD, ModeNumber AS WORD, TestMode AS WORD
+    DIM ModeXRes AS WORD, ModeYRes AS WORD, ModeColors AS WORD
+    DIM BestMode AS WORD, BestXDiff AS INTEGER, BestYDiff AS INTEGER
+    
+    ' Handle standard VGA mode 13h (320x200x256)
+    IF (XRes = 320) AND (YRes = 200) AND (Colors = 256) THEN
+        CALL SETVGA(13)
+        EXIT SUB
+    END IF
+    
+    ' Prepare buffers for VESA calls
+    VESAInfo = STRING$(256, CHR$(219))
+    ModeInfo = STRING$(256, CHR$(219))
+    
+    ' Get VESA information (Function 4F00h)
+    REG 1, &H4F00
+    REG 6, STRPTR(VESAInfo)
+    REG 9, STRSEG(VESAInfo)
+    CALL INTERRUPT &H10
+    
+    ' Extract pointer to video mode list
+    FarOffset = ASC(MID$(VESAInfo, 15, 1)) + 256 * ASC(MID$(VESAInfo, 16, 1))
+    FarSegment = ASC(MID$(VESAInfo, 17, 1)) + 256 * ASC(MID$(VESAInfo, 18, 1))
+    DEF SEG = FarSegment
+    
+    ' Search for exact mode match
+    ModeIndex = 0
+    DO
+        ModeNumber = PEEK(FarOffset + ModeIndex) + 256 * PEEK(FarOffset + ModeIndex + 1)
+        IF ModeNumber = 65535 THEN EXIT DO  ' End of mode list
+        
+        ' Get mode information (Function 4F01h)
+        REG 1, &H4F01
+        REG 3, ModeNumber
+        REG 9, STRSEG(ModeInfo)
+        REG 6, STRPTR(ModeInfo)
+        CALL INTERRUPT &H10
+        
+        ' Extract mode parameters
+        ModeXRes = ASC(MID$(ModeInfo, &H13, 1)) + 256 * ASC(MID$(ModeInfo, &H14, 1))
+        ModeYRes = ASC(MID$(ModeInfo, &H15, 1)) + 256 * ASC(MID$(ModeInfo, &H16, 1))
+        ModeColors = 2 ^ ASC(MID$(ModeInfo, &H1A, 1))
+        
+        ' Check for exact match
+        IF XRes = ModeXRes AND YRes = ModeYRes AND Colors = ModeColors THEN
+            CALL SETVGA(ModeNumber)
+            EXIT SUB
+        END IF
+        
+        ModeIndex = ModeIndex + 2
+    LOOP
+    
+    ' If no exact match, find closest higher resolution for simulation
+    ModeIndex = 0
+    BestXDiff = 32767
+    BestYDiff = 32767
+    BestMode = 0
+    
+    DO
+        ModeNumber = PEEK(FarOffset + ModeIndex) + 256 * PEEK(FarOffset + ModeIndex + 1)
+        IF ModeNumber = 65535 THEN EXIT DO  ' End of mode list
+        
+        ' Get mode information
+        REG 1, &H4F01
+        REG 3, ModeNumber
+        REG 9, STRSEG(ModeInfo)
+        REG 6, STRPTR(ModeInfo)
+        CALL INTERRUPT &H10
+        
+        ' Extract mode parameters
+        ModeXRes = ASC(MID$(ModeInfo, &H13, 1)) + 256 * ASC(MID$(ModeInfo, &H14, 1))
+        ModeYRes = ASC(MID$(ModeInfo, &H15, 1)) + 256 * ASC(MID$(ModeInfo, &H16, 1))
+        ModeColors = 2 ^ ASC(MID$(ModeInfo, &H1A, 1))
+        
+        ' Check if this mode is suitable for simulation (higher or equal resolution)
+        IF ModeXRes >= XRes AND ModeYRes >= YRes AND ModeColors >= Colors THEN
+            DIM XDiff AS INTEGER, YDiff AS INTEGER
+            XDiff = ModeXRes - XRes
+            YDiff = ModeYRes - YRes
+            
+            ' Check if this is a better match than previous best
+            IF XDiff < BestXDiff OR (XDiff = BestXDiff AND YDiff < BestYDiff) THEN
+                BestXDiff = XDiff
+                BestYDiff = YDiff
+                BestMode = ModeNumber
+            END IF
+        END IF
+        
+        ModeIndex = ModeIndex + 2
+    LOOP
+    
+    ' Set the best available mode
+    IF BestMode > 0 THEN
+        CALL SETVGA(BestMode)
+        ' Set up coordinate scaling for simulation
+        VESASystemContext.XDecrease = BestXDiff / 2
+        VESASystemContext.YDecrease = BestYDiff / 2
+    ELSE
+        ' Fallback to mode 13h if no suitable mode found
+        CALL SETVGA(13)
+    END IF
+    
+    DEF SEG  ' Restore default segment
+END SUB
+
+' =============================================================================
+' Set VESA graphics mode
+' Parameters:
+'   ModeNumber - VESA mode number to set (BYVAL)
+' Returns: Nothing
+' Note: Sets hardware graphics mode and updates global context variables
+' =============================================================================
+SUB SETVGA (BYVAL ModeNumber AS INTEGER)
+    DIM ModeInfo AS STRING
+    
+    ' Set VESA graphics mode (Function 4F02h)
+    REG 1, &H4F02
+    REG 2, ModeNumber
+    CALL INTERRUPT &H10
+    
+    ' Get mode information for context setup
+    ModeInfo = STRING$(256, CHR$(219))
+    REG 1, &H4F01
+    REG 3, ModeNumber
+    REG 9, STRSEG(ModeInfo)
+    REG 6, STRPTR(ModeInfo)
+    CALL INTERRUPT &H10
+    
+    ' Update global context with mode information
+    SVGAScreenContext.XRes = ASC(MID$(ModeInfo, &H13, 1)) + 256 * ASC(MID$(ModeInfo, &H14, 1))
+    SVGAScreenContext.YRes = ASC(MID$(ModeInfo, &H15, 1)) + 256 * ASC(MID$(ModeInfo, &H16, 1))
+    SVGAScreenContext.ColorDepth = ASC(MID$(ModeInfo, &H1A, 1))
+    SVGAScreenContext.BytesPerLine = ASC(MID$(ModeInfo, &H11, 1)) + 256 * ASC(MID$(ModeInfo, &H12, 1))
+    SVGAScreenContext.WindowGranularity = ASC(MID$(ModeInfo, &H5, 1)) + 256 * ASC(MID$(ModeInfo, &H6, 1))
+    
+    ' Update VESA context
+    VESASystemContext.XRes = SVGAScreenContext.XRes
+    VESASystemContext.YRes = SVGAScreenContext.YRes
+    VESASystemContext.Window = 0
+    
+    ' Initialize scaling context for default 1:1 scaling
+    ScaleSystemContext.XScale = 1
+    ScaleSystemContext.YScale = 1
+    ScaleSystemContext.KScale = 1
+    ScaleSystemContext.XScaleMax = SVGAScreenContext.XRes
+    ScaleSystemContext.YScaleMax = SVGAScreenContext.YRes
+END SUB
+
+' =============================================================================
+' Return to text mode and cleanup graphics
+' Parameters: None
+' Returns: Nothing
+' Note: Restores original video mode and clears graphics context
+' =============================================================================
+SUB CLOSEVGA
+    ' Set text mode (Mode 03h - 80x25 color text)
+    REG 1, &H0003
+    CALL INTERRUPT &H10
+    
+    ' Clear graphics contexts
+    SVGAScreenContext.XRes = 0
+    SVGAScreenContext.YRes = 0
+    SVGAScreenContext.ColorDepth = 0
+    SVGAScreenContext.WindowNumber = 0
+    
+    VESASystemContext.XRes = 0
+    VESASystemContext.YRes = 0
+    VESASystemContext.Window = 0
+    VESASystemContext.Offset = 0
+    
+    ' Reset scaling
+    ScaleSystemContext.XScale = 1
+    ScaleSystemContext.YScale = 1
+    ScaleSystemContext.KScale = 1
+END SUB
+
+' =============================================================================
+' Get the best VESA mode number for given parameters
+' Parameters:
+'   XRes - Desired X resolution (BYVAL)
+'   YRes - Desired Y resolution (BYVAL)
+'   Colors - Desired number of colors (BYVAL)
+' Returns: VESA mode number, or 0 if no suitable mode found
+' =============================================================================
+FUNCTION GETVESAMODE (BYVAL XRes AS WORD, BYVAL YRes AS WORD, BYVAL Colors AS WORD) AS WORD
+    DIM VESAInfo AS STRING, ModeInfo AS STRING
+    DIM FarOffset AS WORD, FarSegment AS WORD
+    DIM ModeIndex AS WORD, ModeNumber AS WORD
+    DIM ModeXRes AS WORD, ModeYRes AS WORD, ModeColors AS WORD
+    
+    ' Prepare buffer for VESA call
+    VESAInfo = STRING$(256, CHR$(219))
+    ModeInfo = STRING$(256, CHR$(219))
+    
+    ' Get VESA information
+    REG 1, &H4F00
+    REG 6, STRPTR(VESAInfo)
+    REG 9, STRSEG(VESAInfo)
+    CALL INTERRUPT &H10
+    
+    ' Extract pointer to video mode list
+    FarOffset = ASC(MID$(VESAInfo, 15, 1)) + 256 * ASC(MID$(VESAInfo, 16, 1))
+    FarSegment = ASC(MID$(VESAInfo, 17, 1)) + 256 * ASC(MID$(VESAInfo, 18, 1))
+    DEF SEG = FarSegment
+    
+    ' Search for exact mode match
+    ModeIndex = 0
+    DO
+        ModeNumber = PEEK(FarOffset + ModeIndex) + 256 * PEEK(FarOffset + ModeIndex + 1)
+        IF ModeNumber = 65535 THEN EXIT DO  ' End of mode list
+        
+        ' Get mode information
+        REG 1, &H4F01
+        REG 3, ModeNumber
+        REG 9, STRSEG(ModeInfo)
+        REG 6, STRPTR(ModeInfo)
+        CALL INTERRUPT &H10
+        
+        ' Extract mode parameters
+        ModeXRes = ASC(MID$(ModeInfo, &H13, 1)) + 256 * ASC(MID$(ModeInfo, &H14, 1))
+        ModeYRes = ASC(MID$(ModeInfo, &H15, 1)) + 256 * ASC(MID$(ModeInfo, &H16, 1))
+        ModeColors = 2 ^ ASC(MID$(ModeInfo, &H1A, 1))
+        
+        ' Check for exact match
+        IF XRes = ModeXRes AND YRes = ModeYRes AND Colors = ModeColors THEN
+            DEF SEG  ' Restore default segment
+            GETVESAMODE = ModeNumber
+            EXIT FUNCTION
+        END IF
+        
+        ModeIndex = ModeIndex + 2
+    LOOP
+    
+    DEF SEG  ' Restore default segment
+    GETVESAMODE = 0  ' No suitable mode found
+END FUNCTION
+
+' =============================================================================
+' Set VESA windowing for virtual screens larger than physical resolution
+' Parameters:
+'   MaxX - Virtual screen width (BYVAL)
+'   MaxY - Virtual screen height (BYVAL)
+' Returns: Nothing
+' Note: Sets up virtual coordinate system larger than physical screen
+' =============================================================================
+SUB SETVGAWINDOW(BYVAL MaxX AS WORD, BYVAL MaxY AS WORD)
+    ScaleSystemContext.XScaleMax = MaxX
+    ScaleSystemContext.YScaleMax = MaxY
+    
+    ' Calculate scaling factors
+    IF MaxX > SVGAScreenContext.XRes THEN
+        ScaleSystemContext.XScale = SVGAScreenContext.XRes / MaxX
+    ELSE
+        ScaleSystemContext.XScale = 1
+    END IF
+    
+    IF MaxY > SVGAScreenContext.YRes THEN
+        ScaleSystemContext.YScale = SVGAScreenContext.YRes / MaxY
+    ELSE
+        ScaleSystemContext.YScale = 1
+    END IF
+END SUB
+
+' =============================================================================
+' Set viewport/clipping region for drawing operations
+' Parameters:
+'   X1, Y1 - Top-left corner of viewport (BYVAL)
+'   X2, Y2 - Bottom-right corner of viewport (BYVAL)
+' Returns: Nothing
+' Note: All subsequent drawing operations will be clipped to this region
+' =============================================================================
+SUB SETVGAVIEW(BYVAL X1 AS WORD, BYVAL Y1 AS WORD, BYVAL X2 AS WORD, BYVAL Y2 AS WORD)
+    WindowSystemContext.X1 = X1
+    WindowSystemContext.Y1 = Y1
+    WindowSystemContext.X2 = X2
+    WindowSystemContext.Y2 = Y2
+    WindowSystemContext.Current = 1  ' Mark viewport as active
+END SUB
+
+' =============================================================================
+' Display VESA card information
+' Parameters: None
+' Returns: Nothing (displays information to console)
+' Note: Shows VESA BIOS version, video memory, and available modes
+' =============================================================================
+SUB VGAINFO
+    DIM VESAInfo AS STRING
+    DIM VESAVersion AS WORD, VideoMemory AS WORD
+    
+    ' Get VESA information
+    VESAInfo = STRING$(256, CHR$(219))
+    REG 1, &H4F00
+    REG 6, STRPTR(VESAInfo)
+    REG 9, STRSEG(VESAInfo)
+    CALL INTERRUPT &H10
+    
+    ' Extract VESA version
+    VESAVersion = ASC(MID$(VESAInfo, 5, 1)) + 256 * ASC(MID$(VESAInfo, 6, 1))
+    
+    ' Extract video memory size (in 64KB blocks)
+    VideoMemory = ASC(MID$(VESAInfo, 19, 1)) + 256 * ASC(MID$(VESAInfo, 20, 1))
+    
+    ' Display information
+    PRINT "VESA BIOS Version: "; HEX$(VESAVersion)
+    PRINT "Video Memory: "; VideoMemory * 64; "KB"
+    PRINT "Graphics modes supported by current hardware."
+END SUB

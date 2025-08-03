@@ -87,6 +87,123 @@ CLOSEVGA
 
 This library was created by Hawkynt.
 
+## 📄 Supported File Formats
+
+### 🖼️ Image Formats
+
+#### BMP (Windows Bitmap) Files
+- **Supported Color Depths:** 4-bit (16 colors), 8-bit (256 colors)
+- **Compression:** Uncompressed only
+- **Palette:** Automatically loaded and set for 8-bit images
+- **Orientation:** Bottom-up (standard BMP format)
+- **Usage:** `CALL SHOWBMP("image.bmp", x, y)`
+
+#### PCX (ZSoft Paintbrush) Files  
+- **Supported Color Depths:** 8-bit (256 colors)
+- **Compression:** RLE (Run-Length Encoding) supported
+- **Palette:** 256-color palette loaded from end of file (last 768 bytes)
+- **Usage:** `CALL SHOWPCX("image.pcx", x, y)`
+
+#### ICO (Windows Icon) Files
+- **Supported Color Depths:** 4-bit (16 colors), 8-bit (256 colors)
+- **Multiple Icons:** Displays first icon in file
+- **Sizes:** Standard icon sizes (16x16, 32x32, etc.)
+- **Transparency:** Basic transparency support
+- **Usage:** `CALL SHOWICON("icon.ico", x, y)`
+
+#### ANI (Animated Cursor) Files
+- **Animation Support:** Multi-frame animated cursors
+- **Frame Extraction:** Individual frames can be extracted
+- **Usage:** Animation functions for frame-by-frame display
+
+### 🔤 Font Format
+
+#### Custom 8x8 Bitmap Fonts
+The library uses a custom text-based font format for 8x8 pixel bitmap fonts:
+
+**File Structure:**
+- **256 lines** (one for each ASCII character 0-255)
+- Each line contains **8 space-separated decimal values** (0-255)
+- Each value represents one horizontal line of the 8x8 character bitmap
+- Bit 7 (MSB) = leftmost pixel, Bit 0 (LSB) = rightmost pixel
+
+**Example Character (Letter 'A'):**
+```
+0 24 60 102 102 126 102 0
+```
+This represents:
+```
+00000000  (0)   - Top row (empty)
+00011000  (24)  - Row 1: ##
+00111100  (60)  - Row 2: ####  
+01100110  (102) - Row 3: ##  ##
+01100110  (102) - Row 4: ##  ##
+01111110  (126) - Row 5: ######
+01100110  (102) - Row 6: ##  ##
+00000000  (0)   - Bottom row (empty)
+```
+
+**Creating Custom Fonts:**
+1. Create a text file with 256 lines
+2. Each line must have exactly 8 space-separated decimal values (0-255)
+3. Characters 0-31 are control characters, 32-126 are printable ASCII
+4. Characters 128-255 can be used for extended/international characters
+
+**Usage:**
+```basic
+CALL INITFONT("myfont.txt", 0)  ' Load font silently
+CALL VGAPRINT(x, y, color, bgcolor, "Hello World", flags)
+```
+
+### 💾 Sprite and Block Formats
+
+#### SVB (SVGA Block) Files
+- **Purpose:** Save/load rectangular screen areas
+- **Format:** Custom binary format storing pixel data
+- **Usage:** 
+  - Save: `CALL SAVESVB("block.svb", x1, y1, x2, y2)`
+  - Load: `CALL LOADSVB("block.svb", x, y)`
+
+#### Sprite Data Format
+- **Memory Format:** String-based sprite storage
+- **Transparency:** Supports transparent color values
+- **Compression:** Simple RLE compression for sprites
+- **Usage:** Memory-based sprite manipulation functions
+
+### ⚙️ Configuration and Compatibility
+
+#### VESA Mode Support
+- **Standard Modes:** 640x480, 800x600, 1024x768, 1280x1024
+- **Color Depths:** 8-bit (256 colors), 16-bit, 24-bit
+- **Fallback:** Automatic fallback to VGA Mode 13h (320x200x256) if VESA unavailable
+- **Memory:** EMS (Expanded Memory) support for large graphics buffers
+
+#### Hardware Requirements
+- **Minimum:** VGA-compatible graphics card
+- **Recommended:** VESA 2.0 compatible graphics card
+- **Memory:** 640KB conventional + optional EMS for large images
+- **DOS Version:** MS-DOS 3.3 or compatible
+
+#### Power BASIC Integration
+```basic
+' Include the modular library
+$INCLUDE "SVGA_NEW.SUB"
+
+' Initialize library
+CALL INITSVGA
+
+' Set graphics mode
+CALL SETRES(800, 600, 256)
+
+' Load and display resources
+CALL INITFONT("font8x8.txt", 0)
+CALL SHOWBMP("background.bmp", 0, 0)
+CALL VGAPRINT(100, 100, 15, 0, "Hello SVGA!", 0)
+
+' Cleanup
+CALL CLEANUPSVGA
+```
+
 ## 📜 License
 
 This project is licensed under the LGPL 3.0 License - see the [LICENSE](https://licenses.nuget.org/LGPL-3.0-or-later) file for details.

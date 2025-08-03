@@ -1,0 +1,105 @@
+' =============================================================================
+' TYPES.SUB - Type definitions for SVGA Library
+' =============================================================================
+' Contains all TYPE definitions and global variable structures
+' =============================================================================
+
+' Screen and Display Context
+TYPE SVGAScreen
+    XRes AS WORD                ' Current X resolution
+    YRes AS WORD                ' Current Y resolution
+    ColorDepth AS WORD          ' Color depth (bits per pixel)
+    BytesPerLine AS WORD        ' Bytes per scanline
+    MemorySize AS WORD          ' Video memory size
+    WindowNumber AS BYTE        ' Current VESA window
+    WindowGranularity AS WORD   ' Window granularity
+END TYPE
+
+' VESA-specific Context
+TYPE VESAContext
+    XRes AS WORD                ' VESA X resolution
+    YRes AS WORD                ' VESA Y resolution
+    Offset AS LONG              ' VESA memory offset
+    Window AS WORD              ' VESA window
+    XDecrease AS INTEGER        ' X coordinate adjustment
+    YDecrease AS INTEGER        ' Y coordinate adjustment
+    TransparentColor AS WORD    ' Transparent color index
+    OneLoadOnly AS BYTE         ' Load-once flag
+    BMPMode AS INTEGER          ' BMP display mode
+END TYPE
+
+' EMS Memory Management
+TYPE EMSContext
+    Handle AS INTEGER           ' EMS handle
+    OldPage AS WORD             ' Previous EMS page
+    OldHandle AS WORD           ' Previous EMS handle
+    CurrentPage AS WORD         ' Current EMS page
+END TYPE
+
+' Font System
+TYPE FontContext
+    Data AS STRING              ' Font bitmap data
+    CharWidth AS WORD           ' Character width
+    CharHeight AS WORD          ' Character height
+    LoadPath AS STRING          ' Font file path
+END TYPE
+
+' Bitmap/Image Context
+TYPE ImageContext
+    X1 AS WORD                  ' Image boundary X1
+    Y1 AS WORD                  ' Image boundary Y1
+    X2 AS WORD                  ' Image boundary X2
+    Y2 AS WORD                  ' Image boundary Y2
+    Offset AS LONG              ' Image data offset
+    Handle AS INTEGER           ' File handle
+    XScreen AS WORD             ' Image screen width
+    YScreen AS WORD             ' Image screen height
+    ColorDepth AS WORD          ' Image color depth
+    BitsPerPixel AS WORD        ' Bits per pixel
+    VGATransformX AS SINGLE     ' VGA transform X
+    VGATransformY AS SINGLE     ' VGA transform Y
+END TYPE
+
+' Animation Context
+TYPE AnimationContext
+    FrameX AS WORD              ' Animation frame X
+    FrameY AS WORD              ' Animation frame Y
+    EndX AS WORD                ' Animation end X
+    EndY AS WORD                ' Animation end Y
+    CurrentFrame AS WORD        ' Current frame number
+END TYPE
+
+' Scaling Context
+TYPE ScaleContext
+    XScale AS WORD              ' X scaling factor
+    YScale AS WORD              ' Y scaling factor
+    KScale AS WORD              ' Key scaling factor
+    XScaleMax AS WORD           ' Maximum X scale
+    YScaleMax AS WORD           ' Maximum Y scale
+END TYPE
+
+' Window Management
+TYPE WindowContext
+    Current AS BYTE             ' Current window ID
+    X1 AS WORD                  ' Window boundary X1
+    Y1 AS WORD                  ' Window boundary Y1
+    X2 AS WORD                  ' Window boundary X2
+    Y2 AS WORD                  ' Window boundary Y2
+END TYPE
+
+' Global library state - single instance of each context
+DIM SVGAScreenContext AS SHARED SVGAScreen
+DIM VESASystemContext AS SHARED VESAContext
+DIM EMSMemoryContext AS SHARED EMSContext
+DIM FontSystemContext AS SHARED FontContext
+DIM ImageSystemContext AS SHARED ImageContext
+DIM AnimationSystemContext AS SHARED AnimationContext
+DIM ScaleSystemContext AS SHARED ScaleContext
+DIM WindowSystemContext AS SHARED WindowContext
+
+' Initialize default values
+SUB InitializeSVGAContexts
+    WindowSystemContext.Current = 0
+    VESASystemContext.OneLoadOnly = 0
+    VESASystemContext.TransparentColor = 0
+END SUB
