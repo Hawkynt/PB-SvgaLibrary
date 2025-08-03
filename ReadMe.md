@@ -1,7 +1,7 @@
-# PB-SvgaLibrary 🖼️
+# 🖼️ PB-SvgaLibrary
 
 [![License](https://img.shields.io/badge/License-LGPL_3.0-blue)](https://licenses.nuget.org/LGPL-3.0-or-later)
-![Language](https://img.shields.io/github/languages/top/Hawkynt/PB-SvgaLibrary?color=purple)
+[![PowerBASIC](https://img.shields.io/badge/powerbasic%203.5-100%25-purple.svg)](https://en.wikipedia.org/wiki/PowerBASIC)
 
 > Power BASIC 3.5 library to use VESA graphic modes
 
