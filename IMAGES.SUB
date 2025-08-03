@@ -14,7 +14,7 @@
 '       Automatically sets palette for 8-bit images
 '       Updates global ImageSystemContext
 ' =============================================================================
-SUB SHOWBMP (BYREF FileName AS STRING, BYVAL X AS WORD, BYVAL Y AS WORD)
+SUB SHOWBMP (BYVAL FileName AS STRING, BYVAL X AS WORD, BYVAL Y AS WORD)
     DIM FileHandle AS INTEGER, HeaderData AS STRING
     DIM DataOffset AS LONG, ImageWidth AS LONG, ImageHeight AS LONG
     DIM ColorDepth AS WORD, NumColors AS WORD
@@ -131,7 +131,7 @@ END SUB
 ' Note: Supports RLE-compressed PCX files
 '       Automatically loads and sets 256-color palette
 ' =============================================================================
-SUB SHOWPCX (BYREF FileName AS STRING, BYVAL X AS WORD, BYVAL Y AS WORD)
+SUB SHOWPCX (BYVAL FileName AS STRING, BYVAL X AS WORD, BYVAL Y AS WORD)
     DIM FileHandle AS INTEGER, HeaderData AS STRING
     DIM XMin AS WORD, YMin AS WORD, XMax AS WORD, YMax AS WORD
     DIM ImageWidth AS WORD, ImageHeight AS WORD
@@ -225,7 +225,7 @@ END SUB
 ' Note: Displays the first icon in the file (ICO files can contain multiple icons)
 '       Supports 16-color and 256-color icons
 ' =============================================================================
-SUB SHOWICON (BYREF FileName AS STRING, BYVAL X AS WORD, BYVAL Y AS WORD)
+SUB SHOWICON (BYVAL FileName AS STRING, BYVAL X AS WORD, BYVAL Y AS WORD)
     DIM FileHandle AS INTEGER, HeaderData AS STRING
     DIM IconCount AS WORD, IconWidth AS BYTE, IconHeight AS BYTE
     DIM ColorCount AS BYTE, DataOffset AS LONG, DataSize AS LONG
@@ -327,7 +327,7 @@ END SUB
 '   Height - Returns image height (BYREF)
 ' Returns: Width and Height by reference
 ' =============================================================================
-SUB GETBMPSIZE(BYREF FileName AS STRING, BYREF Width AS WORD, BYREF Height AS WORD)
+SUB GETBMPSIZE(BYVAL FileName AS STRING, BYREF Width AS WORD, BYREF Height AS WORD)
     DIM FileHandle AS INTEGER, HeaderData AS STRING
     
     ' Open BMP file
@@ -355,7 +355,7 @@ END SUB
 ' Returns: Palette data in array
 ' Note: Palette array should be dimensioned as (0 TO 255, 0 TO 2) for RGB values
 ' =============================================================================
-SUB GETBMPPAL (BYREF FileName AS STRING, BYREF Palette() AS BYTE, BYVAL ColorDepth AS BYTE)
+SUB GETBMPPAL (BYVAL FileName AS STRING, BYREF Palette() AS BYTE, BYVAL ColorDepth AS BYTE)
     DIM FileHandle AS INTEGER, NumColors AS WORD, PaletteIndex AS WORD
     DIM Blue AS STRING, Green AS STRING, Red AS STRING, Reserved AS STRING
     

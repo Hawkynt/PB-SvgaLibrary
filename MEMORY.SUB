@@ -102,7 +102,7 @@ END SUB
 '   Handle - EMS handle (BYVAL)
 ' Returns: Nothing
 ' =============================================================================
-SUB PUTEMSSTRING(BYVAL Segment AS WORD, BYVAL Offset AS WORD, BYREF Data AS STRING, BYVAL Handle AS WORD)
+SUB PUTEMSSTRING(BYVAL Segment AS WORD, BYVAL Offset AS WORD, BYVAL Data AS STRING, BYVAL Handle AS WORD)
     DIM Index AS WORD, CurrentByte AS INTEGER
     
     FOR Index = 1 TO LEN(Data)

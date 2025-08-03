@@ -14,7 +14,7 @@
 '       representing an 8x8 bitmap for each ASCII character (0-255)
 '       Updates global FontSystemContext
 ' =============================================================================
-SUB INITFONT (BYREF FontFile AS STRING, BYVAL DisplayMode AS BYTE)
+SUB INITFONT (BYVAL FontFile AS STRING, BYVAL DisplayMode AS BYTE)
     DIM FileHandle AS INTEGER, CharIndex AS WORD, InputLine AS STRING
     DIM Pos1 AS WORD, Pos2 AS WORD, Pos3 AS WORD, Pos4 AS WORD
     DIM Pos5 AS WORD, Pos6 AS WORD, Pos7 AS WORD, Pos8 AS WORD
@@ -102,7 +102,7 @@ END SUB
 ' Returns: Nothing
 ' Note: Requires font to be loaded with INITFONT first
 ' =============================================================================
-SUB VGAPRINT (BYVAL X AS WORD, BYVAL Y AS WORD, BYVAL ForeColor AS LONG, BYVAL BackColor AS LONG, BYREF Text AS STRING, BYVAL Flags AS BYTE)
+SUB VGAPRINT (BYVAL X AS WORD, BYVAL Y AS WORD, BYVAL ForeColor AS LONG, BYVAL BackColor AS LONG, BYVAL Text AS STRING, BYVAL Flags AS BYTE)
     DIM OriginalX AS WORD, OriginalY AS WORD, CharIndex AS WORD, CharCode AS BYTE
     DIM CharData AS STRING, RowIndex AS BYTE, BitPattern AS STRING
     DIM PixelX AS BYTE, ActualX AS WORD, ActualY AS WORD
@@ -170,7 +170,7 @@ END SUB
 ' Returns: Nothing
 ' Note: Similar to VGAPRINT but draws to BMP buffer instead of VGA screen
 ' =============================================================================
-SUB BMPPRINT (BYVAL X AS WORD, BYVAL Y AS WORD, BYVAL ForeColor AS LONG, BYVAL BackColor AS LONG, BYREF Text AS STRING, BYVAL Flags AS BYTE)
+SUB BMPPRINT (BYVAL X AS WORD, BYVAL Y AS WORD, BYVAL ForeColor AS LONG, BYVAL BackColor AS LONG, BYVAL Text AS STRING, BYVAL Flags AS BYTE)
     DIM OriginalX AS WORD, OriginalY AS WORD, CharIndex AS WORD, CharCode AS BYTE
     DIM CharData AS STRING, RowIndex AS BYTE, BitPattern AS STRING
     DIM PixelX AS BYTE, ActualX AS WORD, ActualY AS WORD

@@ -117,6 +117,21 @@ SUB SETRES (BYVAL XRes AS WORD, BYVAL YRes AS WORD, BYVAL Colors AS WORD)
     ELSE
         ' Fallback to mode 13h if no suitable mode found
         CALL SETVGA(13)
+        EXIT SUB
+    END IF
+    
+    ' Check for VESA support and get VESA information
+    DIM VESAInfo AS STRING
+    VESAInfo = STRING$(256, CHR$(219))
+    REG 1, &H4F00
+    REG 6, STRPTR(VESAInfo)
+    REG 9, STRSEG(VESAInfo)
+    CALL INTERRUPT &H10
+    
+    IF (AX AND &HFFFF) <> &H4F THEN
+        ' VESA not supported, try Mode-X fallback
+        CALL SETMODEXFALLBACK(XRes, YRes, Colors)
+        EXIT SUB
     END IF
     
     DEF SEG  ' Restore default segment

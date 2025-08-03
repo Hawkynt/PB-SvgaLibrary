@@ -81,30 +81,34 @@ SUB PUTPIXEL(BYVAL X AS WORD, BYVAL Y AS WORD, BYVAL Color AS WORD)
         IF Y < WindowSystemContext.Y1 OR Y > WindowSystemContext.Y2 THEN EXIT SUB
     END IF
     
-    ' Calculate pixel address and set pixel using VESA banking if needed
-    DIM ByteOffset AS LONG, WindowNumber AS WORD, PixelOffset AS WORD
-    
-    IF SVGAScreenContext.ColorDepth = 8 THEN
-        ' 8-bit color mode
-        ByteOffset = Y * SVGAScreenContext.BytesPerLine + X
-        WindowNumber = ByteOffset \ 65536  ' 64K window size
-        PixelOffset = ByteOffset MOD 65536
-        
-        ' Switch VESA window if needed
-        IF WindowNumber <> SVGAScreenContext.WindowNumber THEN
-            CALL SETVESAWINDOW(WindowNumber)
-            SVGAScreenContext.WindowNumber = WindowNumber
-        END IF
-        
-        ' Set pixel using direct memory access
-        DEF SEG = &HA000
-        POKE PixelOffset, Color
-        DEF SEG
+    IF VESASystemContext.ModeXActive THEN
+        CALL PUTPIXELMODEX(X, Y, Color)
     ELSE
-        ' Other color modes - simplified implementation
-        DEF SEG = &HA000
-        POKE Y * 320 + X, Color  ' Assume 320-pixel width for compatibility
-        DEF SEG
+        ' Calculate pixel address and set pixel using VESA banking if needed
+        DIM ByteOffset AS LONG, WindowNumber AS WORD, PixelOffset AS WORD
+        
+        IF SVGAScreenContext.ColorDepth = 8 THEN
+            ' 8-bit color mode
+            ByteOffset = Y * SVGAScreenContext.BytesPerLine + X
+            WindowNumber = ByteOffset \ 65536  ' 64K window size
+            PixelOffset = ByteOffset MOD 65536
+            
+            ' Switch VESA window if needed
+            IF WindowNumber <> SVGAScreenContext.WindowNumber THEN
+                CALL SETVESAWINDOW(WindowNumber)
+                SVGAScreenContext.WindowNumber = WindowNumber
+            END IF
+            
+            ' Set pixel using direct memory access
+            DEF SEG = &HA000
+            POKE PixelOffset, Color
+            DEF SEG
+        ELSE
+            ' mode 13h
+            DEF SEG = &HA000
+            POKE Y * 320 + X, Color  ' Assume 320-pixel width for compatibility
+            DEF SEG
+        END IF
     END IF
 END SUB
 
@@ -124,29 +128,33 @@ FUNCTION GETPIXEL (BYVAL X AS WORD, BYVAL Y AS WORD) AS BYTE
     X = X - VESASystemContext.XDecrease
     Y = Y - VESASystemContext.YDecrease
     
-    ' Calculate pixel address and get pixel value
-    DIM ByteOffset AS LONG, WindowNumber AS WORD, PixelOffset AS WORD
-    
-    IF SVGAScreenContext.ColorDepth = 8 THEN
-        ByteOffset = Y * SVGAScreenContext.BytesPerLine + X
-        WindowNumber = ByteOffset \ 65536
-        PixelOffset = ByteOffset MOD 65536
-        
-        ' Switch VESA window if needed
-        IF WindowNumber <> SVGAScreenContext.WindowNumber THEN
-            CALL SETVESAWINDOW(WindowNumber)
-            SVGAScreenContext.WindowNumber = WindowNumber
-        END IF
-        
-        ' Get pixel value
-        DEF SEG = &HA000
-        GETPIXEL = PEEK(PixelOffset)
-        DEF SEG
+    IF VESASystemContext.ModeXActive THEN
+        GETPIXEL = GETPIXELMODEX(X, Y)
     ELSE
-        ' Fallback for other modes
-        DEF SEG = &HA000
-        GETPIXEL = PEEK(Y * 320 + X)
-        DEF SEG
+        ' Calculate pixel address and get pixel value
+        DIM ByteOffset AS LONG, WindowNumber AS WORD, PixelOffset AS WORD
+        
+        IF SVGAScreenContext.ColorDepth = 8 THEN
+            ByteOffset = Y * SVGAScreenContext.BytesPerLine + X
+            WindowNumber = ByteOffset \ 65536
+            PixelOffset = ByteOffset MOD 65536
+            
+            ' Switch VESA window if needed
+            IF WindowNumber <> SVGAScreenContext.WindowNumber THEN
+                CALL SETVESAWINDOW(WindowNumber)
+                SVGAScreenContext.WindowNumber = WindowNumber
+            END IF
+            
+            ' Get pixel value
+            DEF SEG = &HA000
+            GETPIXEL = PEEK(PixelOffset)
+            DEF SEG
+        ELSE
+            ' Fallback for other modes
+            DEF SEG = &HA000
+            GETPIXEL = PEEK(Y * 320 + X)
+            DEF SEG
+        END IF
     END IF
 END FUNCTION
 
@@ -160,44 +168,95 @@ END FUNCTION
 ' Note: Uses Bresenham's line algorithm for smooth lines
 ' =============================================================================
 SUB LINEDRAW(BYVAL X1 AS WORD, BYVAL Y1 AS WORD, BYVAL X2 AS WORD, BYVAL Y2 AS WORD, BYVAL Color AS LONG)
-    DIM DeltaX AS INTEGER, DeltaY AS INTEGER, StepX AS INTEGER, StepY AS INTEGER
-    DIM ErrorTerm AS INTEGER, CurrentX AS WORD, CurrentY AS WORD
-    
-    ' Calculate deltas and step directions
-    DeltaX = ABS(X2 - X1)
-    DeltaY = ABS(Y2 - Y1)
-    
-    IF X1 < X2 THEN StepX = 1 ELSE StepX = -1
-    IF Y1 < Y2 THEN StepY = 1 ELSE StepY = -1
-    
-    ' Initialize error term
-    ErrorTerm = DeltaX - DeltaY
-    
-    ' Set starting position
-    CurrentX = X1
-    CurrentY = Y1
-    
-    ' Draw line using Bresenham's algorithm
-    DO
-        CALL PUTPIXEL(CurrentX, CurrentY, Color)
-        
-        ' Check if we've reached the end point
-        IF CurrentX = X2 AND CurrentY = Y2 THEN EXIT DO
-        
-        ' Calculate next point
-        DIM Error2 AS INTEGER
-        Error2 = ErrorTerm * 2
-        
-        IF Error2 > -DeltaY THEN
-            ErrorTerm = ErrorTerm - DeltaY
-            CurrentX = CurrentX + StepX
+    IF VESASystemContext.ModeXActive THEN
+        ' Optimized line drawing for Mode-X
+        IF Y1 = Y2 THEN
+            ' Horizontal line
+            CALL HLINEMODEX(X1, X2, Y1, Color)
+        ELSEIF X1 = X2 THEN
+            ' Vertical line
+            CALL VLINEMODEX(Y1, Y2, X1, Color)
+        ELSE
+            ' Diagonal or non-axis-aligned lines - use Bresenham's with PUTPIXELMODEX
+            DIM DeltaX AS INTEGER, DeltaY AS INTEGER, StepX AS INTEGER, StepY AS INTEGER
+            DIM ErrorTerm AS INTEGER, CurrentX AS WORD, CurrentY AS WORD
+            
+            ' Calculate deltas and step directions
+            DeltaX = ABS(X2 - X1)
+            DeltaY = ABS(Y2 - Y1)
+            
+            IF X1 < X2 THEN StepX = 1 ELSE StepX = -1
+            IF Y1 < Y2 THEN StepY = 1 ELSE StepY = -1
+            
+            ' Initialize error term
+            ErrorTerm = DeltaX - DeltaY
+            
+            ' Set starting position
+            CurrentX = X1
+            CurrentY = Y1
+            
+            ' Draw line using Bresenham's algorithm
+            DO
+                CALL PUTPIXELMODEX(CurrentX, CurrentY, Color)
+                
+                ' Check if we've reached the end point
+                IF CurrentX = X2 AND CurrentY = Y2 THEN EXIT DO
+                
+                ' Calculate next point
+                DIM Error2 AS INTEGER
+                Error2 = ErrorTerm * 2
+                
+                IF Error2 > -DeltaY THEN
+                    ErrorTerm = ErrorTerm - DeltaY
+                    CurrentX = CurrentX + StepX
+                END IF
+                
+                IF Error2 < DeltaX THEN
+                    ErrorTerm = ErrorTerm + DeltaX
+                    CurrentY = CurrentY + StepY
+                END IF
+            LOOP
         END IF
+    ELSE
+        DIM DeltaX AS INTEGER, DeltaY AS INTEGER, StepX AS INTEGER, StepY AS INTEGER
+        DIM ErrorTerm AS INTEGER, CurrentX AS WORD, CurrentY AS WORD
         
-        IF Error2 < DeltaX THEN
-            ErrorTerm = ErrorTerm + DeltaX
-            CurrentY = CurrentY + StepY
-        END IF
-    LOOP
+        ' Calculate deltas and step directions
+        DeltaX = ABS(X2 - X1)
+        DeltaY = ABS(Y2 - Y1)
+        
+        IF X1 < X2 THEN StepX = 1 ELSE StepX = -1
+        IF Y1 < Y2 THEN StepY = 1 ELSE StepY = -1
+        
+        ' Initialize error term
+        ErrorTerm = DeltaX - DeltaY
+        
+        ' Set starting position
+        CurrentX = X1
+        CurrentY = Y1
+        
+        ' Draw line using Bresenham's algorithm
+        DO
+            CALL PUTPIXEL(CurrentX, CurrentY, Color)
+            
+            ' Check if we've reached the end point
+            IF CurrentX = X2 AND CurrentY = Y2 THEN EXIT DO
+            
+            ' Calculate next point
+            DIM Error2 AS INTEGER
+            Error2 = ErrorTerm * 2
+            
+            IF Error2 > -DeltaY THEN
+                ErrorTerm = ErrorTerm - DeltaY
+                CurrentX = CurrentX + StepX
+            END IF
+            
+            IF Error2 < DeltaX THEN
+                ErrorTerm = ErrorTerm + DeltaX
+                CurrentY = CurrentY + StepY
+            END IF
+        LOOP
+    END IF
 END SUB
 
 ' =============================================================================
@@ -207,14 +266,38 @@ END SUB
 ' Returns: Nothing
 ' =============================================================================
 SUB CLEARSCREEN(BYVAL Color AS BYTE)
-    DIM X AS WORD, Y AS WORD
-    
-    ' Fill screen pixel by pixel
-    FOR Y = 0 TO SVGAScreenContext.YRes - 1
-        FOR X = 0 TO SVGAScreenContext.XRes - 1
-            CALL PUTPIXEL(X, Y, Color)
-        NEXT X
-    NEXT Y
+    IF VESASystemContext.ModeXActive THEN
+        CALL ClearModeXScreen(Color)
+    ELSE
+        DIM TotalBytes AS LONG, WindowNumber AS WORD, PixelOffset AS WORD
+        DIM CurrentWindow AS WORD
+        
+        TotalBytes = SVGAScreenContext.BytesPerLine * SVGAScreenContext.YRes
+        CurrentWindow = 0
+        
+        ' Fill screen using VESA banking
+        DO WHILE TotalBytes > 0
+            CALL SETVESAWINDOW(CurrentWindow)
+            SVGAScreenContext.WindowNumber = CurrentWindow
+            
+            DIM BytesToFill AS WORD
+            IF TotalBytes > 65536 THEN
+                BytesToFill = 65536
+            ELSE
+                BytesToFill = TotalBytes
+            END IF
+            
+            DEF SEG = &HA000
+            !MOV DI, 0              ; Start at offset 0 of the window
+            !MOV AL, Color
+            !MOV CX, BytesToFill
+            !REP STOSB              ; Fill memory with color
+            DEF SEG
+            
+            TotalBytes = TotalBytes - BytesToFill
+            CurrentWindow = CurrentWindow + 1
+        LOOP
+    END IF
 END SUB
 
 ' =============================================================================

@@ -20,6 +20,20 @@ SUB BAR (BYVAL X1 AS WORD, BYVAL Y1 AS WORD, BYVAL X2 AS WORD, BYVAL Y2 AS WORD,
     IF Y2 < Y1 THEN SWAP Y1, Y2
     IF X2 < X1 THEN SWAP X1, X2
     
+    IF VESASystemContext.ModeXActive THEN
+        ' Fill the interior using optimized Mode-X horizontal line drawing
+        FOR ScanLine = Y1 TO Y2
+            CALL HLINEMODEX(X1, X2, ScanLine, FillColor)
+        NEXT ScanLine
+        
+        ' Draw the border using optimized Mode-X horizontal/vertical line drawing
+        CALL HLINEMODEX(X1, Y1, X2, Y1, BorderColor)  ' Top
+        CALL HLINEMODEX(X1, Y2, X2, Y2, BorderColor)  ' Bottom
+        CALL VLINEMODEX(Y1, Y2, X1, BorderColor)  ' Left
+        CALL VLINEMODEX(Y1, Y2, X2, BorderColor)  ' Right
+		exit sub
+	end if
+
     ' Fill the interior
     FOR ScanLine = Y1 TO Y2
         CALL LINEDRAW(X1, ScanLine, X2, ScanLine, FillColor)
@@ -49,25 +63,40 @@ SUB BAR3D (BYVAL X1 AS WORD, BYVAL Y1 AS WORD, BYVAL X2 AS WORD, BYVAL Y2 AS WOR
     IF Y2 < Y1 THEN SWAP Y1, Y2
     IF X2 < X1 THEN SWAP X1, X2
     
-    ' Fill the main face if fill color specified
-    IF FillColor > 0 THEN
-        FOR ScanLine = Y1 TO Y2
-            CALL LINEDRAW(X1, ScanLine, X2, ScanLine, FillColor)
-        NEXT ScanLine
+    IF VESASystemContext.ModeXActive THEN
+        ' Fill the main face if fill color specified
+        IF FillColor > 0 THEN
+            FOR ScanLine = Y1 TO Y2
+                CALL HLINEMODEX(X1, X2, ScanLine, FillColor)
+            NEXT ScanLine
+        END IF
+        
+        ' Draw main rectangle border
+        CALL HLINEMODEX(X1, Y1, X2, Y1, BorderColor)  ' Top
+        CALL HLINEMODEX(X1, Y2, X2, Y2, BorderColor)  ' Bottom
+        CALL VLINEMODEX(Y1, Y2, X1, BorderColor)  ' Left
+        CALL VLINEMODEX(Y1, Y2, X2, BorderColor)  ' Right
+    ELSE
+        ' Fill the main face if fill color specified
+        IF FillColor > 0 THEN
+            FOR ScanLine = Y1 TO Y2
+                CALL LINEDRAW(X1, ScanLine, X2, ScanLine, FillColor)
+            NEXT ScanLine
+        END IF
+        
+        ' Draw main rectangle border
+        CALL LINEDRAW(X1, Y1, X2, Y1, BorderColor)  ' Top
+        CALL LINEDRAW(X1, Y1, X1, Y2, BorderColor)  ' Left
+        CALL LINEDRAW(X2, Y2, X1, Y2, BorderColor)  ' Bottom
+        CALL LINEDRAW(X2, Y2, X2, Y1, BorderColor)  ' Right
+        
+        ' Draw 3D depth lines
+        CALL LINEDRAW(X1, Y1, X1 + Depth, Y1 - Depth, BorderColor)        ' Top-left to back
+        CALL LINEDRAW(X2, Y1, X2 + Depth, Y1 - Depth, BorderColor)        ' Top-right to back
+        CALL LINEDRAW(X1 + Depth, Y1 - Depth, X2 + Depth, Y1 - Depth, BorderColor)  ' Back top edge
+        CALL LINEDRAW(X2, Y2, X2 + Depth, Y2 - Depth, BorderColor)        ' Bottom-right to back
+        CALL LINEDRAW(X2 + Depth, Y1 - Depth, X2 + Depth, Y2 - Depth, BorderColor)  ' Back right edge
     END IF
-    
-    ' Draw main rectangle border
-    CALL LINEDRAW(X1, Y1, X2, Y1, BorderColor)  ' Top
-    CALL LINEDRAW(X1, Y1, X1, Y2, BorderColor)  ' Left
-    CALL LINEDRAW(X2, Y2, X1, Y2, BorderColor)  ' Bottom
-    CALL LINEDRAW(X2, Y2, X2, Y1, BorderColor)  ' Right
-    
-    ' Draw 3D depth lines
-    CALL LINEDRAW(X1, Y1, X1 + Depth, Y1 - Depth, BorderColor)        ' Top-left to back
-    CALL LINEDRAW(X2, Y1, X2 + Depth, Y1 - Depth, BorderColor)        ' Top-right to back
-    CALL LINEDRAW(X1 + Depth, Y1 - Depth, X2 + Depth, Y1 - Depth, BorderColor)  ' Back top edge
-    CALL LINEDRAW(X2, Y2, X2 + Depth, Y2 - Depth, BorderColor)        ' Bottom-right to back
-    CALL LINEDRAW(X2 + Depth, Y1 - Depth, X2 + Depth, Y2 - Depth, BorderColor)  ' Back right edge
 END SUB
 
 ' =============================================================================

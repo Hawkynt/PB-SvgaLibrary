@@ -302,6 +302,47 @@ SUB HLINEMODEX(BYVAL X1 AS WORD, BYVAL X2 AS WORD, BYVAL Y AS WORD, BYVAL Color 
 END SUB
 
 ' =============================================================================
+' Draw vertical line in Mode-X (optimized)
+' Parameters:
+'   Y1, Y2 - Start and end Y coordinates (BYVAL)
+'   X - X coordinate (BYVAL)
+'   Color - Line color (BYVAL)
+' Returns: Nothing
+' Note: Optimized for Mode-X planar mode, much faster than pixel-by-pixel
+' =============================================================================
+SUB VLINEMODEX(BYVAL Y1 AS WORD, BYVAL Y2 AS WORD, BYVAL X AS WORD, BYVAL Color AS BYTE)
+    DIM StartPlane AS BYTE, ByteOffset AS WORD, CurrentY AS WORD
+    
+    ' Ensure Y1 <= Y2
+    IF Y1 > Y2 THEN SWAP Y1, Y2
+    
+    StartPlane = X AND 3
+    ByteOffset = (X \ 4)
+    
+    ' Set up VGA for block write
+    !MOV DX, &H3C4          ; Sequencer Address Register
+    !MOV AL, 2              ; Map Mask Register
+    !OUT DX, AL
+    !INC DX                 ; Sequencer Data Register
+    !MOV AL, (1 SHL StartPlane) ; Enable only the relevant plane
+    !OUT DX, AL
+    
+    !PUSH ES
+    !MOV AX, &HA000
+    !MOV ES, AX
+    !MOV AL, Color
+    
+    FOR CurrentY = Y1 TO Y2
+        !MOV BX, CurrentY
+        !MUL ModeXSystemContext.LogicalWidth
+        !ADD BX, ByteOffset
+        !MOV ES:[BX], AL
+    NEXT CurrentY
+    
+    !POP ES
+END SUB
+
+' =============================================================================
 ' Clear Mode-X screen
 ' Parameters:
 '   Color - Fill color (BYVAL)
@@ -639,4 +680,77 @@ SUB SetModeXRegisters400x300
         !OUT DX, AL
         !DEC DX
     NEXT Index
+END SUB
+
+' =============================================================================
+' Set Mode-X graphics mode as a fallback if VESA is not available
+' Parameters:
+'   XRes - Desired X resolution (BYVAL)
+'   YRes - Desired Y resolution (BYVAL)
+'   Colors - Desired number of colors (BYVAL)
+' Returns: Nothing
+' Note: Selects the highest available Mode-X resolution that is <= requested
+' =============================================================================
+SUB SETMODEXFALLBACK(BYVAL XRes AS WORD, BYVAL YRes AS WORD, BYVAL Colors AS WORD)
+    DIM BestModeXType AS BYTE
+    DIM CurrentXRes AS WORD, CurrentYRes AS WORD
+    
+    BestModeXType = 0 ' Default to 320x240
+    
+    ' Iterate through Mode-X types to find the best fit
+    ' Prioritize higher resolutions that are less than or equal to requested
+    
+    ' Type 7: 400x300
+    CurrentXRes = 400
+    CurrentYRes = 300
+    IF XRes >= CurrentXRes AND YRes >= CurrentYRes AND Colors >= 256 THEN
+        BestModeXType = 7
+    END IF
+    
+    ' Type 5: 360x480
+    CurrentXRes = 360
+    CurrentYRes = 480
+    IF XRes >= CurrentXRes AND YRes >= CurrentYRes AND Colors >= 256 THEN
+        BestModeXType = 5
+    END IF
+    
+    ' Type 4: 320x480
+    CurrentXRes = 320
+    CurrentYRes = 480
+    IF XRes >= CurrentXRes AND YRes >= CurrentYRes AND Colors >= 256 THEN
+        BestModeXType = 4
+    END IF
+    
+    ' Type 3: 360x400
+    CurrentXRes = 360
+    CurrentYRes = 400
+    IF XRes >= CurrentXRes AND YRes >= CurrentYRes AND Colors >= 256 THEN
+        BestModeXType = 3
+    END IF
+    
+    ' Type 2: 320x400
+    CurrentXRes = 320
+    CurrentYRes = 400
+    IF XRes >= CurrentXRes AND YRes >= CurrentYRes AND Colors >= 256 THEN
+        BestModeXType = 2
+    END IF
+    
+    ' Type 1: 360x240
+    CurrentXRes = 360
+    CurrentYRes = 240
+    IF XRes >= CurrentXRes AND YRes >= CurrentYRes AND Colors >= 256 THEN
+        BestModeXType = 1
+    END IF
+    
+    ' Type 6: 256x256 (lower resolution, but square)
+    CurrentXRes = 256
+    CurrentYRes = 256
+    IF XRes >= CurrentXRes AND YRes >= CurrentYRes AND Colors >= 256 THEN
+        BestModeXType = 6
+    END IF
+    
+    ' Type 0: 320x240 (default fallback)
+    ' Already handled by initialization of BestModeXType
+    
+    CALL SETMODEX(BestModeXType)
 END SUB
