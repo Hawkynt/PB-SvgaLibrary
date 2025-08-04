@@ -1,7 +1,9 @@
 # 🖼️ PB-SvgaLibrary
 
-[![License](https://img.shields.io/badge/License-LGPL_3.0-blue)](https://licenses.nuget.org/LGPL-3.0-or-later)
+![License](https://img.shields.io/github/license/Hawkynt/PB-SvgaLibrary)
 [![PowerBASIC](https://img.shields.io/badge/powerbasic%203.5-100%25-purple.svg)](https://en.wikipedia.org/wiki/PowerBASIC)
+[![Last Commit](https://img.shields.io/github/last-commit/Hawkynt/PB-SvgaLibrary?branch=main)![Activity](https://img.shields.io/github/commit-activity/y/Hawkynt/PB-SvgaLibrary?branch=main)](https://github.com/Hawkynt/PB-SvgaLibrary/commits/main)
+[![Tests](https://github.com/Hawkynt/PB-SvgaLibrary/actions/workflows/tests.yml/badge.svg)](https://github.com/Hawkynt/PB-SvgaLibrary/actions/workflows/tests.yml)
 
 > Power BASIC 3.5 library to use VESA graphic modes
 
@@ -39,7 +41,7 @@ Here are some of the key functions available in the library:
 | Function | Description |
 |---|---|
 | `SETVGA(mode)` | Initializes a VESA graphics mode. |
-| `SETMODEX(mode)` | Initializes a Mode-X graphics mode. |
+| `ModeX_SetMode(mode)` | Initializes a Mode-X graphics mode. |
 | `CLOSEVGA` | Returns to text mode. |
 | `PUTPIXEL(x, y, color)` | Draws a pixel at the specified coordinates. |
 | `GETPIXEL(x, y)` | Returns the color of the pixel at the specified coordinates. |
