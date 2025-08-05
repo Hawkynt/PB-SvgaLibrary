@@ -1,0 +1,206 @@
+' =============================================================================
+' DRAW_PCX.SUB - Extended Drawing Functions for PCX (ZSoft Paintbrush) Image Formats
+' =============================================================================
+
+' =============================================================================
+' Display a PCX file
+' Parameters:
+'   FileName - Path to PCX file (BYREF)
+'   X, Y - Display coordinates (BYVAL)
+' Returns: Nothing
+' Note: Supports 8-bit PCX files with RLE compression
+' =============================================================================
+SUB DrawExt_ShowPCX(BYVAL FileName AS STRING, BYVAL X AS WORD, BYVAL Y AS WORD)
+    DIM FileHandle AS INTEGER, HeaderData AS STRING
+    DIM ImageWidth AS WORD, ImageHeight AS WORD
+    DIM ScanlineData AS STRING, DecodedData AS STRING
+    DIM PixelY AS WORD, PhysicalX AS WORD, PhysicalY AS WORD
+    
+    ' Convert virtual coordinates to physical
+    CALL Virtual_ToPhysical(X, Y, PhysicalX, PhysicalY)
+    
+    ' Open PCX file
+    FileHandle = FREEFILE
+    OPEN FileName FOR BINARY AS #FileHandle
+    
+    ' Read PCX header
+    CALL PCX_ReadHeader(FileHandle, ImageWidth, ImageHeight)
+    
+    ' Load PCX palette
+    CALL PCX_LoadPalette(FileHandle)
+    
+    ' Update image context
+    ImageSystemContext.X1 = 0
+    ImageSystemContext.Y1 = 0
+    ImageSystemContext.X2 = ImageWidth - 1
+    ImageSystemContext.Y2 = ImageHeight - 1
+    ImageSystemContext.ColorDepth = 8
+    ImageSystemContext.BitsPerPixel = 8
+    
+    ' Read and display image data with RLE decompression
+    SEEK FileHandle, 129  ' PCX data starts at byte 128
+    
+    FOR PixelY = 0 TO ImageHeight - 1
+        CALL PCX_ReadScanline(FileHandle, ScanlineData, ImageWidth)
+        
+        ' Check if scanline is visible
+        IF Virtual_IsVisible(X, Y + PixelY) THEN
+            CALL PCX_DrawScanline(ScanlineData, PhysicalX, PhysicalY + PixelY, ImageWidth)
+        END IF
+    NEXT PixelY
+    
+    CLOSE #FileHandle
+END SUB
+
+' =============================================================================
+' Read PCX header information
+' =============================================================================
+SUB PCX_ReadHeader(BYVAL FileHandle AS INTEGER, ImageWidth AS WORD, ImageHeight AS WORD)
+    DIM HeaderData AS STRING
+    DIM XMin AS WORD, YMin AS WORD, XMax AS WORD, YMax AS WORD
+    
+    ' Read bounding box (bytes 4-11)
+    SEEK FileHandle, 5
+    GET$ FileHandle, 8, HeaderData
+    
+    XMin = ASC(MID$(HeaderData, 1, 1)) + 256 * ASC(MID$(HeaderData, 2, 1))
+    YMin = ASC(MID$(HeaderData, 3, 1)) + 256 * ASC(MID$(HeaderData, 4, 1))
+    XMax = ASC(MID$(HeaderData, 5, 1)) + 256 * ASC(MID$(HeaderData, 6, 1))
+    YMax = ASC(MID$(HeaderData, 7, 1)) + 256 * ASC(MID$(HeaderData, 8, 1))
+    
+    ImageWidth = XMax - XMin + 1
+    ImageHeight = YMax - YMin + 1
+END SUB
+
+' =============================================================================
+' Load PCX palette (located at end of file)
+' =============================================================================
+SUB PCX_LoadPalette(BYVAL FileHandle AS INTEGER)
+    DIM PaletteData AS STRING, ColorIndex AS WORD
+    DIM FileSize AS LONG, PaletteMarker AS BYTE
+    
+    ' Get file size and seek to palette
+    FileSize = LOF(FileHandle)
+    SEEK FileHandle, FileSize - 768  ' Palette is last 768 bytes
+    
+    ' Check for palette marker (should be 12)
+    GET$ FileHandle, 1, PaletteData
+    PaletteMarker = ASC(PaletteData)
+    
+    IF PaletteMarker = 12 THEN
+        ' Read and set 256-color palette
+        FOR ColorIndex = 0 TO 255
+            GET$ FileHandle, 3, PaletteData
+            
+            OUT &H3C8, ColorIndex
+            OUT &H3C9, ASC(MID$(PaletteData, 1, 1)) \ 4  ' Red (scale to 6-bit)
+            OUT &H3C9, ASC(MID$(PaletteData, 2, 1)) \ 4  ' Green
+            OUT &H3C9, ASC(MID$(PaletteData, 3, 1)) \ 4  ' Blue
+        NEXT ColorIndex
+    END IF
+END SUB
+
+' =============================================================================
+' Read and decompress PCX scanline with RLE
+' =============================================================================
+SUB PCX_ReadScanline(BYVAL FileHandle AS INTEGER, DecodedData AS STRING, BYVAL Width AS WORD)
+    DIM CompressedByte AS BYTE, RunLength AS BYTE, PixelValue AS BYTE
+    DIM ByteData AS STRING, DecodedIndex AS WORD, RunCount AS WORD
+    
+    DecodedData = ""
+    DecodedIndex = 0
+    
+    DO WHILE DecodedIndex < Width
+        GET$ FileHandle, 1, ByteData
+        CompressedByte = ASC(ByteData)
+        
+        IF CompressedByte >= 192 THEN
+            ' RLE compressed run
+            RunLength = CompressedByte - 192
+            GET$ FileHandle, 1, ByteData
+            PixelValue = ASC(ByteData)
+            
+            FOR RunCount = 1 TO RunLength
+                DecodedData = DecodedData + CHR$(PixelValue)
+                DecodedIndex = DecodedIndex + 1
+                IF DecodedIndex >= Width THEN EXIT FOR
+            NEXT RunCount
+        ELSE
+            ' Single pixel
+            DecodedData = DecodedData + CHR$(CompressedByte)
+            DecodedIndex = DecodedIndex + 1
+        END IF
+    LOOP
+END SUB
+
+' =============================================================================
+' Draw PCX scanline with optimization
+' =============================================================================
+SUB PCX_DrawScanline(BYVAL ScanlineData AS STRING, BYVAL X AS WORD, BYVAL Y AS WORD, BYVAL Width AS WORD)
+    ' Use the same optimized scanline drawing as BMP
+    CALL BMP_DrawScanline(ScanlineData, X, Y, Width, 8)
+END SUB
+
+' =============================================================================
+' Utility Functions
+' =============================================================================
+
+' =============================================================================
+' Get BMP file dimensions without loading the image
+' Parameters:
+'   FileName - Path to BMP file (BYREF)
+'   Width, Height - Output dimensions (BYREF)
+' Returns: Nothing (dimensions returned via BYREF parameters)
+' =============================================================================
+SUB DrawExt_GetBMPSize(BYVAL FileName AS STRING, Width AS WORD, Height AS WORD)
+    DIM FileHandle AS INTEGER, HeaderData AS STRING
+    DIM ImageWidth AS LONG, ImageHeight AS LONG
+    
+    FileHandle = FREEFILE
+    OPEN FileName FOR BINARY AS #FileHandle
+    
+    ' Read image dimensions from header
+    SEEK FileHandle, &H12
+    GET$ FileHandle, 4, HeaderData
+    ImageWidth = ASC(MID$(HeaderData, 1, 1)) + 256& * ASC(MID$(HeaderData, 2, 1)) + 65536& * ASC(MID$(HeaderData, 3, 1)) + 16777216& * ASC(MID$(HeaderData, 4, 1))
+    
+    GET$ FileHandle, 4, HeaderData
+    ImageHeight = ASC(MID$(HeaderData, 1, 1)) + 256& * ASC(MID$(HeaderData, 2, 1)) + 65536& * ASC(MID$(HeaderData, 3, 1)) + 16777216& * ASC(MID$(HeaderData, 4, 1))
+    
+    Width = ImageWidth
+    Height = ImageHeight
+    
+    CLOSE #FileHandle
+END SUB
+
+' =============================================================================
+' Get BMP palette without displaying the image
+' Parameters:
+'   FileName - Path to BMP file (BYREF)
+'   Palette - Output palette array (BYREF)
+'   ColorDepth - Bits per pixel (BYVAL)
+' Returns: Nothing (palette returned via BYREF array)
+' =============================================================================
+SUB DrawExt_GetBMPPalette(BYVAL FileName AS STRING, Palette() AS BYTE, BYVAL ColorDepth AS BYTE)
+    DIM FileHandle AS INTEGER, PaletteData AS STRING
+    DIM NumColors AS WORD, ColorIndex AS WORD, ArrayIndex AS WORD
+    
+    NumColors = 2 ^ ColorDepth
+    FileHandle = FREEFILE
+    OPEN FileName FOR BINARY AS #FileHandle
+    
+    ' Seek to palette location
+    SEEK FileHandle, 55
+    
+    ArrayIndex = 0
+    FOR ColorIndex = 0 TO NumColors - 1
+        GET$ FileHandle, 4, PaletteData  ' Read BGRA
+        
+        Palette(ArrayIndex) = ASC(MID$(PaletteData, 3, 1))      ' Red
+        Palette(ArrayIndex + 1) = ASC(MID$(PaletteData, 2, 1))  ' Green
+        Palette(ArrayIndex + 2) = ASC(MID$(PaletteData, 1, 1))  ' Blue
+        ArrayIndex = ArrayIndex + 3
+    NEXT ColorIndex
+    
+    CLOSE #FileHandle
+END SUB

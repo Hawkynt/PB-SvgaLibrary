@@ -18,10 +18,18 @@
 ' Note: Optimized for Mode 13h 320x200x256 linear memory layout
 ' =============================================================================
 SUB VGA_PutPixel(BYVAL X AS WORD, BYVAL Y AS WORD, BYVAL Color AS BYTE)
-    ' Direct memory access for Mode 13h (linear 320x200)
-    DEF SEG = &HA000
-    POKE Y * 320 + X, Color
-    DEF SEG
+    ' Ultra-fast assembly optimized pixel write for Mode 13h
+    !PUSH ES
+    !MOV AX, &HA000
+    !MOV ES, AX              ; ES = A000h (VGA memory segment)
+    !MOV AX, Y
+    !MOV BX, 320             ; Bytes per line
+    !MUL BX                  ; AX = Y * 320
+    !ADD AX, X               ; AX = Y * 320 + X (pixel offset)
+    !MOV BX, AX              ; BX = pixel offset
+    !MOV AL, Color           ; AL = color value
+    !MOV ES:[BX], AL         ; Write pixel to VGA memory
+    !POP ES
 END SUB
 
 ' =============================================================================
@@ -31,9 +39,22 @@ END SUB
 ' Returns: Pixel color value
 ' =============================================================================
 FUNCTION VGA_GetPixel(BYVAL X AS WORD, BYVAL Y AS WORD) AS BYTE
-    DEF SEG = &HA000
-    VGA_GetPixel = PEEK(Y * 320 + X)
-    DEF SEG
+    ' Ultra-fast assembly optimized pixel read for Mode 13h
+    DIM PixelValue AS BYTE
+    
+    !PUSH ES
+    !MOV AX, &HA000
+    !MOV ES, AX              ; ES = A000h (VGA memory segment)
+    !MOV AX, Y
+    !MOV BX, 320             ; Bytes per line
+    !MUL BX                  ; AX = Y * 320
+    !ADD AX, X               ; AX = Y * 320 + X (pixel offset)
+    !MOV BX, AX              ; BX = pixel offset
+    !MOV AL, ES:[BX]         ; Read pixel from VGA memory
+    !MOV PixelValue, AL      ; Store result
+    !POP ES
+    
+    VGA_GetPixel = PixelValue
 END FUNCTION
 
 ' =============================================================================

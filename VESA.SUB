@@ -279,30 +279,6 @@ FUNCTION GETVESAMODE (BYVAL XRes AS WORD, BYVAL YRes AS WORD, BYVAL Colors AS WO
 END FUNCTION
 
 ' =============================================================================
-' Set VESA windowing for virtual screens (wrapper for Virtual_SetWindow)
-' Parameters:
-'   MaxX - Virtual screen width (BYVAL)
-'   MaxY - Virtual screen height (BYVAL)
-' Returns: Nothing
-' Note: Sets up virtual coordinate system larger than physical screen
-' =============================================================================
-SUB SETVGAWINDOW(BYVAL MaxX AS WORD, BYVAL MaxY AS WORD)
-    CALL Virtual_SetWindow(MaxX, MaxY)
-END SUB
-
-' =============================================================================
-' Set viewport/clipping region (wrapper for Virtual_SetViewport)
-' Parameters:
-'   X1, Y1 - Top-left corner of viewport (BYVAL)
-'   X2, Y2 - Bottom-right corner of viewport (BYVAL)
-' Returns: Nothing
-' Note: All subsequent drawing operations will be clipped to this region
-' =============================================================================
-SUB SETVGAVIEW(BYVAL X1 AS WORD, BYVAL Y1 AS WORD, BYVAL X2 AS WORD, BYVAL Y2 AS WORD)
-    CALL Virtual_SetViewport(X1, Y1, X2, Y2)
-END SUB
-
-' =============================================================================
 ' Display VESA card information
 ' Parameters: None
 ' Returns: Nothing (displays information to console)
@@ -769,7 +745,100 @@ SUB VESA_CopyBlock(BYVAL SrcX AS WORD, BYVAL SrcY AS WORD, BYVAL DestX AS WORD, 
         SrcOffset = (SrcY + CurrentY) * BytesPerLine + SrcX
         DestOffset = (DestY + CurrentY) * BytesPerLine + DestX
         
-        SrcWindow = SrcOffset \\ 65536
-        DestWindow = DestOffset \\ 65536
+        SrcWindow = SrcOffset \ 65536
+        DestWindow = DestOffset \ 65536
         
-        ' Check if we need to copy within same window (optimization opportunity)\n        IF SrcWindow = DestWindow AND Width <= (65536 - (SrcOffset MOD 65536)) THEN\n            ' Source and destination are in same window - ultra-fast copy\n            IF SrcWindow <> LastSrcWindow THEN\n                CALL SETVESAWINDOW(SrcWindow)\n                SVGAScreenContext.WindowNumber = SrcWindow\n                LastSrcWindow = SrcWindow\n            END IF\n            \n            SrcWindowOffset = SrcOffset AND &HFFFF\n            DestWindowOffset = DestOffset AND &HFFFF\n            \n            ' Fast intra-window block copy using assembly\n            !PUSH ES\n            !PUSH DS\n            !MOV AX, &HA000\n            !MOV ES, AX\n            !MOV DS, AX\n            !MOV SI, SrcWindowOffset\n            !MOV DI, DestWindowOffset\n            !MOV CX, Width\n            !CLD                    ; Forward copy\n            \n            ' Copy entire scanline at once\n            VESAIntraWindowCopy:\n            !LODSB                  ; Load from DS:SI\n            !STOSB                  ; Store to ES:DI\n            !LOOP VESAIntraWindowCopy\n            \n            !POP DS\n            !POP ES\n        ELSE\n            ' Cross-window copy or complex case - use optimized pixel-by-pixel\n            CALL VESA_CopyScanline(SrcX, SrcY + CurrentY, DestX, DestY + CurrentY, Width)\n        END IF\n    NEXT CurrentY\nEND SUB\n\n' =============================================================================\n' Copy single scanline with window optimization\n' =============================================================================\nSUB VESA_CopyScanline(BYVAL SrcX AS WORD, BYVAL SrcY AS WORD, BYVAL DestX AS WORD, BYVAL DestY AS WORD, BYVAL Width AS WORD)\n    DIM CurrentX AS WORD, PixelColor AS BYTE\n    DIM SrcOffset AS LONG, DestOffset AS LONG\n    DIM SrcWindow AS WORD, DestWindow AS WORD\n    DIM LastSrcWindow AS WORD, LastDestWindow AS WORD\n    \n    LastSrcWindow = -1\n    LastDestWindow = -1\n    \n    ' Optimized scanline copy with minimal window switches\n    FOR CurrentX = 0 TO Width - 1\n        SrcOffset = SrcY * SVGAScreenContext.BytesPerLine + SrcX + CurrentX\n        SrcWindow = SrcOffset \\ 65536\n        \n        ' Switch source window only when needed\n        IF SrcWindow <> LastSrcWindow THEN\n            CALL SETVESAWINDOW(SrcWindow)\n            SVGAScreenContext.WindowNumber = SrcWindow\n            LastSrcWindow = SrcWindow\n        END IF\n        \n        ' Read pixel from current window\n        !PUSH ES\n        !MOV AX, &HA000\n        !MOV ES, AX\n        !MOV BX, SrcOffset\n        !AND BX, &HFFFF         ; Window offset\n        !MOV AL, ES:[BX]\n        !MOV PixelColor, AL\n        !POP ES\n        \n        ' Write pixel to destination\n        DestOffset = DestY * SVGAScreenContext.BytesPerLine + DestX + CurrentX\n        DestWindow = DestOffset \\ 65536\n        \n        ' Switch destination window only when needed\n        IF DestWindow <> LastDestWindow AND DestWindow <> LastSrcWindow THEN\n            CALL SETVESAWINDOW(DestWindow)\n            SVGAScreenContext.WindowNumber = DestWindow\n            LastDestWindow = DestWindow\n        END IF\n        \n        ' Write pixel to current window\n        !PUSH ES\n        !MOV AX, &HA000\n        !MOV ES, AX\n        !MOV BX, DestOffset\n        !AND BX, &HFFFF         ; Window offset\n        !MOV AL, PixelColor\n        !MOV ES:[BX], AL\n        !POP ES\n    NEXT CurrentX\nEND SUB
+        ' Check if we need to copy within same window (optimization opportunity)
+        IF SrcWindow = DestWindow AND Width <= (65536 - (SrcOffset MOD 65536)) THEN
+            ' Source and destination are in same window - ultra-fast copy
+            IF SrcWindow <> LastSrcWindow THEN
+                CALL SETVESAWINDOW(SrcWindow)
+                SVGAScreenContext.WindowNumber = SrcWindow
+                LastSrcWindow = SrcWindow
+            END IF
+            
+            SrcWindowOffset = SrcOffset AND &HFFFF
+            DestWindowOffset = DestOffset AND &HFFFF
+            
+            ' Fast intra-window block copy using assembly
+            !PUSH ES
+            !PUSH DS
+            !MOV AX, &HA000
+            !MOV ES, AX
+            !MOV DS, AX
+            !MOV SI, SrcWindowOffset
+            !MOV DI, DestWindowOffset
+            !MOV CX, Width
+            !CLD                    ; Forward copy
+            
+            ' Copy entire scanline at once
+            VESAIntraWindowCopy:
+            !LODSB                  ; Load from DS:SI
+            !STOSB                  ; Store to ES:DI
+            !LOOP VESAIntraWindowCopy
+            
+            !POP DS
+            !POP ES
+        ELSE
+            ' Cross-window copy or complex case - use optimized pixel-by-pixel
+            CALL VESA_CopyScanline(SrcX, SrcY + CurrentY, DestX, DestY + CurrentY, Width)
+        END IF
+    NEXT CurrentY
+END SUB
+
+' =============================================================================
+' Copy single scanline with window optimization
+' =============================================================================
+SUB VESA_CopyScanline(BYVAL SrcX AS WORD, BYVAL SrcY AS WORD, BYVAL DestX AS WORD, BYVAL DestY AS WORD, BYVAL Width AS WORD)
+    DIM CurrentX AS WORD, PixelColor AS BYTE
+    DIM SrcOffset AS LONG, DestOffset AS LONG
+    DIM SrcWindow AS WORD, DestWindow AS WORD
+    DIM LastSrcWindow AS WORD, LastDestWindow AS WORD
+    
+    LastSrcWindow = -1
+    LastDestWindow = -1
+    
+    ' Optimized scanline copy with minimal window switches
+    FOR CurrentX = 0 TO Width - 1
+        SrcOffset = SrcY * SVGAScreenContext.BytesPerLine + SrcX + CurrentX
+        SrcWindow = SrcOffset \ 65536
+        
+        ' Switch source window only when needed
+        IF SrcWindow <> LastSrcWindow THEN
+            CALL SETVESAWINDOW(SrcWindow)
+            SVGAScreenContext.WindowNumber = SrcWindow
+            LastSrcWindow = SrcWindow
+        END IF
+        
+        ' Read pixel from current window
+        !PUSH ES
+        !MOV AX, &HA000
+        !MOV ES, AX
+        !MOV BX, SrcOffset
+        !AND BX, &HFFFF         ; Window offset
+        !MOV AL, ES:[BX]
+        !MOV PixelColor, AL
+        !POP ES
+        
+        ' Write pixel to destination
+        DestOffset = DestY * SVGAScreenContext.BytesPerLine + DestX + CurrentX
+        DestWindow = DestOffset \ 65536
+        
+        ' Switch destination window only when needed
+        IF DestWindow <> LastDestWindow AND DestWindow <> LastSrcWindow THEN
+            CALL SETVESAWINDOW(DestWindow)
+            SVGAScreenContext.WindowNumber = DestWindow
+            LastDestWindow = DestWindow
+        END IF
+        
+        ' Write pixel to current window
+        !PUSH ES
+        !MOV AX, &HA000
+        !MOV ES, AX
+        !MOV BX, DestOffset
+        !AND BX, &HFFFF         ; Window offset
+        !MOV AL, PixelColor
+        !MOV ES:[BX], AL
+        !POP ES
+    NEXT CurrentX
+END SUB

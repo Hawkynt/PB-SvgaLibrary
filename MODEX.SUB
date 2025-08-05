@@ -16,25 +16,17 @@
 ' Type 7: 400x300 (4:3 aspect ratio)
 
 ' Performance optimization lookup tables
-DIM SHARED PlaneMaskTable(0 TO 3) AS BYTE     ' Plane select masks
-DIM SHARED ByteDivideTable(0 TO 1023) AS WORD ' X/4 lookup table
+DIM SHARED PlaneMaskTable(0 TO 3) AS BYTE     ' Plane select masks (only 4 bytes)
 
 ' =============================================================================
 ' Initialize Mode-X lookup tables for performance
 ' =============================================================================
 SUB ModeX_InitTables
-    DIM i AS WORD
-    
-    ' Initialize plane mask lookup table
+    ' Initialize plane mask lookup table (only 4 bytes total)
     PlaneMaskTable(0) = 1   ' 0001b
     PlaneMaskTable(1) = 2   ' 0010b
     PlaneMaskTable(2) = 4   ' 0100b
     PlaneMaskTable(3) = 8   ' 1000b
-    
-    ' Initialize divide-by-4 lookup table for X coordinates 0-1023
-    FOR i = 0 TO 1023
-        ByteDivideTable(i) = i \ 4
-    NEXT i
 END SUB
 
 ' =============================================================================
@@ -160,13 +152,15 @@ END SUB
 SUB ModeX_PutPixel(BYVAL X AS WORD, BYVAL Y AS WORD, BYVAL Color AS BYTE)
     DIM PlaneNumber AS BYTE, ByteOffset AS WORD, BitMask AS BYTE
     
-    ' Calculate which plane and byte offset using lookup tables for performance
+    ' Calculate which plane and byte offset using fast assembly
     PlaneNumber = X AND 3       ' Plane number (0-3)
-    IF X <= 1023 THEN
-        ByteOffset = Y * ModeXSystemContext.LogicalWidth + ByteDivideTable(X)
-    ELSE
-        ByteOffset = Y * ModeXSystemContext.LogicalWidth + (X \ 4)  ' Fallback for large X
-    END IF
+    
+    ' Ultra-fast X/4 using bit shift (faster than lookup table)
+    !MOV AX, X
+    !SHR AX, 2              ; Divide by 4 using right shift
+    !MOV BX, AX             ; Store X/4 result
+    
+    ByteOffset = Y * ModeXSystemContext.LogicalWidth + BX
     BitMask = PlaneMaskTable(PlaneNumber)
     
     ' Set plane select register
@@ -196,13 +190,15 @@ END SUB
 FUNCTION ModeX_GetPixel(BYVAL X AS WORD, BYVAL Y AS WORD) AS BYTE
     DIM PlaneNumber AS BYTE, ByteOffset AS WORD, PixelValue AS BYTE
     
-    ' Calculate which plane and byte offset using lookup tables for performance
+    ' Calculate which plane and byte offset using fast assembly
     PlaneNumber = X AND 3
-    IF X <= 1023 THEN
-        ByteOffset = Y * ModeXSystemContext.LogicalWidth + ByteDivideTable(X)
-    ELSE
-        ByteOffset = Y * ModeXSystemContext.LogicalWidth + (X \ 4)  ' Fallback for large X
-    END IF
+    
+    ' Ultra-fast X/4 using bit shift
+    !MOV AX, X
+    !SHR AX, 2              ; Divide by 4 using right shift
+    !MOV BX, AX             ; Store X/4 result
+    
+    ByteOffset = Y * ModeXSystemContext.LogicalWidth + BX
     
     ' Set read plane register
     !MOV DX, &H3CE          ; Graphics Controller Address
@@ -240,19 +236,17 @@ SUB ModeX_HLine(BYVAL X1 AS WORD, BYVAL X2 AS WORD, BYVAL Y AS WORD, BYVAL Color
     ' Ensure X1 <= X2
     IF X1 > X2 THEN SWAP X1, X2
     
-    ' Calculate start and end positions using lookup tables for performance
+    ' Calculate start and end positions using fast assembly
     StartPlane = X1 AND 3
     EndPlane = X2 AND 3
-    IF X1 <= 1023 THEN
-        StartByte = ByteDivideTable(X1)
-    ELSE
-        StartByte = X1 \ 4  ' Fallback for large X1
-    END IF
-    IF X2 <= 1023 THEN
-        EndByte = ByteDivideTable(X2)
-    ELSE
-        EndByte = X2 \ 4  ' Fallback for large X2
-    END IF
+    
+    ' Ultra-fast division using bit shifts
+    !MOV AX, X1
+    !SHR AX, 2              ; X1/4
+    !MOV StartByte, AX
+    !MOV AX, X2
+    !SHR AX, 2              ; X2/4
+    !MOV EndByte, AX
     ByteOffset = Y * ModeXSystemContext.LogicalWidth
     
     ' Set up VGA for block write
@@ -385,11 +379,11 @@ SUB ModeX_VLine(BYVAL Y1 AS WORD, BYVAL Y2 AS WORD, BYVAL X AS WORD, BYVAL Color
     IF Y1 > Y2 THEN SWAP Y1, Y2
     
     StartPlane = X AND 3
-    IF X <= 1023 THEN
-        ByteOffset = ByteDivideTable(X)
-    ELSE
-        ByteOffset = (X \ 4)  ' Fallback for large X
-    END IF
+    
+    ' Ultra-fast X/4 using bit shift
+    !MOV AX, X
+    !SHR AX, 2              ; Divide by 4
+    !MOV ByteOffset, AX
     
     ' Set up VGA for block write
     !MOV DX, &H3C4          ; Sequencer Address Register
@@ -478,17 +472,13 @@ SUB ModeX_CopyBlock(BYVAL SrcX AS WORD, BYVAL SrcY AS WORD, BYVAL DestX AS WORD,
     DIM CurrentY AS WORD, SrcOffset AS WORD, DestOffset AS WORD
     DIM SrcStartByte AS WORD, DestStartByte AS WORD, ByteWidth AS WORD
     
-    ' Calculate byte-aligned parameters using lookup tables for performance
-    IF SrcX <= 1023 THEN
-        SrcStartByte = ByteDivideTable(SrcX)
-    ELSE
-        SrcStartByte = SrcX \ 4  ' Fallback for large SrcX
-    END IF
-    IF DestX <= 1023 THEN
-        DestStartByte = ByteDivideTable(DestX)
-    ELSE
-        DestStartByte = DestX \ 4  ' Fallback for large DestX
-    END IF
+    ' Calculate byte-aligned parameters using fast assembly
+    !MOV AX, SrcX
+    !SHR AX, 2              ; SrcX/4
+    !MOV SrcStartByte, AX
+    !MOV AX, DestX
+    !SHR AX, 2              ; DestX/4
+    !MOV DestStartByte, AX
     ByteWidth = (Width + 3) \ 4  ' Round up to byte boundary
     
     ' Process each plane separately for proper Mode-X copying
@@ -823,13 +813,15 @@ SUB MODEX_LineDraw(BYVAL X1 AS WORD, BYVAL Y1 AS WORD, BYVAL X2 AS WORD, BYVAL Y
     
     ' Draw line using Bresenham's algorithm with Mode-X optimizations
     DO
-        ' Calculate plane and offset for current pixel using lookup tables
+        ' Calculate plane and offset for current pixel using fast assembly
         PlaneNumber = CurrentX AND 3
-        IF CurrentX <= 1023 THEN
-            ByteOffset = CurrentY * ModeXSystemContext.LogicalWidth + ByteDivideTable(CurrentX)
-        ELSE
-            ByteOffset = CurrentY * ModeXSystemContext.LogicalWidth + (CurrentX \ 4)  ' Fallback for large CurrentX
-        END IF
+        
+        ' Ultra-fast CurrentX/4 using bit shift
+        !MOV AX, CurrentX
+        !SHR AX, 2              ; Divide by 4
+        !MOV BX, AX             ; Store CurrentX/4
+        
+        ByteOffset = CurrentY * ModeXSystemContext.LogicalWidth + BX
         BitMask = PlaneMaskTable(PlaneNumber)
         
         ' Set plane select register
@@ -1198,16 +1190,13 @@ SUB MODEX_FastFill(BYVAL X1 AS WORD, BYVAL Y1 AS WORD, BYVAL X2 AS WORD, BYVAL Y
     IF X1 > X2 THEN SWAP X1, X2
     IF Y1 > Y2 THEN SWAP Y1, Y2
     
-    IF X1 <= 1023 THEN
-        StartByte = ByteDivideTable(X1)
-    ELSE
-        StartByte = X1 \ 4  ' Fallback for large X1
-    END IF
-    IF X2 <= 1023 THEN
-        EndByte = ByteDivideTable(X2)
-    ELSE
-        EndByte = X2 \ 4  ' Fallback for large X2
-    END IF
+    ' Ultra-fast division using bit shifts
+    !MOV AX, X1
+    !SHR AX, 2              ; X1/4
+    !MOV StartByte, AX
+    !MOV AX, X2
+    !SHR AX, 2              ; X2/4
+    !MOV EndByte, AX
     ByteWidth = EndByte - StartByte + 1
     
     ' Enable all planes for writing

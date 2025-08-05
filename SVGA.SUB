@@ -268,6 +268,34 @@ FUNCTION GETSCALE (BYVAL ScaleType AS BYTE, BYVAL Unused AS BYTE) AS WORD
 END FUNCTION
 
 ' =============================================================================
+' Virtual Screen and Viewport Management Functions
+' =============================================================================
+
+' =============================================================================
+' Set virtual screen dimensions (wrapper for Virtual_SetWindow)
+' Parameters:
+'   MaxX - Virtual screen width (BYVAL)
+'   MaxY - Virtual screen height (BYVAL)
+' Returns: Nothing
+' Note: Sets up virtual coordinate system larger than physical screen
+' =============================================================================
+SUB SETVGAWINDOW(BYVAL MaxX AS WORD, BYVAL MaxY AS WORD)
+    CALL Virtual_SetWindow(MaxX, MaxY)
+END SUB
+
+' =============================================================================
+' Set viewport/clipping region (wrapper for Virtual_SetViewport)
+' Parameters:
+'   X1, Y1 - Top-left corner of viewport (BYVAL)
+'   X2, Y2 - Bottom-right corner of viewport (BYVAL)
+' Returns: Nothing
+' Note: All subsequent drawing operations will be clipped to this region
+' =============================================================================
+SUB SETVGAVIEW(BYVAL X1 AS WORD, BYVAL Y1 AS WORD, BYVAL X2 AS WORD, BYVAL Y2 AS WORD)
+    CALL Virtual_SetViewport(X1, Y1, X2, Y2)
+END SUB
+
+' =============================================================================
 ' Library cleanup and finalization
 ' Parameters: None
 ' Returns: Nothing
