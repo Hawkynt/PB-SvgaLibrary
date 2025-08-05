@@ -20,15 +20,29 @@
 SUB VGA_PutPixel(BYVAL X AS WORD, BYVAL Y AS WORD, BYVAL Color AS BYTE)
     ' Ultra-fast assembly optimized pixel write for Mode 13h
     !PUSH ES
-    !MOV AX, &HA000
-    !MOV ES, AX              ; ES = A000h (VGA memory segment)
-    !MOV AX, Y
-    !MOV BX, 320             ; Bytes per line
-    !MUL BX                  ; AX = Y * 320
-    !ADD AX, X               ; AX = Y * 320 + X (pixel offset)
-    !MOV BX, AX              ; BX = pixel offset
-    !MOV AL, Color           ; AL = color value
-    !MOV ES:[BX], AL         ; Write pixel to VGA memory
+
+    ' Hopefully this is loaded in parallel
+    !MOV BX, Y               ; Start: Y → BX
+    !MOV AX, &HA000          ; Parallel: preload A000h in AX
+
+    ' While copying DX, we may as well start fetching from memory again
+    !MOV DX, BX              ; Copy Y to DX for parallel shift path
+    !MOV CX, X               ; In parallel: X → CX
+
+    ' Now we sadly block the shifter two times but we try get the mov in parallel
+    !SHL BX, 8               ; BX = Y * 256
+    !MOV ES, AX              ; Now set ES (last use of AX)
+
+    !SHL DX, 6               ; DX = Y * 64
+    !MOV AL, Color           ; In parallel: load color to AL
+    
+    ' now here's a data dependency that keeps us waiting
+    !ADD BX, DX              ; BX = Y * 320
+    !ADD BX, CX              ; Final offset
+
+    ' at least we already got ES and CL setup so we no longer waste cycles
+    !MOV ES:[BX], AL         ; Store pixel
+
     !POP ES
 END SUB
 
@@ -41,17 +55,26 @@ END SUB
 FUNCTION VGA_GetPixel(BYVAL X AS WORD, BYVAL Y AS WORD) AS BYTE
     ' Ultra-fast assembly optimized pixel read for Mode 13h
     DIM PixelValue AS BYTE
-    
+        
     !PUSH ES
-    !MOV AX, &HA000
-    !MOV ES, AX              ; ES = A000h (VGA memory segment)
-    !MOV AX, Y
-    !MOV BX, 320             ; Bytes per line
-    !MUL BX                  ; AX = Y * 320
-    !ADD AX, X               ; AX = Y * 320 + X (pixel offset)
-    !MOV BX, AX              ; BX = pixel offset
-    !MOV AL, ES:[BX]         ; Read pixel from VGA memory
+
+    !MOV BX, Y               ; BX = Y
+    !MOV AX, &HA000          ; Prepare segment early
+    !MOV DX, BX              ; DX = Y (copy for parallel shift path)
+    !MOV CX, X               ; CX = X
+
+    !SHL BX, 8               ; BX = Y * 256
+    !MOV ES, AX              ; Now set ES = A000h
+
+    !SHL DX, 6               ; DX = Y * 64
+                            ; interleaved: no pressure here
+
+    !ADD BX, DX              ; BX = Y * 320
+    !ADD BX, CX              ; BX = Y * 320 + X
+
+    !MOV AL, ES:[BX]         ; Read pixel
     !MOV PixelValue, AL      ; Store result
+
     !POP ES
     
     VGA_GetPixel = PixelValue
