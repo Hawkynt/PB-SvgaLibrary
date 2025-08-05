@@ -97,6 +97,21 @@ TYPE ScaleContext
     YScaleMax AS WORD           ' Maximum Y scale
 END TYPE
 
+' Function Pointer Dispatch Table
+TYPE DispatchTable
+    PutPixel AS DWORD           ' Pointer to mode-specific PutPixel
+    GetPixel AS DWORD           ' Pointer to mode-specific GetPixel
+    HLine AS DWORD              ' Pointer to mode-specific HLine
+    VLine AS DWORD              ' Pointer to mode-specific VLine
+    LineDraw AS DWORD           ' Pointer to mode-specific LineDraw
+    FillRect AS DWORD           ' Pointer to mode-specific FillRect
+    DrawRect AS DWORD           ' Pointer to mode-specific DrawRect
+    DrawCircle AS DWORD         ' Pointer to mode-specific DrawCircle
+    FillCircle AS DWORD         ' Pointer to mode-specific FillCircle
+    ClearScreen AS DWORD        ' Pointer to mode-specific ClearScreen
+    CopyBlock AS DWORD          ' Pointer to mode-specific CopyBlock
+END TYPE
+
 ' Window Management
 TYPE WindowContext
     Current AS BYTE             ' Current window ID
@@ -116,6 +131,7 @@ DIM ImageSystemContext AS SHARED ImageContext
 DIM AnimationSystemContext AS SHARED AnimationContext
 DIM ScaleSystemContext AS SHARED ScaleContext
 DIM WindowSystemContext AS SHARED WindowContext
+DIM SVGADispatch AS SHARED DispatchTable
 
 ' Initialize default values
 SUB InitializeSVGAContexts

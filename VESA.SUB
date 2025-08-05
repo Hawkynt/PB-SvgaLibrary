@@ -25,6 +25,7 @@ SUB SETRES (BYVAL XRes AS WORD, BYVAL YRes AS WORD, BYVAL Colors AS WORD)
     IF (XRes = 320) AND (YRes = 200) AND (Colors = 256) THEN
         CALL SETVGA(13)
         VESASystemContext.CurrentMode = %SVGA_MODE13
+        CALL InitDispatchTable  ' Update function pointers for mode 13h
         EXIT SUB
     END IF
     
@@ -65,6 +66,7 @@ SUB SETRES (BYVAL XRes AS WORD, BYVAL YRes AS WORD, BYVAL Colors AS WORD)
         IF XRes = ModeXRes AND YRes = ModeYRes AND Colors = ModeColors THEN
             CALL SETVGA(ModeNumber)
             VESASystemContext.CurrentMode = %SVGA_VESA
+            CALL InitDispatchTable  ' Update function pointers for VESA mode
             EXIT SUB
         END IF
         
@@ -114,6 +116,7 @@ SUB SETRES (BYVAL XRes AS WORD, BYVAL YRes AS WORD, BYVAL Colors AS WORD)
     IF BestMode > 0 THEN
         CALL SETVGA(BestMode)
         VESASystemContext.CurrentMode = %SVGA_VESA
+        CALL InitDispatchTable  ' Update function pointers for VESA mode
         ' Set up coordinate scaling for simulation
         VESASystemContext.XDecrease = BestXDiff / 2
         VESASystemContext.YDecrease = BestYDiff / 2
@@ -121,6 +124,7 @@ SUB SETRES (BYVAL XRes AS WORD, BYVAL YRes AS WORD, BYVAL Colors AS WORD)
         ' Fallback to mode 13h if no suitable mode found
         CALL SETVGA(13)
         VESASystemContext.CurrentMode = %SVGA_MODE13
+        CALL InitDispatchTable  ' Update function pointers for mode 13h
         EXIT SUB
     END IF
     
@@ -134,7 +138,7 @@ SUB SETRES (BYVAL XRes AS WORD, BYVAL YRes AS WORD, BYVAL Colors AS WORD)
     
     IF (AX AND &HFFFF) <> &H4F THEN
         ' VESA not supported, try Mode-X fallback
-        CALL SETMODEXFALLBACK(XRes, YRes, Colors)
+        CALL ModeX_SetFallback(XRes, YRes, Colors)
         EXIT SUB
     END IF
     
@@ -275,7 +279,7 @@ FUNCTION GETVESAMODE (BYVAL XRes AS WORD, BYVAL YRes AS WORD, BYVAL Colors AS WO
 END FUNCTION
 
 ' =============================================================================
-' Set VESA windowing for virtual screens larger than physical resolution
+' Set VESA windowing for virtual screens (wrapper for Virtual_SetWindow)
 ' Parameters:
 '   MaxX - Virtual screen width (BYVAL)
 '   MaxY - Virtual screen height (BYVAL)
@@ -283,25 +287,11 @@ END FUNCTION
 ' Note: Sets up virtual coordinate system larger than physical screen
 ' =============================================================================
 SUB SETVGAWINDOW(BYVAL MaxX AS WORD, BYVAL MaxY AS WORD)
-    ScaleSystemContext.XScaleMax = MaxX
-    ScaleSystemContext.YScaleMax = MaxY
-    
-    ' Calculate scaling factors
-    IF MaxX > SVGAScreenContext.XRes THEN
-        ScaleSystemContext.XScale = SVGAScreenContext.XRes / MaxX
-    ELSE
-        ScaleSystemContext.XScale = 1
-    END IF
-    
-    IF MaxY > SVGAScreenContext.YRes THEN
-        ScaleSystemContext.YScale = SVGAScreenContext.YRes / MaxY
-    ELSE
-        ScaleSystemContext.YScale = 1
-    END IF
+    CALL Virtual_SetWindow(MaxX, MaxY)
 END SUB
 
 ' =============================================================================
-' Set viewport/clipping region for drawing operations
+' Set viewport/clipping region (wrapper for Virtual_SetViewport)
 ' Parameters:
 '   X1, Y1 - Top-left corner of viewport (BYVAL)
 '   X2, Y2 - Bottom-right corner of viewport (BYVAL)
@@ -309,11 +299,7 @@ END SUB
 ' Note: All subsequent drawing operations will be clipped to this region
 ' =============================================================================
 SUB SETVGAVIEW(BYVAL X1 AS WORD, BYVAL Y1 AS WORD, BYVAL X2 AS WORD, BYVAL Y2 AS WORD)
-    WindowSystemContext.X1 = X1
-    WindowSystemContext.Y1 = Y1
-    WindowSystemContext.X2 = X2
-    WindowSystemContext.Y2 = Y2
-    WindowSystemContext.Current = 1  ' Mark viewport as active
+    CALL Virtual_SetViewport(X1, Y1, X2, Y2)
 END SUB
 
 ' =============================================================================
@@ -344,3 +330,446 @@ SUB VGAINFO
     PRINT "Video Memory: "; VideoMemory * 64; "KB"
     PRINT "Graphics modes supported by current hardware."
 END SUB
+
+' =============================================================================
+' VESA Drawing Primitives - Optimized for VESA linear and banked modes
+' =============================================================================
+
+' =============================================================================
+' Set pixel in VESA mode (optimized for banking)
+' Parameters:
+'   X, Y - Pixel coordinates (BYVAL)
+'   Color - Pixel color value (BYVAL)
+' Returns: Nothing
+' Note: Handles VESA window switching automatically
+' =============================================================================
+SUB VESA_PutPixel(BYVAL X AS WORD, BYVAL Y AS WORD, BYVAL Color AS BYTE)
+    DIM ByteOffset AS LONG, WindowNumber AS WORD, PixelOffset AS WORD
+    
+    ' Calculate pixel address
+    IF SVGAScreenContext.ColorDepth = 8 THEN
+        ' 8-bit color mode
+        ByteOffset = Y * SVGAScreenContext.BytesPerLine + X
+        WindowNumber = ByteOffset \ 65536  ' 64K window size
+        PixelOffset = ByteOffset MOD 65536
+        
+        ' Switch VESA window if needed
+        IF WindowNumber <> SVGAScreenContext.WindowNumber THEN
+            CALL SETVESAWINDOW(WindowNumber)
+            SVGAScreenContext.WindowNumber = WindowNumber
+        END IF
+        
+        ' Set pixel using direct memory access
+        DEF SEG = &HA000
+        POKE PixelOffset, Color
+        DEF SEG
+    ELSE
+        ' Fallback for other color depths
+        DEF SEG = &HA000
+        POKE Y * SVGAScreenContext.BytesPerLine + X, Color
+        DEF SEG
+    END IF
+END SUB
+
+' =============================================================================
+' Get pixel from VESA mode
+' Parameters:
+'   X, Y - Pixel coordinates (BYVAL)
+' Returns: Pixel color value
+' =============================================================================
+FUNCTION VESA_GetPixel(BYVAL X AS WORD, BYVAL Y AS WORD) AS BYTE
+    DIM ByteOffset AS LONG, WindowNumber AS WORD, PixelOffset AS WORD
+    
+    IF SVGAScreenContext.ColorDepth = 8 THEN
+        ByteOffset = Y * SVGAScreenContext.BytesPerLine + X
+        WindowNumber = ByteOffset \ 65536
+        PixelOffset = ByteOffset MOD 65536
+        
+        ' Switch VESA window if needed
+        IF WindowNumber <> SVGAScreenContext.WindowNumber THEN
+            CALL SETVESAWINDOW(WindowNumber)
+            SVGAScreenContext.WindowNumber = WindowNumber
+        END IF
+        
+        ' Get pixel value
+        DEF SEG = &HA000
+        VESA_GetPixel = PEEK(PixelOffset)
+        DEF SEG
+    ELSE
+        ' Fallback
+        DEF SEG = &HA000
+        VESA_GetPixel = PEEK(Y * SVGAScreenContext.BytesPerLine + X)
+        DEF SEG
+    END IF
+END FUNCTION
+
+' =============================================================================
+' Draw horizontal line in VESA mode (optimized for banking)
+' Parameters:
+'   X1, X2 - Start and end X coordinates (BYVAL)
+'   Y - Y coordinate (BYVAL)
+'   Color - Line color (BYVAL)
+' Returns: Nothing
+' Note: Optimized to minimize window switches
+' =============================================================================
+SUB VESA_HLine(BYVAL X1 AS WORD, BYVAL X2 AS WORD, BYVAL Y AS WORD, BYVAL Color AS BYTE)
+    DIM StartOffset AS LONG, EndOffset AS LONG
+    DIM CurrentWindow AS WORD, BytesInWindow AS WORD
+    DIM LineLength AS WORD, CurrentX AS WORD
+    DIM ColorWord AS WORD, ColorDWord AS LONG
+    DIM WindowOffset AS WORD
+    
+    ' Ensure X1 <= X2
+    IF X1 > X2 THEN SWAP X1, X2
+    
+    StartOffset = Y * SVGAScreenContext.BytesPerLine + X1
+    EndOffset = Y * SVGAScreenContext.BytesPerLine + X2
+    LineLength = X2 - X1 + 1
+    CurrentX = X1
+    
+    ' Prepare color patterns for faster filling
+    ColorWord = (Color * 256) + Color      ' AABBH pattern
+    ColorDWord = (ColorWord * 65536&) + ColorWord  ' AABBAABBH pattern
+    
+    ' Draw line across windows if necessary
+    DO WHILE CurrentX <= X2
+        CurrentWindow = StartOffset \ 65536
+        
+        ' Switch to correct window
+        IF CurrentWindow <> SVGAScreenContext.WindowNumber THEN
+            CALL SETVESAWINDOW(CurrentWindow)
+            SVGAScreenContext.WindowNumber = CurrentWindow
+        END IF
+        
+        ' Calculate how many pixels we can draw in this window
+        BytesInWindow = 65536 - (StartOffset MOD 65536)
+        IF BytesInWindow > (X2 - CurrentX + 1) THEN
+            BytesInWindow = X2 - CurrentX + 1
+        END IF
+        
+        WindowOffset = StartOffset AND &HFFFF  ' Offset within current window
+        
+        ' Draw pixels in current window using optimized WORD fills
+        !PUSH ES
+        !MOV AX, &HA000
+        !MOV ES, AX
+        !MOV BX, WindowOffset
+        !MOV CX, BytesInWindow
+        
+        ' Handle odd starting pixel if not word-aligned
+        !TEST BX, 1             ; Check if starting address is odd
+        !JZ VESAHLineWordAlign  ; Jump if even (word-aligned)
+        !CMP CX, 0              ; Check if we have pixels to draw
+        !JZ VESAHLineDone       ; Done if no pixels
+        !MOV AL, Color
+        !MOV ES:[BX], AL        ; Fill first pixel
+        !INC BX
+        !DEC CX
+        !JZ VESAHLineDone       ; Done if only one pixel
+        
+        VESAHLineWordAlign:
+        ' Fill using WORD writes (2 pixels at a time)
+        !MOV DX, CX
+        !SHR CX, 1              ; Divide by 2 for word count
+        !JZ VESAHLineRemainder  ; Jump if less than 2 pixels left
+        !MOV AX, ColorWord
+        
+        VESAHLineWordFill:
+        !MOV ES:[BX], AX        ; Write 2 pixels at once
+        !ADD BX, 2
+        !LOOP VESAHLineWordFill
+        
+        VESAHLineRemainder:
+        ' Handle remaining odd pixel
+        !TEST DX, 1             ; Check if original length was odd
+        !JZ VESAHLineDone       ; Jump if no remainder
+        !MOV AL, Color
+        !MOV ES:[BX], AL        ; Fill last pixel
+        
+        VESAHLineDone:
+        !POP ES
+        
+        ' Move to next section
+        CurrentX = CurrentX + BytesInWindow
+        StartOffset = StartOffset + BytesInWindow
+    LOOP
+END SUB
+
+' =============================================================================
+' Draw vertical line in VESA mode (optimized for minimal window switches)
+' Parameters:
+'   X - X coordinate (BYVAL)
+'   Y1, Y2 - Start and end Y coordinates (BYVAL)
+'   Color - Line color (BYVAL)
+' Returns: Nothing
+' Note: Pre-calculates window boundaries to minimize window switching overhead
+' =============================================================================
+SUB VESA_VLine(BYVAL X AS WORD, BYVAL Y1 AS WORD, BYVAL Y2 AS WORD, BYVAL Color AS BYTE)
+    DIM StartOffset AS LONG, EndOffset AS LONG, CurrentOffset AS LONG
+    DIM CurrentWindow AS WORD, WindowStartY AS WORD, WindowEndY AS WORD
+    DIM BytesPerLine AS WORD, PixelsPerWindow AS WORD
+    DIM WindowOffset AS WORD, PixelCount AS WORD
+    DIM CurrentY AS WORD
+    
+    ' Ensure Y1 <= Y2
+    IF Y1 > Y2 THEN SWAP Y1, Y2
+    
+    BytesPerLine = SVGAScreenContext.BytesPerLine
+    PixelsPerWindow = 65536 \ BytesPerLine  ' How many scanlines fit in a 64K window
+    
+    ' Calculate start and end offsets
+    StartOffset = Y1 * BytesPerLine + X
+    EndOffset = Y2 * BytesPerLine + X
+    CurrentOffset = StartOffset
+    CurrentY = Y1
+    
+    ' Process line by windows to minimize window switches
+    DO WHILE CurrentY <= Y2
+        CurrentWindow = CurrentOffset \ 65536
+        
+        ' Calculate Y range that fits in current window
+        WindowStartY = CurrentY
+        WindowEndY = ((CurrentWindow + 1) * 65536 - X - 1) \ BytesPerLine
+        IF WindowEndY > Y2 THEN WindowEndY = Y2
+        
+        ' Switch to current window once
+        IF CurrentWindow <> SVGAScreenContext.WindowNumber THEN
+            CALL SETVESAWINDOW(CurrentWindow)
+            SVGAScreenContext.WindowNumber = CurrentWindow
+        END IF
+        
+        ' Draw all pixels in this window using fast assembly
+        WindowOffset = CurrentOffset AND &HFFFF  ' Offset within window
+        PixelCount = WindowEndY - WindowStartY + 1
+        
+        !PUSH ES
+        !MOV AX, &HA000
+        !MOV ES, AX
+        !MOV BX, WindowOffset
+        !MOV AL, Color
+        !MOV DX, BytesPerLine    ; Step between scanlines
+        !MOV CX, PixelCount
+        
+        ' Optimized vertical line loop within window
+        VESAVLineWindowLoop:
+        !MOV ES:[BX], AL
+        !ADD BX, DX             ; Move to next scanline
+        !LOOP VESAVLineWindowLoop
+        
+        !POP ES
+        
+        ' Move to next window
+        CurrentY = WindowEndY + 1
+        CurrentOffset = CurrentY * BytesPerLine + X
+    LOOP
+END SUB
+
+' =============================================================================
+' Draw line between two points in VESA mode
+' Parameters:
+'   X1, Y1 - Starting point coordinates (BYVAL)
+'   X2, Y2 - Ending point coordinates (BYVAL)
+'   Color - Line color (BYVAL)
+' Returns: Nothing
+' Note: Uses optimized routines for horizontal/vertical lines
+' =============================================================================
+SUB VESA_LineDraw(BYVAL X1 AS WORD, BYVAL Y1 AS WORD, BYVAL X2 AS WORD, BYVAL Y2 AS WORD, BYVAL Color AS BYTE)
+    ' Check for horizontal line
+    IF Y1 = Y2 THEN
+        CALL VESA_HLine(X1, X2, Y1, Color)
+        EXIT SUB
+    END IF
+    
+    ' Check for vertical line
+    IF X1 = X2 THEN
+        CALL VESA_VLine(X1, Y1, Y2, Color)
+        EXIT SUB
+    END IF
+    
+    ' Diagonal line - use Bresenham's algorithm
+    DIM DeltaX AS INTEGER, DeltaY AS INTEGER, StepX AS INTEGER, StepY AS INTEGER
+    DIM ErrorTerm AS INTEGER, CurrentX AS WORD, CurrentY AS WORD
+    
+    ' Calculate deltas and step directions
+    DeltaX = ABS(X2 - X1)
+    DeltaY = ABS(Y2 - Y1)
+    
+    IF X1 < X2 THEN StepX = 1 ELSE StepX = -1
+    IF Y1 < Y2 THEN StepY = 1 ELSE StepY = -1
+    
+    ' Initialize error term
+    ErrorTerm = DeltaX - DeltaY
+    
+    ' Set starting position
+    CurrentX = X1
+    CurrentY = Y1
+    
+    ' Draw line using Bresenham's algorithm
+    DO
+        CALL VESA_PutPixel(CurrentX, CurrentY, Color)
+        
+        ' Check if we've reached the end point
+        IF CurrentX = X2 AND CurrentY = Y2 THEN EXIT DO
+        
+        ' Calculate next point
+        DIM Error2 AS INTEGER
+        Error2 = ErrorTerm * 2
+        
+        IF Error2 > -DeltaY THEN
+            ErrorTerm = ErrorTerm - DeltaY
+            CurrentX = CurrentX + StepX
+        END IF
+        
+        IF Error2 < DeltaX THEN
+            ErrorTerm = ErrorTerm + DeltaX
+            CurrentY = CurrentY + StepY
+        END IF
+    LOOP
+END SUB
+
+' =============================================================================
+' Draw filled rectangle in VESA mode
+' Parameters:
+'   X1, Y1 - Top-left corner (BYVAL)
+'   X2, Y2 - Bottom-right corner (BYVAL)
+'   Color - Fill color (BYVAL)
+' Returns: Nothing
+' Note: Uses optimized horizontal line fills
+' =============================================================================
+SUB VESA_FillRect(BYVAL X1 AS WORD, BYVAL Y1 AS WORD, BYVAL X2 AS WORD, BYVAL Y2 AS WORD, BYVAL Color AS BYTE)
+    DIM ScanLine AS WORD
+    
+    ' Ensure coordinates are ordered
+    IF X1 > X2 THEN SWAP X1, X2
+    IF Y1 > Y2 THEN SWAP Y1, Y2
+    
+    ' Fill rectangle using horizontal lines
+    FOR ScanLine = Y1 TO Y2
+        CALL VESA_HLine(X1, X2, ScanLine, Color)
+    NEXT ScanLine
+END SUB
+
+' =============================================================================
+' Draw rectangle outline in VESA mode
+' Parameters:
+'   X1, Y1 - Top-left corner (BYVAL)
+'   X2, Y2 - Bottom-right corner (BYVAL)
+'   Color - Border color (BYVAL)
+' Returns: Nothing
+' =============================================================================
+SUB VESA_DrawRect(BYVAL X1 AS WORD, BYVAL Y1 AS WORD, BYVAL X2 AS WORD, BYVAL Y2 AS WORD, BYVAL Color AS BYTE)
+    ' Ensure coordinates are ordered
+    IF X1 > X2 THEN SWAP X1, X2
+    IF Y1 > Y2 THEN SWAP Y1, Y2
+    
+    ' Draw four sides
+    CALL VESA_HLine(X1, X2, Y1, Color)  ' Top
+    CALL VESA_HLine(X1, X2, Y2, Color)  ' Bottom
+    CALL VESA_VLine(X1, Y1, Y2, Color)  ' Left
+    CALL VESA_VLine(X2, Y1, Y2, Color)  ' Right
+END SUB
+
+' =============================================================================
+' Clear VESA screen to specified color
+' Parameters:
+'   Color - Fill color (BYVAL)
+' Returns: Nothing
+' Note: Optimized for VESA banking
+' =============================================================================
+SUB VESA_ClearScreen(BYVAL Color AS BYTE)
+    DIM TotalBytes AS LONG, WindowNumber AS WORD
+    DIM CurrentWindow AS WORD
+    DIM ColorWord AS WORD, ColorDWord AS LONG
+    
+    TotalBytes = SVGAScreenContext.BytesPerLine * SVGAScreenContext.YRes
+    CurrentWindow = 0
+    
+    ' Prepare color patterns for faster filling
+    ColorWord = (Color * 256) + Color      ' AABBH pattern
+    ColorDWord = (ColorWord * 65536&) + ColorWord  ' AABBAABBH pattern
+    
+    ' Fill screen using VESA banking with optimized fills
+    DO WHILE TotalBytes > 0
+        CALL SETVESAWINDOW(CurrentWindow)
+        SVGAScreenContext.WindowNumber = CurrentWindow
+        
+        DIM BytesToFill AS WORD
+        IF TotalBytes > 65536 THEN
+            BytesToFill = 65536
+        ELSE
+            BytesToFill = TotalBytes
+        END IF
+        
+        ' Fast fill using WORD writes where possible
+        !PUSH ES
+        !MOV AX, &HA000
+        !MOV ES, AX
+        !XOR BX, BX             ; Start at offset 0 of the window
+        !MOV CX, BytesToFill
+        
+        ' Handle odd starting byte if not word-aligned
+        !TEST BX, 1             ; Check if starting address is odd (always 0 here)
+        !JZ VESAClearWordAlign  ; Jump if even (word-aligned)
+        !MOV AL, Color
+        !MOV ES:[BX], AL        ; Fill first byte
+        !INC BX
+        !DEC CX
+        !JZ VESAClearDone       ; Done if only one byte
+        
+        VESAClearWordAlign:
+        ' Fill using WORD writes (2 bytes at a time)
+        !MOV DX, CX
+        !SHR CX, 1              ; Divide by 2 for word count
+        !JZ VESAClearRemainder  ; Jump if less than 2 bytes left
+        !MOV AX, ColorWord
+        
+        VESAClearWordFill:
+        !MOV ES:[BX], AX        ; Write 2 bytes at once
+        !ADD BX, 2
+        !LOOP VESAClearWordFill
+        
+        VESAClearRemainder:
+        ' Handle remaining odd byte
+        !TEST DX, 1             ; Check if original length was odd
+        !JZ VESAClearDone       ; Jump if no remainder
+        !MOV AL, Color
+        !MOV ES:[BX], AL        ; Fill last byte
+        
+        VESAClearDone:
+        !POP ES
+        
+        TotalBytes = TotalBytes - BytesToFill
+        CurrentWindow = CurrentWindow + 1
+    LOOP
+END SUB
+
+' =============================================================================
+' Fast block copy in VESA mode (optimized for window batching)
+' Parameters:
+'   SrcX, SrcY - Source coordinates (BYVAL)
+'   DestX, DestY - Destination coordinates (BYVAL)
+'   Width, Height - Block dimensions (BYVAL)
+' Returns: Nothing
+' Note: Pre-calculates window operations to minimize banking overhead
+' =============================================================================
+SUB VESA_CopyBlock(BYVAL SrcX AS WORD, BYVAL SrcY AS WORD, BYVAL DestX AS WORD, BYVAL DestY AS WORD, BYVAL Width AS WORD, BYVAL Height AS WORD)
+    DIM CurrentY AS WORD, CurrentX AS WORD
+    DIM SrcOffset AS LONG, DestOffset AS LONG
+    DIM SrcWindow AS WORD, DestWindow AS WORD, LastSrcWindow AS WORD, LastDestWindow AS WORD
+    DIM BytesPerLine AS WORD, SrcWindowOffset AS WORD, DestWindowOffset AS WORD
+    DIM ScanlineData AS STRING
+    
+    BytesPerLine = SVGAScreenContext.BytesPerLine
+    LastSrcWindow = -1  ' Force initial window switch
+    LastDestWindow = -1
+    
+    ' Process block scanline by scanline with window optimization
+    FOR CurrentY = 0 TO Height - 1
+        ' Calculate source and destination offsets for this scanline
+        SrcOffset = (SrcY + CurrentY) * BytesPerLine + SrcX
+        DestOffset = (DestY + CurrentY) * BytesPerLine + DestX
+        
+        SrcWindow = SrcOffset \\ 65536
+        DestWindow = DestOffset \\ 65536
+        
+        ' Check if we need to copy within same window (optimization opportunity)\n        IF SrcWindow = DestWindow AND Width <= (65536 - (SrcOffset MOD 65536)) THEN\n            ' Source and destination are in same window - ultra-fast copy\n            IF SrcWindow <> LastSrcWindow THEN\n                CALL SETVESAWINDOW(SrcWindow)\n                SVGAScreenContext.WindowNumber = SrcWindow\n                LastSrcWindow = SrcWindow\n            END IF\n            \n            SrcWindowOffset = SrcOffset AND &HFFFF\n            DestWindowOffset = DestOffset AND &HFFFF\n            \n            ' Fast intra-window block copy using assembly\n            !PUSH ES\n            !PUSH DS\n            !MOV AX, &HA000\n            !MOV ES, AX\n            !MOV DS, AX\n            !MOV SI, SrcWindowOffset\n            !MOV DI, DestWindowOffset\n            !MOV CX, Width\n            !CLD                    ; Forward copy\n            \n            ' Copy entire scanline at once\n            VESAIntraWindowCopy:\n            !LODSB                  ; Load from DS:SI\n            !STOSB                  ; Store to ES:DI\n            !LOOP VESAIntraWindowCopy\n            \n            !POP DS\n            !POP ES\n        ELSE\n            ' Cross-window copy or complex case - use optimized pixel-by-pixel\n            CALL VESA_CopyScanline(SrcX, SrcY + CurrentY, DestX, DestY + CurrentY, Width)\n        END IF\n    NEXT CurrentY\nEND SUB\n\n' =============================================================================\n' Copy single scanline with window optimization\n' =============================================================================\nSUB VESA_CopyScanline(BYVAL SrcX AS WORD, BYVAL SrcY AS WORD, BYVAL DestX AS WORD, BYVAL DestY AS WORD, BYVAL Width AS WORD)\n    DIM CurrentX AS WORD, PixelColor AS BYTE\n    DIM SrcOffset AS LONG, DestOffset AS LONG\n    DIM SrcWindow AS WORD, DestWindow AS WORD\n    DIM LastSrcWindow AS WORD, LastDestWindow AS WORD\n    \n    LastSrcWindow = -1\n    LastDestWindow = -1\n    \n    ' Optimized scanline copy with minimal window switches\n    FOR CurrentX = 0 TO Width - 1\n        SrcOffset = SrcY * SVGAScreenContext.BytesPerLine + SrcX + CurrentX\n        SrcWindow = SrcOffset \\ 65536\n        \n        ' Switch source window only when needed\n        IF SrcWindow <> LastSrcWindow THEN\n            CALL SETVESAWINDOW(SrcWindow)\n            SVGAScreenContext.WindowNumber = SrcWindow\n            LastSrcWindow = SrcWindow\n        END IF\n        \n        ' Read pixel from current window\n        !PUSH ES\n        !MOV AX, &HA000\n        !MOV ES, AX\n        !MOV BX, SrcOffset\n        !AND BX, &HFFFF         ; Window offset\n        !MOV AL, ES:[BX]\n        !MOV PixelColor, AL\n        !POP ES\n        \n        ' Write pixel to destination\n        DestOffset = DestY * SVGAScreenContext.BytesPerLine + DestX + CurrentX\n        DestWindow = DestOffset \\ 65536\n        \n        ' Switch destination window only when needed\n        IF DestWindow <> LastDestWindow AND DestWindow <> LastSrcWindow THEN\n            CALL SETVESAWINDOW(DestWindow)\n            SVGAScreenContext.WindowNumber = DestWindow\n            LastDestWindow = DestWindow\n        END IF\n        \n        ' Write pixel to current window\n        !PUSH ES\n        !MOV AX, &HA000\n        !MOV ES, AX\n        !MOV BX, DestOffset\n        !AND BX, &HFFFF         ; Window offset\n        !MOV AL, PixelColor\n        !MOV ES:[BX], AL\n        !POP ES\n    NEXT CurrentX\nEND SUB

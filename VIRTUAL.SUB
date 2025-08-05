@@ -1,0 +1,228 @@
+' =============================================================================
+' VIRTUAL.SUB - Virtual Screen Coordinate System Management
+' =============================================================================
+' Contains functions for handling virtual coordinates, scaling, windowing,
+' and viewport management that work independently of physical graphics modes
+' =============================================================================
+
+' =============================================================================
+' Virtual Coordinate System Functions
+' =============================================================================
+
+' =============================================================================
+' Set coordinate scaling factors for virtual screen
+' Parameters:
+'   XScale - X coordinate scaling factor (BYVAL)
+'   YScale - Y coordinate scaling factor (BYVAL)
+' Returns: Nothing
+' Note: Creates virtual coordinate system larger or smaller than physical screen
+' =============================================================================
+SUB Virtual_SetScale(BYVAL XScale AS WORD, BYVAL YScale AS WORD)
+    ScaleSystemContext.XScale = XScale
+    ScaleSystemContext.YScale = YScale
+    
+    ' Update maximum scaled coordinates
+    ScaleSystemContext.XScaleMax = SVGAScreenContext.XRes \ XScale
+    ScaleSystemContext.YScaleMax = SVGAScreenContext.YRes \ YScale
+END SUB
+
+' =============================================================================
+' Get current virtual scaling information
+' Parameters:
+'   ScaleType - Type of scale info to get: 0=XScale, 1=YScale, 2=XMax, 3=YMax (BYVAL)
+'   Unused - Unused parameter for compatibility (BYVAL)
+' Returns: Requested scale value
+' =============================================================================
+FUNCTION Virtual_GetScale(BYVAL ScaleType AS BYTE, BYVAL Unused AS BYTE) AS WORD
+    SELECT CASE ScaleType
+        CASE 0: Virtual_GetScale = ScaleSystemContext.XScale
+        CASE 1: Virtual_GetScale = ScaleSystemContext.YScale
+        CASE 2: Virtual_GetScale = ScaleSystemContext.XScaleMax
+        CASE 3: Virtual_GetScale = ScaleSystemContext.YScaleMax
+        CASE ELSE: Virtual_GetScale = 1
+    END SELECT
+END FUNCTION
+
+' =============================================================================
+' Set virtual window/viewport for coordinate mapping
+' Parameters:
+'   MaxX - Virtual screen width (BYVAL)
+'   MaxY - Virtual screen height (BYVAL)
+' Returns: Nothing
+' Note: Maps virtual coordinates to physical screen coordinates
+' =============================================================================
+SUB Virtual_SetWindow(BYVAL MaxX AS WORD, BYVAL MaxY AS WORD)
+    ScaleSystemContext.XScaleMax = MaxX
+    ScaleSystemContext.YScaleMax = MaxY
+    
+    ' Calculate scaling factors to fit virtual screen to physical screen
+    IF MaxX > SVGAScreenContext.XRes THEN
+        ScaleSystemContext.XScale = SVGAScreenContext.XRes / MaxX
+    ELSE
+        ScaleSystemContext.XScale = 1
+    END IF
+    
+    IF MaxY > SVGAScreenContext.YRes THEN
+        ScaleSystemContext.YScale = SVGAScreenContext.YRes / MaxY
+    ELSE
+        ScaleSystemContext.YScale = 1
+    END IF
+END SUB
+
+' =============================================================================
+' Set clipping viewport for drawing operations
+' Parameters:
+'   X1, Y1 - Top-left corner of viewport (BYVAL)
+'   X2, Y2 - Bottom-right corner of viewport (BYVAL)
+' Returns: Nothing
+' Note: All subsequent drawing operations will be clipped to this region
+' =============================================================================
+SUB Virtual_SetViewport(BYVAL X1 AS WORD, BYVAL Y1 AS WORD, BYVAL X2 AS WORD, BYVAL Y2 AS WORD)
+    WindowSystemContext.X1 = X1
+    WindowSystemContext.Y1 = Y1
+    WindowSystemContext.X2 = X2
+    WindowSystemContext.Y2 = Y2
+    WindowSystemContext.Current = 1  ' Mark viewport as active
+END SUB
+
+' =============================================================================
+' Disable viewport clipping
+' Parameters: None
+' Returns: Nothing
+' =============================================================================
+SUB Virtual_DisableViewport
+    WindowSystemContext.Current = 0  ' Disable viewport
+END SUB
+
+' =============================================================================
+' Convert virtual coordinates to physical coordinates
+' Parameters:
+'   VirtualX, VirtualY - Virtual coordinates (BYVAL)
+'   PhysicalX, PhysicalY - Output physical coordinates (BYREF)
+' Returns: Nothing (coordinates returned via BYREF parameters)
+' Note: Applies scaling and offset transformations
+' =============================================================================
+SUB Virtual_ToPhysical(BYVAL VirtualX AS WORD, BYVAL VirtualY AS WORD, PhysicalX AS WORD, PhysicalY AS WORD)
+    ' Apply coordinate scaling if active
+    IF ScaleSystemContext.XScale <> 1 OR ScaleSystemContext.YScale <> 1 THEN
+        PhysicalX = VirtualX * ScaleSystemContext.XScale
+        PhysicalY = VirtualY * ScaleSystemContext.YScale
+    ELSE
+        PhysicalX = VirtualX
+        PhysicalY = VirtualY
+    END IF
+    
+    ' Apply coordinate offset adjustments
+    PhysicalX = PhysicalX - VESASystemContext.XDecrease
+    PhysicalY = PhysicalY - VESASystemContext.YDecrease
+END SUB
+
+' =============================================================================
+' Check if virtual coordinates are within viewport
+' Parameters:
+'   VirtualX, VirtualY - Virtual coordinates to check (BYVAL)
+' Returns: 1 if coordinates are visible, 0 if clipped
+' =============================================================================
+FUNCTION Virtual_IsVisible(BYVAL VirtualX AS WORD, BYVAL VirtualY AS WORD) AS BYTE
+    ' Check viewport clipping if active
+    IF WindowSystemContext.Current > 0 THEN
+        IF VirtualX < WindowSystemContext.X1 OR VirtualX > WindowSystemContext.X2 THEN
+            Virtual_IsVisible = 0
+            EXIT FUNCTION
+        END IF
+        IF VirtualY < WindowSystemContext.Y1 OR VirtualY > WindowSystemContext.Y2 THEN
+            Virtual_IsVisible = 0
+            EXIT FUNCTION
+        END IF
+    END IF
+    
+    Virtual_IsVisible = 1
+END FUNCTION
+
+' =============================================================================
+' Convert physical coordinates back to virtual coordinates
+' Parameters:
+'   PhysicalX, PhysicalY - Physical coordinates (BYVAL)
+'   VirtualX, VirtualY - Output virtual coordinates (BYREF)
+' Returns: Nothing (coordinates returned via BYREF parameters)
+' Note: Reverse transformation for mouse/input coordinate mapping
+' =============================================================================
+SUB Virtual_ToVirtual(BYVAL PhysicalX AS WORD, BYVAL PhysicalY AS WORD, VirtualX AS WORD, VirtualY AS WORD)
+    ' Reverse coordinate offset adjustments
+    PhysicalX = PhysicalX + VESASystemContext.XDecrease
+    PhysicalY = PhysicalY + VESASystemContext.YDecrease
+    
+    ' Reverse coordinate scaling
+    IF ScaleSystemContext.XScale <> 1 OR ScaleSystemContext.YScale <> 1 THEN
+        VirtualX = PhysicalX \ ScaleSystemContext.XScale
+        VirtualY = PhysicalY \ ScaleSystemContext.YScale
+    ELSE
+        VirtualX = PhysicalX
+        VirtualY = PhysicalY
+    END IF
+END SUB
+
+' =============================================================================
+' Get current virtual screen dimensions
+' Parameters:
+'   VirtualWidth, VirtualHeight - Output dimensions (BYREF)
+' Returns: Nothing (dimensions returned via BYREF parameters)
+' =============================================================================
+SUB Virtual_GetDimensions(VirtualWidth AS WORD, VirtualHeight AS WORD)
+    VirtualWidth = ScaleSystemContext.XScaleMax
+    VirtualHeight = ScaleSystemContext.YScaleMax
+END SUB
+
+' =============================================================================
+' Get current viewport dimensions
+' Parameters:
+'   X1, Y1, X2, Y2 - Output viewport bounds (BYREF)
+' Returns: Nothing (bounds returned via BYREF parameters)
+' =============================================================================
+SUB Virtual_GetViewport(X1 AS WORD, Y1 AS WORD, X2 AS WORD, Y2 AS WORD)
+    X1 = WindowSystemContext.X1
+    Y1 = WindowSystemContext.Y1
+    X2 = WindowSystemContext.X2
+    Y2 = WindowSystemContext.Y2
+END SUB
+
+' =============================================================================
+' Reset virtual coordinate system to 1:1 mapping
+' Parameters: None
+' Returns: Nothing
+' =============================================================================
+SUB Virtual_Reset
+    ScaleSystemContext.XScale = 1
+    ScaleSystemContext.YScale = 1
+    ScaleSystemContext.KScale = 1
+    ScaleSystemContext.XScaleMax = SVGAScreenContext.XRes
+    ScaleSystemContext.YScaleMax = SVGAScreenContext.YRes
+    
+    VESASystemContext.XDecrease = 0
+    VESASystemContext.YDecrease = 0
+    
+    WindowSystemContext.Current = 0
+END SUB
+
+' =============================================================================
+' Set virtual coordinate offset (for scrolling)
+' Parameters:
+'   XOffset, YOffset - Offset values (BYVAL)
+' Returns: Nothing
+' Note: Useful for implementing scrolling virtual screens
+' =============================================================================
+SUB Virtual_SetOffset(BYVAL XOffset AS INTEGER, BYVAL YOffset AS INTEGER)
+    VESASystemContext.XDecrease = XOffset
+    VESASystemContext.YDecrease = YOffset
+END SUB
+
+' =============================================================================
+' Get current virtual coordinate offset
+' Parameters:
+'   XOffset, YOffset - Output offset values (BYREF)
+' Returns: Nothing (offsets returned via BYREF parameters)
+' =============================================================================
+SUB Virtual_GetOffset(XOffset AS INTEGER, YOffset AS INTEGER)
+    XOffset = VESASystemContext.XDecrease
+    YOffset = VESASystemContext.YDecrease
+END SUB
