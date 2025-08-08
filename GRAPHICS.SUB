@@ -191,13 +191,3 @@ SUB Graphics_Frame (BYVAL x1 AS WORD, BYVAL y1 AS WORD, BYVAL x2 AS WORD, BYVAL 
     CALL LINEDRAW(X2, Y2, X2, Y1, Color)  ' Right
 END SUB
 
-' =============================================================================
-' Set a single pixel
-' Parameters:
-'   X, Y - Pixel coordinates (BYVAL)
-'   Color - Pixel color (BYVAL)
-' Returns: Nothing
-' =============================================================================
-SUB Graphics_Pixel (BYVAL x AS WORD, BYVAL y AS WORD, BYVAL color AS BYTE)
-    CALL Svga_PutPixel(x, y, color)
-END SUB

@@ -86,6 +86,18 @@ FUNCTION DrawIco_GetCount(BYVAL fileName AS STRING) AS WORD
 END FUNCTION
 
 ' =============================================================================
+' Get icon size (wrapper for GetInfo with just dimensions)
+' Parameters:
+'   FileName - Icon file name (BYVAL)
+'   Width, Height - Icon dimensions (BYREF)
+' Returns: Nothing (dimensions returned via parameters)
+' =============================================================================
+SUB DrawIco_GetSize(BYVAL fileName AS STRING, width AS WORD, height AS WORD)
+    DIM colorDepth AS WORD
+    CALL DrawIco_GetInfo(fileName, 0, width, height, colorDepth)
+END SUB
+
+' =============================================================================
 ' Get icon information
 ' Parameters:
 '   FileName - Icon file name (BYVAL)
@@ -173,7 +185,7 @@ END SUB
 '   Palette - 256-color palette array (BYREF)
 ' Returns: Nothing (palette returned via parameter)
 ' =============================================================================
-SUB DrawIco_GetPalette(BYVAL fileName AS STRING, BYVAL iconIndex AS WORD, palette() AS BYTE)
+SUB DrawIco_GetPalette(BYVAL fileName AS STRING, palette() AS BYTE, BYVAL colorDepth AS BYTE)
     DIM fileHandle AS INTEGER
     DIM iconHeader AS IconHeaderType
     DIM iconEntry AS IconDirEntryType
@@ -203,6 +215,9 @@ SUB DrawIco_GetPalette(BYVAL fileName AS STRING, BYVAL iconIndex AS WORD, palett
         CLOSE fileHandle
         EXIT SUB
     END IF
+    
+    DIM iconIndex AS WORD
+    iconIndex = 0  ' Use first icon for palette
     
     IF iconIndex >= iconHeader.Count THEN iconIndex = 0
     

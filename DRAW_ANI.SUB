@@ -531,6 +531,81 @@ SUB Ani_FreeAnimation(BYVAL animHandle AS BYTE)
 END SUB
 
 ' =============================================================================
+' Standard interface wrapper for displaying ANI animations
+' Parameters:
+'   FileName - ANI file name (BYVAL)
+'   X, Y - Display position (BYVAL)
+' Returns: Nothing
+' =============================================================================
+SUB DrawAni_Show(BYVAL fileName AS STRING, BYVAL x AS WORD, BYVAL y AS WORD)
+    DIM animHandle AS BYTE
+    
+    ' Load animation
+    animHandle = Ani_LoadAnimation(fileName)
+    IF animHandle = 255 THEN EXIT SUB
+    
+    ' Play animation once
+    CALL Ani_StartAnimation(animHandle, x, y, 1, 0)
+    
+    ' Simple display loop - in a real application this would be integrated with main loop
+    DIM startTime AS LONG
+    startTime = GETTIMERTICK
+    
+    DO WHILE Ani_IsPlaying(animHandle) AND (GETTIMERTICK - startTime) < 300  ' 3 second timeout
+        CALL Ani_UpdateAnimation(animHandle, x, y)
+    LOOP
+    
+    ' Cleanup
+    CALL Ani_FreeAnimation(animHandle)
+END SUB
+
+' =============================================================================
+' Get ANI animation size (returns first frame size)
+' Parameters:
+'   FileName - ANI file name (BYVAL)
+'   Width, Height - Animation dimensions (BYREF)
+' Returns: Nothing
+' =============================================================================
+SUB DrawAni_GetSize(BYVAL fileName AS STRING, width AS WORD, height AS WORD)
+    DIM animHandle AS BYTE, frameCount AS WORD, hotX AS WORD, hotY AS WORD
+    
+    ' Initialize return values
+    width = 0
+    height = 0
+    
+    ' Load animation
+    animHandle = Ani_LoadAnimation(fileName)
+    IF animHandle = 255 THEN EXIT SUB
+    
+    ' Get animation info
+    CALL Ani_GetAnimationInfo(animHandle, width, height, frameCount, hotX, hotY)
+    
+    ' Cleanup
+    CALL Ani_FreeAnimation(animHandle)
+END SUB
+
+' =============================================================================
+' Get ANI palette (animations typically use system palette)
+' Parameters:
+'   FileName - ANI file name (BYVAL)
+'   Palette - 256-color palette array (BYREF)  
+'   ColorDepth - Color depth (BYVAL)
+' Returns: Success flag (BYTE)
+' =============================================================================
+FUNCTION DrawAni_GetPalette(BYVAL fileName AS STRING, palette() AS BYTE, BYVAL colorDepth AS BYTE) AS BYTE
+    DIM i AS WORD
+    
+    ' Initialize palette to grayscale (ANI files typically use system palette)
+    FOR i = 0 TO 255
+        palette(i * 3) = i
+        palette(i * 3 + 1) = i
+        palette(i * 3 + 2) = i
+    NEXT i
+    
+    DrawAni_GetPalette = 1
+END FUNCTION
+
+' =============================================================================
 ' Animation Resource Management Functions
 ' =============================================================================
 

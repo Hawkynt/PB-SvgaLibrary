@@ -75,7 +75,7 @@ FUNCTION DrawCur_GetCount(BYVAL fileName AS STRING) AS WORD
     OPEN fileName FOR BINARY ACCESS READ AS fileHandle
     IF LOF(fileHandle) < 6 THEN
         CLOSE fileHandle
-        DrawCur_GetCursorCount = 0
+        DrawCur_GetCount = 0
         EXIT FUNCTION
     END IF
     
@@ -87,9 +87,9 @@ FUNCTION DrawCur_GetCount(BYVAL fileName AS STRING) AS WORD
     
     ' Return count if valid CUR header
     IF iconHeader.Reserved = 0 AND iconHeader.Type = 2 AND iconHeader.Count > 0 THEN
-        DrawCur_GetCursorCount = iconHeader.Count
+        DrawCur_GetCount = iconHeader.Count
     ELSE
-        DrawCur_GetCursorCount = 0
+        DrawCur_GetCount = 0
     END IF
 END FUNCTION
 
@@ -148,6 +148,18 @@ SUB DrawCur_GetHotspot(BYVAL fileName AS STRING, BYVAL cursorIndex AS WORD, hotX
     
     hotX = iconEntry.Planes
     hotY = iconEntry.BitCount
+END SUB
+
+' =============================================================================
+' Get cursor size (wrapper for GetInfo with just dimensions)
+' Parameters:
+'   FileName - Cursor file name (BYVAL)
+'   Width, Height - Cursor dimensions (BYREF)
+' Returns: Nothing (dimensions returned via parameters)
+' =============================================================================
+SUB DrawCur_GetSize(BYVAL fileName AS STRING, width AS WORD, height AS WORD)
+    DIM colorDepth AS WORD, hotX AS WORD, hotY AS WORD
+    CALL DrawCur_GetInfo(fileName, 0, width, height, colorDepth, hotX, hotY)
 END SUB
 
 ' =============================================================================
@@ -261,7 +273,7 @@ FUNCTION DrawCur_LoadBitmap(BYVAL fileName AS STRING, BYVAL cursorIndex AS WORD,
     height = 0
     hotX = 0
     hotY = 0
-    DrawCur_LoadCursorBitmap = 0
+    DrawCur_LoadBitmap = 0
     
     fileHandle = FREEFILE
     OPEN fileName FOR BINARY ACCESS READ AS fileHandle
@@ -358,7 +370,7 @@ FUNCTION DrawCur_LoadBitmap(BYVAL fileName AS STRING, BYVAL cursorIndex AS WORD,
         NEXT x
     NEXT y
     
-    DrawCur_LoadCursorBitmap = 1
+    DrawCur_LoadBitmap = 1
 END FUNCTION
 
 ' =============================================================================
@@ -557,5 +569,26 @@ FUNCTION DrawCur_Create(BYVAL fileName AS STRING, BYVAL bitmapData AS STRING, BY
     ' This function would create a CUR file from bitmap data
     ' Implementation would write ICO/CUR header and bitmap data
     ' For now, return success placeholder
-    DrawCur_CreateCursor = 1
+    DrawCur_Create = 1
+END FUNCTION
+
+' =============================================================================
+' Get cursor palette (cursors typically don't have palettes - returns grayscale)
+' Parameters:
+'   FileName - Cursor file name (BYVAL)
+'   Palette - 256-color palette array (BYREF)
+'   ColorDepth - Color depth (BYVAL)
+' Returns: Success flag (BYTE)
+' =============================================================================
+FUNCTION DrawCur_GetPalette(BYVAL fileName AS STRING, palette() AS BYTE, BYVAL colorDepth AS BYTE) AS BYTE
+    DIM i AS WORD
+    
+    ' Initialize palette to grayscale (cursors typically don't have custom palettes)
+    FOR i = 0 TO 255
+        palette(i * 3) = i
+        palette(i * 3 + 1) = i
+        palette(i * 3 + 2) = i
+    NEXT i
+    
+    DrawCur_GetPalette = 1
 END FUNCTION

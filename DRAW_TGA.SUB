@@ -63,23 +63,25 @@ SUB DrawTga_Show(BYVAL fileName AS STRING, BYVAL x AS WORD, BYVAL y AS WORD)
     DIM fileHandle AS INTEGER
     DIM tgaContext AS TGAContextType
     
-    fileHandle = FREEFILE
-    OPEN fileName FOR BINARY ACCESS READ AS fileHandle
-    IF LOF(fileHandle) < 18 THEN
-        CLOSE fileHandle
+    fileHandle = FileUtil_OpenBinary(fileName)
+    IF fileHandle < 0 THEN EXIT SUB
+    
+    ' Verify minimum TGA header size
+    IF FileUtil_GetSize(fileHandle) < 18 THEN
+        CALL FileUtil_CloseBinary(fileHandle)
         EXIT SUB
     END IF
     
     ' Parse TGA file
     IF DrawTga_ParseFile(fileHandle, tgaContext) = 0 THEN
-        CLOSE fileHandle
+        CALL FileUtil_CloseBinary(fileHandle)
         EXIT SUB
     END IF
     
     ' Draw TGA image
     CALL DrawTga_DrawImage(fileHandle, tgaContext, x, y)
     
-    CLOSE fileHandle
+    CALL FileUtil_CloseBinary(fileHandle)
 END SUB
 
 ' =============================================================================
@@ -425,6 +427,44 @@ SUB DrawTga_DrawPixelData(BYVAL imageData AS STRING, tgaContext AS TGAContextTyp
 END SUB
 
 ' =============================================================================
+' Get TGA image size
+' Parameters:
+'   FileName - TGA file name (BYVAL)
+'   Width, Height - Image dimensions (BYREF)
+' Returns: Success flag (BYTE)
+' =============================================================================
+FUNCTION DrawTga_GetSize(BYVAL fileName AS STRING, width AS WORD, height AS WORD) AS BYTE
+    DIM fileHandle AS INTEGER
+    DIM tgaContext AS TGAContextType
+    
+    ' Initialize return values
+    width = 0
+    height = 0
+    
+    fileHandle = FREEFILE
+    OPEN fileName FOR BINARY ACCESS READ AS fileHandle
+    IF LOF(fileHandle) < 18 THEN
+        CALL FileUtil_CloseBinary(fileHandle)
+        DrawTga_GetSize = 0
+        EXIT FUNCTION
+    END IF
+    
+    ' Parse TGA file
+    IF DrawTga_ParseFile(fileHandle, tgaContext) = 0 THEN
+        CALL FileUtil_CloseBinary(fileHandle)
+        DrawTga_GetSize = 0
+        EXIT FUNCTION
+    END IF
+    
+    ' Return image information
+    width = tgaContext.Width
+    height = tgaContext.Height
+    
+    CALL FileUtil_CloseBinary(fileHandle)
+    DrawTga_GetSize = 1
+END FUNCTION
+
+' =============================================================================
 ' Get TGA image information
 ' Parameters:
 '   FileName - TGA file name (BYVAL)
@@ -446,14 +486,14 @@ FUNCTION DrawTga_GetInfo(BYVAL fileName AS STRING, width AS WORD, height AS WORD
     fileHandle = FREEFILE
     OPEN fileName FOR BINARY ACCESS READ AS fileHandle
     IF LOF(fileHandle) < 18 THEN
-        CLOSE fileHandle
+        CALL FileUtil_CloseBinary(fileHandle)
         DrawTga_GetInfo = 0
         EXIT FUNCTION
     END IF
     
     ' Parse TGA file
     IF DrawTga_ParseFile(fileHandle, tgaContext) = 0 THEN
-        CLOSE fileHandle
+        CALL FileUtil_CloseBinary(fileHandle)
         DrawTga_GetInfo = 0
         EXIT FUNCTION
     END IF
@@ -464,7 +504,7 @@ FUNCTION DrawTga_GetInfo(BYVAL fileName AS STRING, width AS WORD, height AS WORD
     bitsPerPixel = tgaContext.BitsPerPixel
     imageType = tgaContext.ImageType
     
-    CLOSE fileHandle
+    CALL FileUtil_CloseBinary(fileHandle)
     DrawTga_GetInfo = 1
 END FUNCTION
 
@@ -475,7 +515,7 @@ END FUNCTION
 '   Palette - 256-color palette array (BYREF)
 ' Returns: Success flag (BYTE)
 ' =============================================================================
-FUNCTION DrawTga_GetPalette(BYVAL fileName AS STRING, palette() AS BYTE) AS BYTE
+FUNCTION DrawTga_GetPalette(BYVAL fileName AS STRING, palette() AS BYTE, BYVAL colorDepth AS BYTE) AS BYTE
     DIM fileHandle AS INTEGER
     DIM tgaContext AS TGAContextType
     DIM i AS WORD
@@ -490,14 +530,14 @@ FUNCTION DrawTga_GetPalette(BYVAL fileName AS STRING, palette() AS BYTE) AS BYTE
     fileHandle = FREEFILE
     OPEN fileName FOR BINARY ACCESS READ AS fileHandle
     IF LOF(fileHandle) < 18 THEN
-        CLOSE fileHandle
+        CALL FileUtil_CloseBinary(fileHandle)
         DrawTga_GetPalette = 0
         EXIT FUNCTION
     END IF
     
     ' Parse TGA file
     IF DrawTga_ParseFile(fileHandle, tgaContext) = 0 THEN
-        CLOSE fileHandle
+        CALL FileUtil_CloseBinary(fileHandle)
         DrawTga_GetPalette = 0
         EXIT FUNCTION
     END IF
@@ -513,7 +553,7 @@ FUNCTION DrawTga_GetPalette(BYVAL fileName AS STRING, palette() AS BYTE) AS BYTE
         NEXT i
     END IF
     
-    CLOSE fileHandle
+    CALL FileUtil_CloseBinary(fileHandle)
     DrawTga_GetPalette = 1
 END FUNCTION
 
@@ -564,7 +604,7 @@ FUNCTION DrawTga_Create(BYVAL fileName AS STRING, BYVAL imageBuffer AS STRING, B
     ' Write image data
     PUT fileHandle, , imageBuffer
     
-    CLOSE fileHandle
+    CALL FileUtil_CloseBinary(fileHandle)
     DrawTga_Create = 1
 END FUNCTION
 

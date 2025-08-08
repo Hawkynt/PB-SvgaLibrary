@@ -11,6 +11,7 @@
 
 ' Include all module files
 $INCLUDE "TYPES.SUB"      ' Type definitions and global variables
+$INCLUDE "FILEUTIL.SUB"   ' Shared file I/O utility functions
 $INCLUDE "TIMER.SUB"      ' High-precision timer system
 $INCLUDE "VGA.SUB"        ' Standard VGA graphics functions
 $INCLUDE "MODEX.SUB"      ' Mode-X graphics functions

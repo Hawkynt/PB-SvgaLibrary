@@ -1,0 +1,310 @@
+' =============================================================================
+' FILEUTIL.SUB - Shared File I/O Utility Functions
+' =============================================================================
+' Common file operations used across multiple DRAW_* modules
+' Centralizes error handling and reduces code duplication
+' =============================================================================
+
+#IF NOT DEFINED(%FILEUTIL_INCLUDED)
+%FILEUTIL_INCLUDED = 1
+
+' =============================================================================
+' Open a binary file with error handling
+' Parameters:
+'   fileName - Path to file (BYVAL)
+' Returns: Valid file handle (>=1) if successful, -1 if failed
+' =============================================================================
+FUNCTION FileUtil_OpenBinary(BYVAL fileName AS STRING) AS INTEGER
+    DIM fileHandle AS INTEGER
+    
+    ON ERROR GOTO FileOpenError
+    
+    fileHandle = FREEFILE
+    OPEN fileName FOR BINARY AS #fileHandle
+    
+    ' Check if file is empty
+    IF LOF(fileHandle) = 0 THEN
+        CLOSE #fileHandle
+        FileUtil_OpenBinary = -1
+        EXIT FUNCTION
+    END IF
+    
+    FileUtil_OpenBinary = fileHandle
+    EXIT FUNCTION
+    
+FileOpenError:
+    FileUtil_OpenBinary = -1
+END FUNCTION
+
+' =============================================================================
+' Close a binary file safely
+' Parameters:
+'   fileHandle - File handle to close (BYVAL)
+' Returns: Nothing
+' =============================================================================
+SUB FileUtil_CloseBinary(BYVAL fileHandle AS INTEGER)
+    ON ERROR GOTO FileCloseError
+    CLOSE #fileHandle
+FileCloseError:
+    ' Ignore close errors
+END SUB
+
+' =============================================================================
+' Read a WORD value from file (little-endian)
+' Parameters:
+'   fileHandle - File handle (BYVAL)
+'   value - Output value (BYREF)
+' Returns: 1 if successful, 0 if failed
+' =============================================================================
+FUNCTION FileUtil_ReadWord(BYVAL fileHandle AS INTEGER, value AS WORD) AS BYTE
+    DIM byteData AS STRING
+    
+    ON ERROR GOTO ReadError
+    GET$ fileHandle, 2, byteData
+    
+    IF LEN(byteData) <> 2 THEN
+        FileUtil_ReadWord = 0
+        EXIT FUNCTION
+    END IF
+    
+    value = ASC(MID$(byteData, 1, 1)) + 256 * ASC(MID$(byteData, 2, 1))
+    FileUtil_ReadWord = 1
+    EXIT FUNCTION
+    
+ReadError:
+    FileUtil_ReadWord = 0
+END FUNCTION
+
+' =============================================================================
+' Read a DWORD value from file (little-endian)
+' Parameters:
+'   fileHandle - File handle (BYVAL)
+'   value - Output value (BYREF)
+' Returns: 1 if successful, 0 if failed
+' =============================================================================
+FUNCTION FileUtil_ReadDWord(BYVAL fileHandle AS INTEGER, value AS LONG) AS BYTE
+    DIM byteData AS STRING
+    
+    ON ERROR GOTO ReadError
+    GET$ fileHandle, 4, byteData
+    
+    IF LEN(byteData) <> 4 THEN
+        FileUtil_ReadDWord = 0
+        EXIT FUNCTION
+    END IF
+    
+    value = ASC(MID$(byteData, 1, 1)) + 256& * ASC(MID$(byteData, 2, 1)) + 65536& * ASC(MID$(byteData, 3, 1)) + 16777216& * ASC(MID$(byteData, 4, 1))
+    FileUtil_ReadDWord = 1
+    EXIT FUNCTION
+    
+ReadError:
+    FileUtil_ReadDWord = 0
+END FUNCTION
+
+' =============================================================================
+' Read a specified number of bytes from file
+' Parameters:
+'   fileHandle - File handle (BYVAL)
+'   numBytes - Number of bytes to read (BYVAL)
+'   data - Output data string (BYREF)
+' Returns: 1 if successful, 0 if failed
+' =============================================================================
+FUNCTION FileUtil_ReadBytes(BYVAL fileHandle AS INTEGER, BYVAL numBytes AS WORD, data AS STRING) AS BYTE
+    ON ERROR GOTO ReadError
+    GET$ fileHandle, numBytes, data
+    
+    IF LEN(data) <> numBytes THEN
+        FileUtil_ReadBytes = 0
+        EXIT FUNCTION
+    END IF
+    
+    FileUtil_ReadBytes = 1
+    EXIT FUNCTION
+    
+ReadError:
+    FileUtil_ReadBytes = 0
+END FUNCTION
+
+' =============================================================================
+' Seek to position in file with error handling
+' Parameters:
+'   fileHandle - File handle (BYVAL)
+'   position - File position (1-based) (BYVAL)
+' Returns: 1 if successful, 0 if failed
+' =============================================================================
+FUNCTION FileUtil_Seek(BYVAL fileHandle AS INTEGER, BYVAL position AS LONG) AS BYTE
+    ON ERROR GOTO SeekError
+    
+    IF position < 1 OR position > LOF(fileHandle) THEN
+        FileUtil_Seek = 0
+        EXIT FUNCTION
+    END IF
+    
+    SEEK fileHandle, position
+    FileUtil_Seek = 1
+    EXIT FUNCTION
+    
+SeekError:
+    FileUtil_Seek = 0
+END FUNCTION
+
+' =============================================================================
+' Get file size
+' Parameters:
+'   fileHandle - File handle (BYVAL)
+' Returns: File size in bytes, or 0 if error
+' =============================================================================
+FUNCTION FileUtil_GetSize(BYVAL fileHandle AS INTEGER) AS LONG
+    ON ERROR GOTO SizeError
+    FileUtil_GetSize = LOF(fileHandle)
+    EXIT FUNCTION
+    
+SizeError:
+    FileUtil_GetSize = 0
+END FUNCTION
+
+' =============================================================================
+' Check if we can read specified number of bytes from current position
+' Parameters:
+'   fileHandle - File handle (BYVAL)
+'   numBytes - Number of bytes needed (BYVAL)
+' Returns: 1 if enough bytes available, 0 if not
+' =============================================================================
+FUNCTION FileUtil_CanRead(BYVAL fileHandle AS INTEGER, BYVAL numBytes AS WORD) AS BYTE
+    DIM currentPos AS LONG, fileSize AS LONG
+    
+    ON ERROR GOTO CanReadError
+    currentPos = SEEK(fileHandle)
+    fileSize = LOF(fileHandle)
+    
+    FileUtil_CanRead = ((currentPos + numBytes - 1) <= fileSize)
+    EXIT FUNCTION
+    
+CanReadError:
+    FileUtil_CanRead = 0
+END FUNCTION
+
+' =============================================================================
+' Load VGA palette from RGB triplets
+' Parameters:
+'   paletteData - String containing RGB data (BYVAL)
+'   startIndex - Starting palette index (BYVAL)
+'   numColors - Number of colors to set (BYVAL)
+'   scaleDown - If 1, scale 8-bit values to 6-bit (BYVAL)
+' Returns: Nothing
+' =============================================================================
+SUB FileUtil_LoadPalette(BYVAL paletteData AS STRING, BYVAL startIndex AS BYTE, BYVAL numColors AS WORD, BYVAL scaleDown AS BYTE)
+    DIM colorIndex AS WORD, dataIndex AS WORD
+    DIM redValue AS BYTE, greenValue AS BYTE, blueValue AS BYTE
+    
+    dataIndex = 1
+    FOR colorIndex = startIndex TO startIndex + numColors - 1
+        IF dataIndex + 2 > LEN(paletteData) THEN EXIT FOR
+        
+        redValue = ASC(MID$(paletteData, dataIndex, 1))
+        greenValue = ASC(MID$(paletteData, dataIndex + 1, 1))
+        blueValue = ASC(MID$(paletteData, dataIndex + 2, 1))
+        
+        ' Scale down from 8-bit to 6-bit if requested
+        IF scaleDown THEN
+            redValue = redValue \ 4
+            greenValue = greenValue \ 4
+            blueValue = blueValue \ 4
+        END IF
+        
+        OUT &H3C8, colorIndex
+        OUT &H3C9, redValue
+        OUT &H3C9, greenValue
+        OUT &H3C9, blueValue
+        
+        dataIndex = dataIndex + 3
+    NEXT colorIndex
+END SUB
+
+' =============================================================================
+' Load VGA palette from BGRA quadruplets (BMP format)
+' Parameters:
+'   paletteData - String containing BGRA data (BYVAL)
+'   startIndex - Starting palette index (BYVAL)
+'   numColors - Number of colors to set (BYVAL)
+' Returns: Nothing
+' =============================================================================
+SUB FileUtil_LoadPaletteBGRA(BYVAL paletteData AS STRING, BYVAL startIndex AS BYTE, BYVAL numColors AS WORD)
+    DIM colorIndex AS WORD, dataIndex AS WORD
+    DIM redValue AS BYTE, greenValue AS BYTE, blueValue AS BYTE
+    
+    dataIndex = 1
+    FOR colorIndex = startIndex TO startIndex + numColors - 1
+        IF dataIndex + 3 > LEN(paletteData) THEN EXIT FOR
+        
+        blueValue = ASC(MID$(paletteData, dataIndex, 1)) \ 4      ' Scale to 6-bit
+        greenValue = ASC(MID$(paletteData, dataIndex + 1, 1)) \ 4
+        redValue = ASC(MID$(paletteData, dataIndex + 2, 1)) \ 4
+        ' Skip alpha byte at dataIndex + 3
+        
+        OUT &H3C8, colorIndex
+        OUT &H3C9, redValue
+        OUT &H3C9, greenValue
+        OUT &H3C9, blueValue
+        
+        dataIndex = dataIndex + 4
+    NEXT colorIndex
+END SUB
+
+' =============================================================================
+' Validate file signature/magic number
+' Parameters:
+'   fileHandle - File handle (BYVAL)
+'   expectedSignature - Expected signature string (BYVAL)
+' Returns: 1 if signature matches, 0 if not
+' =============================================================================
+FUNCTION FileUtil_ValidateSignature(BYVAL fileHandle AS INTEGER, BYVAL expectedSignature AS STRING) AS BYTE
+    DIM actualSignature AS STRING
+    DIM originalPos AS LONG
+    
+    ' Save current position
+    originalPos = SEEK(fileHandle)
+    
+    ' Read signature from beginning of file
+    SEEK fileHandle, 1
+    IF FileUtil_ReadBytes(fileHandle, LEN(expectedSignature), actualSignature) = 0 THEN
+        FileUtil_ValidateSignature = 0
+        SEEK fileHandle, originalPos
+        EXIT FUNCTION
+    END IF
+    
+    ' Restore position
+    SEEK fileHandle, originalPos
+    
+    FileUtil_ValidateSignature = (actualSignature = expectedSignature)
+END FUNCTION
+
+' =============================================================================
+' Skip a number of bytes in file
+' Parameters:
+'   fileHandle - File handle (BYVAL)
+'   numBytes - Number of bytes to skip (BYVAL)
+' Returns: 1 if successful, 0 if failed
+' =============================================================================
+FUNCTION FileUtil_Skip(BYVAL fileHandle AS INTEGER, BYVAL numBytes AS WORD) AS BYTE
+    DIM currentPos AS LONG, newPos AS LONG, fileSize AS LONG
+    
+    ON ERROR GOTO SkipError
+    currentPos = SEEK(fileHandle)
+    fileSize = LOF(fileHandle)
+    newPos = currentPos + numBytes
+    
+    IF newPos > fileSize THEN
+        FileUtil_Skip = 0
+        EXIT FUNCTION
+    END IF
+    
+    SEEK fileHandle, newPos
+    FileUtil_Skip = 1
+    EXIT FUNCTION
+    
+SkipError:
+    FileUtil_Skip = 0
+END FUNCTION
+
+#ENDIF  ' FILEUTIL_INCLUDED

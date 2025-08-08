@@ -85,7 +85,7 @@ END TYPE
 '   X, Y - Display position (BYVAL)
 ' Returns: Nothing
 ' =============================================================================
-SUB DrawGif_ShowGif(BYVAL fileName AS STRING, BYVAL x AS WORD, BYVAL y AS WORD)
+SUB DrawGif_Show(BYVAL fileName AS STRING, BYVAL x AS WORD, BYVAL y AS WORD)
     DIM fileHandle AS INTEGER
     DIM gifContext AS GIFContextType
     
@@ -624,39 +624,35 @@ END SUB
 '   IsAnimated - Animation flag (BYREF)
 ' Returns: Success flag (BYTE)
 ' =============================================================================
-FUNCTION DrawGif_GetGifInfo(BYVAL fileName AS STRING, width AS WORD, height AS WORD, colorTableSize AS WORD, isAnimated AS BYTE) AS BYTE
+FUNCTION DrawGif_GetSize(BYVAL fileName AS STRING, width AS WORD, height AS WORD) AS BYTE
     DIM fileHandle AS INTEGER
     DIM gifContext AS GIFContextType
     
     ' Initialize return values
     width = 0
     height = 0
-    colorTableSize = 0
-    isAnimated = 0
     
     fileHandle = FREEFILE
     OPEN fileName FOR BINARY ACCESS READ AS fileHandle
     IF LOF(fileHandle) < 13 THEN
         CLOSE fileHandle
-        DrawGif_GetGifInfo = 0
+        DrawGif_GetSize = 0
         EXIT FUNCTION
     END IF
     
     ' Parse GIF file
     IF DrawGif_ParseFile(fileHandle, gifContext) = 0 THEN
         CLOSE fileHandle
-        DrawGif_GetGifInfo = 0
+        DrawGif_GetSize = 0
         EXIT FUNCTION
     END IF
     
     ' Return image information
     width = gifContext.ScreenWidth
     height = gifContext.ScreenHeight
-    colorTableSize = gifContext.GlobalColorTableSize
-    isAnimated = (gifContext.Version = "89a")  ' Simplified - would need full scan
     
     CLOSE fileHandle
-    DrawGif_GetGifInfo = 1
+    DrawGif_GetSize = 1
 END FUNCTION
 
 ' =============================================================================
@@ -666,7 +662,7 @@ END FUNCTION
 '   Palette - 256-color palette array (BYREF)
 ' Returns: Success flag (BYTE)
 ' =============================================================================
-FUNCTION DrawGif_GetGifPalette(BYVAL fileName AS STRING, palette() AS BYTE) AS BYTE
+FUNCTION DrawGif_GetPalette(BYVAL fileName AS STRING, palette() AS BYTE, BYVAL colorDepth AS BYTE) AS BYTE
     DIM fileHandle AS INTEGER
     DIM gifContext AS GIFContextType
     DIM i AS WORD
@@ -682,14 +678,14 @@ FUNCTION DrawGif_GetGifPalette(BYVAL fileName AS STRING, palette() AS BYTE) AS B
     OPEN fileName FOR BINARY ACCESS READ AS fileHandle
     IF LOF(fileHandle) < 13 THEN
         CLOSE fileHandle
-        DrawGif_GetGifPalette = 0
+        DrawGif_GetPalette = 0
         EXIT FUNCTION
     END IF
     
     ' Parse GIF file
     IF DrawGif_ParseFile(fileHandle, gifContext) = 0 THEN
         CLOSE fileHandle
-        DrawGif_GetGifPalette = 0
+        DrawGif_GetPalette = 0
         EXIT FUNCTION
     END IF
     
@@ -705,5 +701,5 @@ FUNCTION DrawGif_GetGifPalette(BYVAL fileName AS STRING, palette() AS BYTE) AS B
     END IF
     
     CLOSE fileHandle
-    DrawGif_GetGifPalette = 1
+    DrawGif_GetPalette = 1
 END FUNCTION

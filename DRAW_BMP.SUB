@@ -24,8 +24,8 @@ SUB DrawBmp_Show(BYVAL fileName AS STRING, BYVAL x AS WORD, BYVAL y AS WORD)
     CALL Virtual_ToPhysical(x, y, physicalX, physicalY)
     
     ' Open BMP file
-    fileHandle = FREEFILE
-    OPEN fileName FOR BINARY AS #fileHandle
+    fileHandle = FileUtil_OpenBinary(fileName)
+    IF fileHandle < 0 THEN EXIT SUB
     
     ' Read BMP header information
     CALL DrawBmp_ReadHeader(fileHandle, dataOffset, imageWidth, imageHeight, colorDepth, numColors)
@@ -62,7 +62,7 @@ SUB DrawBmp_Show(BYVAL fileName AS STRING, BYVAL x AS WORD, BYVAL y AS WORD)
         END IF
     NEXT PixelY
     
-    CLOSE #FileHandle
+    CALL FileUtil_CloseBinary(fileHandle)
 END SUB
 
 ' =============================================================================
@@ -205,7 +205,7 @@ SUB DrawBmp_GetSize(BYVAL fileName AS STRING, width AS WORD, height AS WORD)
     Width = ImageWidth
     Height = ImageHeight
     
-    CLOSE #FileHandle
+    CALL FileUtil_CloseBinary(fileHandle)
 END SUB
 
 ' =============================================================================
@@ -237,5 +237,5 @@ SUB DrawBmp_GetPalette(BYVAL fileName AS STRING, palette() AS BYTE, BYVAL colorD
         ArrayIndex = ArrayIndex + 3
     NEXT ColorIndex
     
-    CLOSE #FileHandle
+    CALL FileUtil_CloseBinary(fileHandle)
 END SUB

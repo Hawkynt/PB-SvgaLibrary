@@ -20,8 +20,8 @@ SUB DrawPcx_Show(BYVAL fileName AS STRING, BYVAL x AS WORD, BYVAL y AS WORD)
     CALL Virtual_ToPhysical(x, y, physicalX, physicalY)
     
     ' Open PCX file
-    fileHandle = FREEFILE
-    OPEN fileName FOR BINARY AS #fileHandle
+    fileHandle = FileUtil_OpenBinary(fileName)
+    IF fileHandle < 0 THEN EXIT SUB
     
     ' Read PCX header
     CALL DrawPcx_ReadHeader(fileHandle, imageWidth, imageHeight)
@@ -49,7 +49,7 @@ SUB DrawPcx_Show(BYVAL fileName AS STRING, BYVAL x AS WORD, BYVAL y AS WORD)
         END IF
     NEXT pixelY
     
-    CLOSE #FileHandle
+    CALL FileUtil_CloseBinary(fileHandle)
 END SUB
 
 ' =============================================================================
@@ -170,7 +170,7 @@ SUB DrawPcx_GetSize(BYVAL fileName AS STRING, width AS WORD, height AS WORD)
     Width = ImageWidth
     Height = ImageHeight
     
-    CLOSE #FileHandle
+    CALL FileUtil_CloseBinary(fileHandle)
 END SUB
 
 ' =============================================================================
@@ -202,5 +202,5 @@ SUB DrawPcx_GetPalette(BYVAL fileName AS STRING, palette() AS BYTE, BYVAL colorD
         ArrayIndex = ArrayIndex + 3
     NEXT ColorIndex
     
-    CLOSE #FileHandle
+    CALL FileUtil_CloseBinary(fileHandle)
 END SUB

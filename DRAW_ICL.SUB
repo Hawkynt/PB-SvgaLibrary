@@ -555,3 +555,58 @@ FUNCTION DrawIcl_ExtractAllIcons(BYVAL libHandle AS BYTE, BYVAL outputPath AS ST
     
     DrawIcl_ExtractAllIcons = extractCount
 END FUNCTION
+
+' =============================================================================
+' Standard interface wrapper for displaying ICL library icons
+' Parameters:
+'   FileName - ICL file name (BYVAL)
+'   X, Y - Display position (BYVAL)
+' Returns: Nothing
+' =============================================================================
+SUB DrawIcl_Show(BYVAL fileName AS STRING, BYVAL x AS WORD, BYVAL y AS WORD)
+    DIM libHandle AS BYTE
+    
+    ' Load icon library
+    libHandle = DrawIcl_LoadIcoLib(fileName)
+    IF libHandle = 255 THEN EXIT SUB
+    
+    ' Show first icon from first group
+    CALL DrawIcl_ShowLibIcon(libHandle, 0, 0, x, y)
+    
+    ' Cleanup
+    CALL DrawIcl_CloseIcoLib(libHandle)
+END SUB
+
+' =============================================================================
+' Get ICL icon size (returns default icon size)
+' Parameters:
+'   FileName - ICL file name (BYVAL)
+'   Width, Height - Icon dimensions (BYREF)
+' Returns: Nothing
+' =============================================================================
+SUB DrawIcl_GetSize(BYVAL fileName AS STRING, width AS WORD, height AS WORD)
+    ' Icon libraries typically contain 32x32 or 16x16 icons
+    width = 32
+    height = 32
+END SUB
+
+' =============================================================================
+' Get ICL palette (icon libraries typically use system palette)
+' Parameters:
+'   FileName - ICL file name (BYVAL)
+'   Palette - 256-color palette array (BYREF)
+'   ColorDepth - Color depth (BYVAL)
+' Returns: Success flag (BYTE)
+' =============================================================================
+FUNCTION DrawIcl_GetPalette(BYVAL fileName AS STRING, palette() AS BYTE, BYVAL colorDepth AS BYTE) AS BYTE
+    DIM i AS WORD
+    
+    ' Initialize palette to grayscale (ICL files typically use system palette)
+    FOR i = 0 TO 255
+        palette(i * 3) = i
+        palette(i * 3 + 1) = i
+        palette(i * 3 + 2) = i
+    NEXT i
+    
+    DrawIcl_GetPalette = 1
+END FUNCTION

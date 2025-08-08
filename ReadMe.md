@@ -117,47 +117,47 @@ $INCLUDE "SVGA.SUB"
 
 | Function | Description |
 |---|---|
-| `INITSVGA` | Initialize the SVGA library (call first) |
-| `SETRES(xres, yres, colors)` | Set graphics resolution (auto-selects best mode) |
-| `SETVGA(mode)` | Set specific VESA mode number |
+| `Svga_Init` | Initialize the SVGA library (call first) |
+| `Svga_SetRes(xres, yres, colors)` | Set graphics resolution (auto-selects best mode) |
+| `Svga_SetVga(mode)` | Set specific VESA mode number |
 | `ModeX_SetMode(mode)` | Initialize Mode-X graphics mode |
 | `VGA_InitMode13h` | Initialize standard VGA Mode 13h |
-| `CLOSEVGA` | Return to text mode |
-| `CLEANUPSVGA` | Clean up library resources |
-| `VGAINFO` | Display VESA capabilities information |
-| `GETVESAMODE(xres, yres, colors)` | Get VESA mode number for resolution |
+| `Svga_Close` | Return to text mode |
+| `Svga_Cleanup` | Clean up library resources |
+| `Svga_Info` | Display VESA capabilities information |
+| `Svga_GetVesaMode(xres, yres, colors)` | Get VESA mode number for resolution |
 
 ### 🖊️ VGA Drawing Primitives
 
 | Function | Description |
 |---|---|
-| `VGA_PutPixel(x, y, color)` | Ultra-optimized Mode 13h pixel write |
-| `VGA_GetPixel(x, y)` | Ultra-optimized Mode 13h pixel read |
-| `VGA_HLine(x1, x2, y, color)` | Hardware-optimized horizontal line |
-| `VGA_VLine(x, y1, y2, color)` | Hardware-optimized vertical line |
-| `VGA_LineDraw(x1, y1, x2, y2, color)` | Bresenham line algorithm |
-| `VGA_FillRect(x1, y1, x2, y2, color)` | Filled rectangle |
-| `VGA_DrawRect(x1, y1, x2, y2, color)` | Rectangle outline |
-| `VGA_DrawCircle(cx, cy, r, color)` | Circle outline (midpoint algorithm) |
-| `VGA_FillCircle(cx, cy, r, color)` | Filled circle |
-| `VGA_ClearScreen(color)` | Ultra-fast screen clear |
-| `VGA_CopyBlock(sx, sy, dx, dy, w, h)` | Block copy with overlap handling |
-| `VGA_PatternFill(x1, y1, x2, y2, pattern)` | Pattern-based fill |
+| `Vga_PutPixel(x, y, color)` | Ultra-optimized Mode 13h pixel write |
+| `Vga_GetPixel(x, y)` | Ultra-optimized Mode 13h pixel read |
+| `Vga_HLine(x1, x2, y, color)` | Hardware-optimized horizontal line |
+| `Vga_VLine(x, y1, y2, color)` | Hardware-optimized vertical line |
+| `Vga_LineDraw(x1, y1, x2, y2, color)` | Bresenham line algorithm |
+| `Vga_FillRect(x1, y1, x2, y2, color)` | Filled rectangle |
+| `Vga_DrawRect(x1, y1, x2, y2, color)` | Rectangle outline |
+| `Vga_DrawCircle(cx, cy, r, color)` | Circle outline (midpoint algorithm) |
+| `Vga_FillCircle(cx, cy, r, color)` | Filled circle |
+| `Vga_ClearScreen(color)` | Ultra-fast screen clear |
+| `Vga_CopyBlock(sx, sy, dx, dy, w, h)` | Block copy with overlap handling |
+| `Vga_PatternFill(x1, y1, x2, y2, pattern)` | Pattern-based fill |
 
 ### 🎨 VESA Drawing Functions
 
 | Function | Description |
 |---|---|
-| `VESA_PutPixel(x, y, color)` | VESA banked pixel write |
-| `VESA_GetPixel(x, y)` | VESA banked pixel read |
-| `VESA_HLine(x1, x2, y, color)` | VESA horizontal line with banking |
-| `VESA_VLine(x, y1, y2, color)` | VESA vertical line with banking |
-| `VESA_LineDraw(x1, y1, x2, y2, color)` | VESA line drawing |
-| `VESA_FillRect(x1, y1, x2, y2, color)` | VESA filled rectangle |
-| `VESA_DrawRect(x1, y1, x2, y2, color)` | VESA rectangle outline |
-| `VESA_ClearScreen(color)` | VESA screen clear with banking |
-| `VESA_CopyBlock(sx, sy, dx, dy, w, h)` | VESA block copy |
-| `VESA_CopyScanline(sx, sy, dx, dy, w)` | Single scanline copy |
+| `Vesa_PutPixel(x, y, color)` | VESA banked pixel write |
+| `Vesa_GetPixel(x, y)` | VESA banked pixel read |
+| `Vesa_HLine(x1, x2, y, color)` | VESA horizontal line with banking |
+| `Vesa_VLine(x, y1, y2, color)` | VESA vertical line with banking |
+| `Vesa_LineDraw(x1, y1, x2, y2, color)` | VESA line drawing |
+| `Vesa_FillRect(x1, y1, x2, y2, color)` | VESA filled rectangle |
+| `Vesa_DrawRect(x1, y1, x2, y2, color)` | VESA rectangle outline |
+| `Vesa_ClearScreen(color)` | VESA screen clear with banking |
+| `Vesa_CopyBlock(sx, sy, dx, dy, w, h)` | VESA block copy |
+| `Vesa_CopyScanline(sx, sy, dx, dy, w)` | Single scanline copy |
 
 ### 🔲 Mode-X Functions
 
@@ -168,30 +168,30 @@ $INCLUDE "SVGA.SUB"
 | `ModeX_GetPixel(x, y)` | Mode-X planar pixel read |
 | `ModeX_HLine(x1, x2, y, color)` | Mode-X optimized horizontal line |
 | `ModeX_VLine(y1, y2, x, color)` | Mode-X optimized vertical line |
-| `MODEX_LineDraw(x1, y1, x2, y2, color)` | Mode-X line drawing |
-| `MODEX_FillRect(x1, y1, x2, y2, color)` | Mode-X filled rectangle |
-| `MODEX_DrawRect(x1, y1, x2, y2, color)` | Mode-X rectangle outline |
-| `MODEX_DrawCircle(cx, cy, r, color)` | Mode-X circle outline |
-| `MODEX_FillCircle(cx, cy, r, color)` | Mode-X filled circle |
+| `ModeX_LineDraw(x1, y1, x2, y2, color)` | Mode-X line drawing |
+| `ModeX_FillRect(x1, y1, x2, y2, color)` | Mode-X filled rectangle |
+| `ModeX_DrawRect(x1, y1, x2, y2, color)` | Mode-X rectangle outline |
+| `ModeX_DrawCircle(cx, cy, r, color)` | Mode-X circle outline |
+| `ModeX_FillCircle(cx, cy, r, color)` | Mode-X filled circle |
 | `ModeX_ClearScreen(color)` | Mode-X screen clear |
 | `ModeX_CopyBlock(sx, sy, dx, dy, w, h)` | Mode-X block copy |
-| `MODEX_FastFill(x1, y1, x2, y2, color)` | Ultra-fast Mode-X fill |
-| `MODEX_SetActivePage(page)` | Set active draw page |
-| `MODEX_SetVisiblePage(page)` | Set visible display page |
-| `MODEX_CopyPage(src, dest)` | Copy between pages |
+| `ModeX_FastFill(x1, y1, x2, y2, color)` | Ultra-fast Mode-X fill |
+| `ModeX_SetActivePage(page)` | Set active draw page |
+| `ModeX_SetVisiblePage(page)` | Set visible display page |
+| `ModeX_CopyPage(src, dest)` | Copy between pages |
 
 ### 🖼️ Image File Formats
 
 | Function | Description |
 |---|---|
 | **BMP Support** | |
-| `SHOWBMP(file, x, y)` | Load and display BMP file |
-| `DrawExt_ShowBMP(file, x, y)` | Extended BMP loader |
-| `GETBMPSIZE(file, width, height)` | Get BMP dimensions |
-| `GETBMPPAL(file, pal[], depth)` | Extract BMP palette |
+| `DrawBmp_Show(file, x, y)` | Load and display BMP file |
+| `DrawBmp_GetSize(file, width, height)` | Get BMP dimensions |
+| `DrawBmp_GetPalette(file, pal[], depth)` | Extract BMP palette |
 | **PCX Support** | |
-| `SHOWPCX(file, x, y)` | Load and display PCX file |
-| `DrawExt_ShowPCX(file, x, y)` | Extended PCX loader |
+| `DrawPcx_Show(file, x, y)` | Load and display PCX file |
+| `DrawPcx_GetSize(file, width, height)` | Get PCX dimensions |
+| `DrawPcx_GetPalette(file, pal[], depth)` | Extract PCX palette |
 | **Icon/Cursor Support** | |
 | `LOADICO(filename, index)` | Load ICO file, return handle |
 | `DRAWICO(handle, x, y)` | Draw loaded ICO image |
@@ -215,9 +215,12 @@ $INCLUDE "SVGA.SUB"
 | `UPDATEANI(handle, x, y)` | Update animation (call in main loop) |
 | `FREEANI(handle)` | Free animation resources |
 | **Extended Formats** | |
-| `DRAWTIF(filename, x, y)` | Draw TIFF image (PackBits/LZW) |
-| `DRAWTGA(filename, x, y)` | Draw TGA image (RLE/uncompressed) |
-| `DRAWGIF(filename, x, y)` | Draw GIF image (LZW/transparency) |
+| `DrawTif_Show(filename, x, y)` | Draw TIFF image (PackBits/LZW) |
+| `DrawTif_GetSize(file, width, height)` | Get TIFF dimensions |
+| `DrawTga_Show(filename, x, y)` | Draw TGA image (RLE/uncompressed) |
+| `DrawTga_GetSize(file, width, height)` | Get TGA dimensions |
+| `DrawGif_Show(filename, x, y)` | Draw GIF image (LZW/transparency) |
+| `DrawGif_GetSize(file, width, height)` | Get GIF dimensions |
 | **Icon Libraries** | |
 | `OPENICOLIB(filename)` | Open Windows DLL icon library |
 | `GETICOLIBCOUNT(handle)` | Get number of icon groups |
@@ -228,10 +231,10 @@ $INCLUDE "SVGA.SUB"
 
 | Function | Description |
 |---|---|
-| `INITFONT(file, mode)` | Load 8x8 bitmap font |
-| `VGAPRINT(x, y, fg, bg, text, flags)` | Print text with current font |
-| `BMPPRINT(x, y, fg, bg, text, flags)` | Print text as bitmap |
-| `GETFONTINFO()` | Get font metrics |
+| `Font_Init(file, mode)` | Load 8x8 bitmap font |
+| `Font_Print(x, y, fg, bg, text, flags)` | Print text with current font |
+| `Font_PrintBmp(x, y, fg, bg, text, flags)` | Print text as bitmap |
+| `Font_GetInfo()` | Get font metrics |
 
 ### 🎯 High-Level Graphics
 
@@ -242,7 +245,7 @@ $INCLUDE "SVGA.SUB"
 | `BOX(x1, y1, x2, y2, color)` | Filled box |
 | `CIRCLEDRAW(cx, cy, rx, ry, start, end, color, fill)` | Circle/ellipse/arc |
 | `FRAME(x1, y1, x2, y2, color)` | Rectangle frame |
-| `PIXEL(x, y, color)` | Generic pixel plot |
+| `Svga_PutPixel(x, y, color)` | Generic pixel plot |
 
 ### 🪟 Virtual Coordinate System
 
@@ -266,54 +269,54 @@ $INCLUDE "SVGA.SUB"
 
 | Function | Description |
 |---|---|
-| `TAKEEMS(sizekb, handle)` | Allocate EMS memory |
-| `CLOSEEMS(handle)` | Free EMS memory |
-| `EMSBYTE(page, offset, value, handle)` | Read/write EMS byte |
-| `PUTEMSBYTE(seg, off, byte, handle)` | Write byte to EMS |
-| `GETEMSBYTE(seg, off, handle)` | Read byte from EMS |
-| `PUTEMSSTRING(seg, off, data, handle)` | Write string to EMS |
-| `GETEMSSTRING$(seg, off, len, handle)` | Read string from EMS |
-| `SETVESAWINDOW(window)` | Set VESA bank window |
-| `MEMCOPY(sseg, soff, ssize, dseg, doff, dsize, bytes)` | Memory block copy |
-| `MEMSWAP(seg1, off1, size1, seg2, off2, size2, bytes)` | Memory block swap |
-| `ClearVideoMemory(color)` | Ultra-fast A000h segment clear |
+| `Memory_TakeEms(sizekb, handle)` | Allocate EMS memory |
+| `Memory_CloseEms(handle)` | Free EMS memory |
+| `Memory_EmsByte(page, offset, value, handle)` | Read/write EMS byte |
+| `Memory_PutEmsByte(seg, off, byte, handle)` | Write byte to EMS |
+| `Memory_GetEmsByte(seg, off, handle)` | Read byte from EMS |
+| `Memory_PutEmsString(seg, off, data, handle)` | Write string to EMS |
+| `Memory_GetEmsString(seg, off, len, handle)` | Read string from EMS |
+| `Vesa_SetWindow(window)` | Set VESA bank window |
+| `Memory_Copy(sseg, soff, ssize, dseg, doff, dsize, bytes)` | Memory block copy |
+| `Memory_Swap(seg1, off1, size1, seg2, off2, size2, bytes)` | Memory block swap |
+| `Memory_ClearVideo(color)` | Ultra-fast A000h segment clear |
 
 ### ⏰ High-Precision Timer System
 
 | Function | Description |
 |---|---|
-| `INITTIMER` | Initialize 10ms precision timer system |
-| `GETTIMERTICK` | Get current timer tick (10ms resolution) |
-| `WAITTICKS(count)` | Wait for specified number of ticks |
-| `DELAY10MS(count)` | High-resolution delay function |
-| `SETANIMTIMER(delay)` | Set animation timer delay |
-| `ANIMTIMERREADY` | Check if animation timer is ready |
-| `GETELAPSEDTIME` | Get elapsed time since init |
-| `RESETTIMER` | Reset timer system |
-| `CREATETIMER(id, delay)` | Create named timer |
-| `ISTIMERREADY(id)` | Check if named timer is ready |
-| `DESTROYTIMER(id)` | Destroy named timer |
-| `ONTIMER(interval, callback)` | Install timer interrupt handler |
-| `OFFTIMER` | Remove timer interrupt handler |
-| `HRTIMER(freq, callback)` | High-resolution PIT timer |
-| `RESTORETIMER` | Restore default timer frequency |
-| `CLEANUPTIMER` | Cleanup timer system |
+| `Timer_Init` | Initialize 10ms precision timer system |
+| `Timer_GetTick` | Get current timer tick (10ms resolution) |
+| `Timer_WaitTicks(count)` | Wait for specified number of ticks |
+| `Timer_Delay10Ms(count)` | High-resolution delay function |
+| `Timer_SetAnim(delay)` | Set animation timer delay |
+| `Timer_IsAnimReady` | Check if animation timer is ready |
+| `Timer_GetElapsed` | Get elapsed time since init |
+| `Timer_Reset` | Reset timer system |
+| `Timer_Create(id, delay)` | Create named timer |
+| `Timer_IsReady(id)` | Check if named timer is ready |
+| `Timer_Destroy(id)` | Destroy named timer |
+| `Timer_OnTimer(interval, callback)` | Install timer interrupt handler |
+| `Timer_OffTimer` | Remove timer interrupt handler |
+| `Timer_HrTimer(freq, callback)` | High-resolution PIT timer |
+| `Timer_Restore` | Restore default timer frequency |
+| `Timer_Cleanup` | Cleanup timer system |
 
 ### 🏃 Advanced Cursor Management
 
 | Function | Description |
 |---|---|
-| `INITCURSOR` | Initialize cursor management system |
-| `LOADCURSOR(filename, index)` | Load cursor from ICO/CUR file |
-| `SETCURSOR(handle)` | Set active cursor |
-| `MOVECURSOR(x, y)` | Move cursor with auto backup/restore |
-| `SHOWCURSOR` | Make cursor visible |
-| `HIDECURSOR` | Hide cursor |
-| `ISCURSORVISIBLE` | Check cursor visibility |
-| `GETCURSORPOS(x, y)` | Get current cursor position |
-| `UPDATECURSOR` | Update cursor display |
-| `FREECURSOR(handle)` | Free cursor resources |
-| `CLEANUPCURSOR` | Cleanup cursor system |
+| `Cursor_Init` | Initialize cursor management system |
+| `Cursor_Load(filename, index)` | Load cursor from ICO/CUR file |
+| `Cursor_Set(handle)` | Set active cursor |
+| `Cursor_Move(x, y)` | Move cursor with auto backup/restore |
+| `Cursor_Show` | Make cursor visible |
+| `Cursor_Hide` | Hide cursor |
+| `Cursor_IsVisible` | Check cursor visibility |
+| `Cursor_GetPos(x, y)` | Get current cursor position |
+| `Cursor_Update` | Update cursor display |
+| `Cursor_Free(handle)` | Free cursor resources |
+| `Cursor_Cleanup` | Cleanup cursor system |
 
 ### 🎮 Sprite Management System
 
@@ -367,22 +370,22 @@ $INCLUDE "SVGA.SUB"
 
 | Function | Description |
 |---|---|
-| `PUTPIXEL(x, y, color)` | Generic pixel plot (dispatched) |
-| `GETPIXEL(x, y)` | Generic pixel read (dispatched) |
-| `LINEDRAW(x1, y1, x2, y2, color)` | Generic line (dispatched) |
-| `CLEARSCREEN(color)` | Generic clear (dispatched) |
-| `HLINE(x1, x2, y, color)` | Generic horizontal line |
-| `VLINE(x, y1, y2, color)` | Generic vertical line |
-| `FILLRECT(x1, y1, x2, y2, color)` | Generic filled rectangle |
-| `DRAWRECT(x1, y1, x2, y2, color)` | Generic rectangle outline |
-| `DRAWCIRCLE(cx, cy, r, color)` | Generic circle outline |
-| `FILLCIRCLE(cx, cy, r, color)` | Generic filled circle |
-| `WAITVRETRACE` | Wait for vertical retrace |
-| `WAITHRETRACE` | Wait for horizontal retrace |
-| `SETSCALE(xscale, yscale)` | Set global scaling |
-| `GETSCALE(type, unused)` | Get global scale |
-| `SETVGAWINDOW(maxx, maxy)` | Set VGA window |
-| `SETVGAVIEW(x1, y1, x2, y2)` | Set VGA viewport |
+| `Svga_PutPixel(x, y, color)` | Generic pixel plot (dispatched) |
+| `Svga_GetPixel(x, y)` | Generic pixel read (dispatched) |
+| `Svga_LineDraw(x1, y1, x2, y2, color)` | Generic line (dispatched) |
+| `Svga_ClearScreen(color)` | Generic clear (dispatched) |
+| `Svga_HLine(x1, x2, y, color)` | Generic horizontal line |
+| `Svga_VLine(x, y1, y2, color)` | Generic vertical line |
+| `Svga_FillRect(x1, y1, x2, y2, color)` | Generic filled rectangle |
+| `Svga_DrawRect(x1, y1, x2, y2, color)` | Generic rectangle outline |
+| `Svga_DrawCircle(cx, cy, r, color)` | Generic circle outline |
+| `Svga_FillCircle(cx, cy, r, color)` | Generic filled circle |
+| `Svga_WaitVRetrace` | Wait for vertical retrace |
+| `Svga_WaitHRetrace` | Wait for horizontal retrace |
+| `Svga_SetScale(xscale, yscale)` | Set global scaling |
+| `Svga_GetScale(type, unused)` | Get global scale |
+| `Svga_SetWindow(maxx, maxy)` | Set VGA window |
+| `Svga_SetViewport(x1, y1, x2, y2)` | Set VGA viewport |
 
 ## ✍️ Example
 
@@ -392,16 +395,16 @@ Here's a simple example of how to initialize a graphics mode, draw a box, and wa
 $INCLUDE "SVGA.SUB"
 
 ' Initialize a 640x480 graphics mode with 256 colors
-SETRES 640, 480, 256
+CALL Svga_SetRes(640, 480, 256)
 
 ' Draw a red box
-BOX 100, 100, 200, 200, 4
+CALL Svga_FillRect(100, 100, 200, 200, 4)
 
 ' Wait for a key press
 WHILE INKEY$ = "" : WEND
 
 ' Return to text mode
-CLOSEVGA
+CALL Svga_Close
 ```
 
 ## 📄 Supported File Formats
@@ -522,21 +525,21 @@ CALL VGAPRINT(x, y, color, bgcolor, "Hello World", flags)
 #### Power BASIC Integration
 ```basic
 ' Include the modular library
-$INCLUDE "SVGA_NEW.SUB"
+$INCLUDE "SVGA.SUB"
 
 ' Initialize library
-CALL INITSVGA
+CALL Svga_Init
 
 ' Set graphics mode
-CALL SETRES(800, 600, 256)
+CALL Svga_SetRes(800, 600, 256)
 
 ' Load and display resources
-CALL INITFONT("font8x8.txt", 0)
-CALL SHOWBMP("background.bmp", 0, 0)
-CALL VGAPRINT(100, 100, 15, 0, "Hello SVGA!", 0)
+CALL Font_Init("font8x8.txt", 0)
+CALL DrawBmp_Show("background.bmp", 0, 0)
+CALL Font_Print(100, 100, 15, 0, "Hello SVGA!", 0)
 
 ' Cleanup
-CALL CLEANUPSVGA
+CALL Svga_Cleanup
 ```
 
 ## ✅ Recently Implemented Features
@@ -547,18 +550,18 @@ The library now includes a comprehensive animation system with full resource man
 
 ```basic
 ' Load and manage animations
-animHandle = LOADANI("animated.ani")
-CALL STARTANI(animHandle, x, y, loopCount, useTimer)
+animHandle = DrawAni_Load("animated.ani")
+CALL DrawAni_Start(animHandle, x, y, loopCount, useTimer)
 
 ' Resource management
-CALL PAUSEANI(animHandle)      ' Pause animation
-CALL RESUMEANI(animHandle)     ' Resume paused animation
-CALL FREEZEANI(animHandle)     ' Stop but keep resources
-state = GETANISTATE(animHandle) ' Get current state
+CALL DrawAni_Pause(animHandle)      ' Pause animation
+CALL DrawAni_Resume(animHandle)     ' Resume paused animation
+CALL DrawAni_Freeze(animHandle)     ' Stop but keep resources
+state = DrawAni_GetState(animHandle) ' Get current state
 
 ' Auto-cleanup and timer integration
-CALL SETANIAUTOCLEANUP(animHandle, 1)
-CALL UPDATEANI(animHandle, x, y)  ' Call in main loop
+CALL DrawAni_SetAutoCleanup(animHandle, 1)
+CALL DrawAni_Update(animHandle, x, y)  ' Call in main loop
 ```
 
 ### Advanced Sprite Management System
@@ -616,17 +619,17 @@ Automatic background backup/restore with transparency support:
 
 ```basic
 ' Initialize and load cursor
-CALL INITCURSOR
-cursorHandle = LOADCURSOR("cursor.cur", 0)
-CALL SETCURSOR(cursorHandle)
+CALL Cursor_Init
+cursorHandle = Cursor_Load("cursor.cur", 0)
+CALL Cursor_Set(cursorHandle)
 
 ' Automatic damage-free movement
-CALL MOVECURSOR(mouseX, mouseY)  ' Saves background, restores old area
-CALL SHOWCURSOR / CALL HIDECURSOR
+CALL Cursor_Move(mouseX, mouseY)  ' Saves background, restores old area
+CALL Cursor_Show / CALL Cursor_Hide
 
 ' Query cursor state
-visible = ISCURSORVISIBLE
-CALL GETCURSORPOS(currentX, currentY)
+visible = Cursor_IsVisible
+CALL Cursor_GetPos(currentX, currentY)
 ```
 
 ### High-Precision Timer System
@@ -635,22 +638,22 @@ Interrupt-driven 10ms resolution timing:
 
 ```basic
 ' Initialize 10ms precision timing
-CALL INITTIMER
-currentTick = GETTIMERTICK  ' Get current 10ms tick
+CALL Timer_Init
+currentTick = Timer_GetTick  ' Get current 10ms tick
 
 ' Named timers
-CALL CREATETIMER(0, 50)     ' Timer 0: 500ms interval
-IF ISTIMERREADY(0) THEN     ' Non-blocking check
+CALL Timer_Create(0, 50)     ' Timer 0: 500ms interval
+IF Timer_IsReady(0) THEN     ' Non-blocking check
     ' Timer elapsed, do something
 END IF
 
 ' Interrupt-driven callbacks
-result = ONTIMER(100, CODEPTR(TimerCallback))  ' 100ms interrupts
+result = Timer_OnTimer(100, CODEPTR(TimerCallback))  ' 100ms interrupts
 ' Your TimerCallback SUB gets called automatically
-CALL OFFTIMER  ' Disable when done
+CALL Timer_OffTimer  ' Disable when done
 
 ' High-resolution delays
-CALL DELAY10MS(10)  ' Precise 100ms delay
+CALL Timer_Delay10Ms(10)  ' Precise 100ms delay
 ```
 
 ### Multi-Format Image Support
@@ -659,16 +662,15 @@ Extended format support with compression and transparency:
 
 ```basic
 ' Additional image formats
-CALL DRAWTIF("image.tif", x, y)     ' TIFF with PackBits/LZW
-CALL DRAWTGA("image.tga", x, y)     ' TGA with RLE support  
-CALL DRAWGIF("image.gif", x, y)     ' GIF with transparency
+CALL DrawTif_Show("image.tif", x, y)     ' TIFF with PackBits/LZW
+CALL DrawTga_Show("image.tga", x, y)     ' TGA with RLE support  
+CALL DrawGif_Show("image.gif", x, y)     ' GIF with transparency
 
 ' Windows DLL icon extraction
-libHandle = OPENICOLIB("shell32.dll")
-iconCount = GETICOLIBCOUNT(libHandle)
-iconHandle = EXTRACTICON(libHandle, 0, 0)  ' Extract first icon
-CALL DRAWICO(iconHandle, x, y)
-CALL CLOSEICOLIB(libHandle)
+libHandle = DrawIcl_LoadLib("shell32.dll")
+iconCount = DrawIcl_GetIconCount(libHandle)
+CALL DrawIcl_ShowLibIcon(libHandle, 0, 0, x, y)  ' Show first icon
+CALL DrawIcl_CloseLib(libHandle)
 ```
 
 ## 🚧 Future Enhancements
