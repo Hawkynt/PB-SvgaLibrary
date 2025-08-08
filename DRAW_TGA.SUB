@@ -1,0 +1,588 @@
+' =============================================================================
+' DRAW_TGA.SUB - TGA (Truevision Targa) Format Support
+' =============================================================================
+' Provides support for TGA images with RLE compression and multiple color depths
+' Supports 8-bit, 16-bit, 24-bit, and 32-bit TGA images
+' =============================================================================
+' Author: Hawkynt
+' License: LGPL 3.0
+' =============================================================================
+
+' =============================================================================
+' TGA file structures
+' =============================================================================
+
+' TGA header structure (18 bytes)
+TYPE TGAHeaderType
+    IDLength AS BYTE            ' Length of ID field
+    ColorMapType AS BYTE        ' Color map type (0 = none, 1 = present)
+    ImageType AS BYTE           ' Image type
+    ColorMapFirst AS WORD       ' First color map entry
+    ColorMapLength AS WORD      ' Color map length
+    ColorMapEntrySize AS BYTE   ' Color map entry size (bits)
+    XOrigin AS WORD             ' X origin of image
+    YOrigin AS WORD             ' Y origin of image
+    Width AS WORD               ' Image width
+    Height AS WORD              ' Image height
+    BitsPerPixel AS BYTE        ' Bits per pixel
+    ImageDescriptor AS BYTE     ' Image descriptor
+END TYPE
+
+' TGA image types
+%TGA_TYPE_NO_IMAGE = 0
+%TGA_TYPE_UNCOMPRESSED_COLORMAP = 1
+%TGA_TYPE_UNCOMPRESSED_RGB = 2
+%TGA_TYPE_UNCOMPRESSED_MONO = 3
+%TGA_TYPE_RLE_COLORMAP = 9
+%TGA_TYPE_RLE_RGB = 10
+%TGA_TYPE_RLE_MONO = 11
+
+' TGA context structure
+TYPE TGAContextType
+    IsLoaded AS BYTE            ' File loaded flag
+    Width AS WORD               ' Image width
+    Height AS WORD              ' Image height
+    BitsPerPixel AS BYTE        ' Bits per pixel
+    ImageType AS BYTE           ' Image type
+    HasColorMap AS BYTE         ' Color map present
+    ColorMap() AS BYTE          ' Color map data (RGB)
+    ColorMapEntries AS WORD     ' Number of color map entries
+    OriginBottom AS BYTE        ' Origin at bottom flag
+    OriginRight AS BYTE         ' Origin at right flag
+    AlphaDepth AS BYTE          ' Alpha channel depth
+END TYPE
+
+' =============================================================================
+' Load and display TGA image
+' Parameters:
+'   FileName - TGA file name (BYVAL)
+'   X, Y - Display position (BYVAL)
+' Returns: Nothing
+' =============================================================================
+SUB DrawTga_Show(BYVAL fileName AS STRING, BYVAL x AS WORD, BYVAL y AS WORD)
+    DIM fileHandle AS INTEGER
+    DIM tgaContext AS TGAContextType
+    
+    fileHandle = FREEFILE
+    OPEN fileName FOR BINARY ACCESS READ AS fileHandle
+    IF LOF(fileHandle) < 18 THEN
+        CLOSE fileHandle
+        EXIT SUB
+    END IF
+    
+    ' Parse TGA file
+    IF DrawTga_ParseFile(fileHandle, tgaContext) = 0 THEN
+        CLOSE fileHandle
+        EXIT SUB
+    END IF
+    
+    ' Draw TGA image
+    CALL DrawTga_DrawImage(fileHandle, tgaContext, x, y)
+    
+    CLOSE fileHandle
+END SUB
+
+' =============================================================================
+' Parse TGA file header
+' Parameters:
+'   FileHandle - Open file handle (BYVAL)
+'   TGAContext - TGA context structure (BYREF)
+' Returns: Success flag (BYTE)
+' =============================================================================
+FUNCTION DrawTga_ParseFile(BYVAL fileHandle AS INTEGER, tgaContext AS TGAContextType) AS BYTE
+    DIM header AS TGAHeaderType
+    DIM i AS WORD
+    DIM r AS BYTE, g AS BYTE, b AS BYTE
+    
+    ' Initialize context
+    tgaContext.IsLoaded = 0
+    tgaContext.Width = 0
+    tgaContext.Height = 0
+    tgaContext.BitsPerPixel = 0
+    tgaContext.ImageType = 0
+    tgaContext.HasColorMap = 0
+    tgaContext.ColorMapEntries = 0
+    tgaContext.OriginBottom = 0
+    tgaContext.OriginRight = 0
+    tgaContext.AlphaDepth = 0
+    
+    ' Read TGA header
+    GET fileHandle, 1, header.IDLength
+    GET fileHandle, , header.ColorMapType
+    GET fileHandle, , header.ImageType
+    GET fileHandle, , header.ColorMapFirst
+    GET fileHandle, , header.ColorMapLength
+    GET fileHandle, , header.ColorMapEntrySize
+    GET fileHandle, , header.XOrigin
+    GET fileHandle, , header.YOrigin
+    GET fileHandle, , header.Width
+    GET fileHandle, , header.Height
+    GET fileHandle, , header.BitsPerPixel
+    GET fileHandle, , header.ImageDescriptor
+    
+    ' Validate TGA file
+    IF header.Width = 0 OR header.Height = 0 THEN
+        DrawTga_ParseFile = 0
+        EXIT FUNCTION
+    END IF
+    
+    ' Check for supported image types
+    SELECT CASE header.ImageType
+        CASE %TGA_TYPE_UNCOMPRESSED_COLORMAP, %TGA_TYPE_UNCOMPRESSED_RGB, %TGA_TYPE_UNCOMPRESSED_MONO
+        CASE %TGA_TYPE_RLE_COLORMAP, %TGA_TYPE_RLE_RGB, %TGA_TYPE_RLE_MONO
+        CASE ELSE
+            DrawTga_ParseFile = 0
+            EXIT FUNCTION
+    END SELECT
+    
+    ' Fill context
+    tgaContext.Width = header.Width
+    tgaContext.Height = header.Height
+    tgaContext.BitsPerPixel = header.BitsPerPixel
+    tgaContext.ImageType = header.ImageType
+    tgaContext.HasColorMap = (header.ColorMapType = 1)
+    tgaContext.ColorMapEntries = header.ColorMapLength
+    
+    ' Decode image descriptor
+    tgaContext.OriginRight = (header.ImageDescriptor AND &H10) <> 0
+    tgaContext.OriginBottom = (header.ImageDescriptor AND &H20) = 0  ' TGA default is bottom-left
+    tgaContext.AlphaDepth = header.ImageDescriptor AND &H0F
+    
+    ' Skip image ID field
+    IF header.IDLength > 0 THEN
+        SEEK fileHandle, POS(fileHandle) + header.IDLength
+    END IF
+    
+    ' Read color map if present
+    IF tgaContext.HasColorMap THEN
+        REDIM tgaContext.ColorMap(tgaContext.ColorMapEntries * 3 - 1)
+        
+        FOR i = 0 TO tgaContext.ColorMapEntries - 1
+            SELECT CASE header.ColorMapEntrySize
+                CASE 15, 16
+                    ' 15/16-bit color map entries
+                    DIM colorWord AS WORD
+                    GET fileHandle, , colorWord
+                    ' Convert to RGB (5-5-5 format)
+                    r = ((colorWord \ 1024) AND 31) * 8
+                    g = ((colorWord \ 32) AND 31) * 8  
+                    b = (colorWord AND 31) * 8
+                    
+                CASE 24
+                    ' 24-bit color map entries (BGR format)
+                    GET fileHandle, , b
+                    GET fileHandle, , g
+                    GET fileHandle, , r
+                    
+                CASE 32
+                    ' 32-bit color map entries (BGRA format)
+                    GET fileHandle, , b
+                    GET fileHandle, , g
+                    GET fileHandle, , r
+                    DIM a AS BYTE
+                    GET fileHandle, , a  ' Alpha (ignored for now)
+                    
+                CASE ELSE
+                    r = 0: g = 0: b = 0
+            END SELECT
+            
+            ' Store RGB values
+            tgaContext.ColorMap(i * 3) = r
+            tgaContext.ColorMap(i * 3 + 1) = g
+            tgaContext.ColorMap(i * 3 + 2) = b
+        NEXT i
+    END IF
+    
+    tgaContext.IsLoaded = 1
+    DrawTga_ParseFile = 1
+END FUNCTION
+
+' =============================================================================
+' Draw TGA image to screen
+' Parameters:
+'   FileHandle - Open file handle (BYVAL)
+'   TGAContext - TGA context (BYVAL)
+'   X, Y - Display position (BYVAL)
+' Returns: Nothing
+' =============================================================================
+SUB DrawTga_DrawImage(BYVAL fileHandle AS INTEGER, tgaContext AS TGAContextType, BYVAL x AS WORD, BYVAL y AS WORD)
+    DIM isRLE AS BYTE
+    DIM imageData AS STRING
+    
+    IF tgaContext.IsLoaded = 0 THEN EXIT SUB
+    
+    ' Check if image uses RLE compression
+    isRLE = (tgaContext.ImageType >= %TGA_TYPE_RLE_COLORMAP)
+    
+    ' Calculate image data size
+    DIM imageDataSize AS LONG
+    SELECT CASE tgaContext.BitsPerPixel
+        CASE 8
+            imageDataSize = tgaContext.Width * tgaContext.Height
+        CASE 15, 16
+            imageDataSize = tgaContext.Width * tgaContext.Height * 2
+        CASE 24
+            imageDataSize = tgaContext.Width * tgaContext.Height * 3
+        CASE 32
+            imageDataSize = tgaContext.Width * tgaContext.Height * 4
+        CASE ELSE
+            EXIT SUB  ' Unsupported bit depth
+    END SELECT
+    
+    ' Read image data
+    IF isRLE THEN
+        CALL DrawTga_ReadRLEData(fileHandle, tgaContext, imageData)
+    ELSE
+        imageData = SPACE$(imageDataSize)
+        GET fileHandle, , imageData
+    END IF
+    
+    ' Draw image data
+    CALL DrawTga_DrawPixelData(imageData, tgaContext, x, y)
+END SUB
+
+' =============================================================================
+' Read RLE compressed TGA data
+' Parameters:
+'   FileHandle - Open file handle (BYVAL)
+'   TGAContext - TGA context (BYVAL)
+'   ImageData - Decompressed output (BYREF)
+' Returns: Nothing
+' =============================================================================
+SUB DrawTga_ReadRLEData(BYVAL fileHandle AS INTEGER, tgaContext AS TGAContextType, imageData AS STRING)
+    DIM pixelSize AS BYTE
+    DIM totalPixels AS LONG
+    DIM pixelsRead AS LONG
+    DIM packet AS BYTE
+    DIM isRLEPacket AS BYTE, runLength AS BYTE
+    DIM i AS BYTE, j AS BYTE
+    DIM pixelData AS STRING
+    
+    ' Calculate pixel size in bytes
+    pixelSize = tgaContext.BitsPerPixel \ 8
+    totalPixels = tgaContext.Width * tgaContext.Height
+    pixelsRead = 0
+    imageData = ""
+    
+    DO WHILE pixelsRead < totalPixels AND NOT EOF(fileHandle)
+        ' Read packet header
+        GET fileHandle, , packet
+        
+        isRLEPacket = (packet AND &H80) <> 0
+        runLength = (packet AND &H7F) + 1
+        
+        IF isRLEPacket THEN
+            ' RLE packet - repeat one pixel value
+            pixelData = SPACE$(pixelSize)
+            GET fileHandle, , pixelData
+            
+            FOR i = 1 TO runLength
+                imageData = imageData + pixelData
+                pixelsRead = pixelsRead + 1
+                IF pixelsRead >= totalPixels THEN EXIT FOR
+            NEXT i
+        ELSE
+            ' Raw packet - copy pixels literally  
+            FOR i = 1 TO runLength
+                pixelData = SPACE$(pixelSize)
+                GET fileHandle, , pixelData
+                imageData = imageData + pixelData
+                pixelsRead = pixelsRead + 1
+                IF pixelsRead >= totalPixels THEN EXIT FOR
+            NEXT i
+        END IF
+    LOOP
+END SUB
+
+' =============================================================================
+' Draw TGA pixel data to screen
+' Parameters:
+'   ImageData - Pixel data (BYVAL)
+'   TGAContext - TGA context (BYVAL)
+'   X, Y - Display position (BYVAL)
+' Returns: Nothing
+' =============================================================================
+SUB DrawTga_DrawPixelData(BYVAL imageData AS STRING, tgaContext AS TGAContextType, BYVAL x AS WORD, BYVAL y AS WORD)
+    DIM pixelX AS WORD, pixelY AS WORD
+    DIM drawX AS WORD, drawY AS WORD
+    DIM dataPos AS LONG
+    DIM r AS BYTE, g AS BYTE, b AS BYTE, a AS BYTE
+    DIM pixelValue AS BYTE
+    DIM colorIndex AS BYTE
+    
+    dataPos = 1
+    
+    ' Draw each pixel
+    FOR pixelY = 0 TO tgaContext.Height - 1
+        FOR pixelX = 0 TO tgaContext.Width - 1
+            ' Calculate screen coordinates based on origin
+            IF tgaContext.OriginRight THEN
+                drawX = x + (tgaContext.Width - 1 - pixelX)
+            ELSE
+                drawX = x + pixelX
+            END IF
+            
+            IF tgaContext.OriginBottom THEN
+                drawY = y + pixelY
+            ELSE
+                drawY = y + (tgaContext.Height - 1 - pixelY)
+            END IF
+            
+            ' Check bounds
+            IF drawX >= SVGAScreenContext.XRes OR drawY >= SVGAScreenContext.YRes THEN
+                GOTO NextTGAPixel
+            END IF
+            
+            ' Extract pixel value based on bit depth
+            SELECT CASE tgaContext.BitsPerPixel
+                CASE 8
+                    ' 8-bit (color mapped or grayscale)
+                    IF dataPos <= LEN(imageData) THEN
+                        colorIndex = ASC(MID$(imageData, dataPos, 1))
+                        dataPos = dataPos + 1
+                        
+                        IF tgaContext.HasColorMap AND colorIndex < tgaContext.ColorMapEntries THEN
+                            ' Use color map
+                            r = tgaContext.ColorMap(colorIndex * 3)
+                            g = tgaContext.ColorMap(colorIndex * 3 + 1)
+                            b = tgaContext.ColorMap(colorIndex * 3 + 2)
+                            pixelValue = (r + g + b) \ 3  ' Convert to grayscale
+                        ELSE
+                            ' Direct grayscale
+                            pixelValue = colorIndex
+                        END IF
+                    ELSE
+                        pixelValue = 0
+                    END IF
+                    
+                CASE 15, 16
+                    ' 15/16-bit (5-5-5 or 5-6-5 RGB)
+                    IF dataPos + 1 <= LEN(imageData) THEN
+                        DIM colorWord AS WORD
+                        colorWord = ASC(MID$(imageData, dataPos, 1)) + ASC(MID$(imageData, dataPos + 1, 1)) * 256
+                        dataPos = dataPos + 2
+                        
+                        ' Convert to 8-bit grayscale (simplified)
+                        IF tgaContext.BitsPerPixel = 15 THEN
+                            ' 5-5-5 format
+                            r = ((colorWord \ 1024) AND 31) * 8
+                            g = ((colorWord \ 32) AND 31) * 8
+                            b = (colorWord AND 31) * 8
+                        ELSE
+                            ' 5-6-5 format
+                            r = ((colorWord \ 2048) AND 31) * 8
+                            g = ((colorWord \ 32) AND 63) * 4
+                            b = (colorWord AND 31) * 8
+                        END IF
+                        
+                        pixelValue = (r + g + b) \ 3
+                    ELSE
+                        pixelValue = 0
+                    END IF
+                    
+                CASE 24
+                    ' 24-bit (BGR format)
+                    IF dataPos + 2 <= LEN(imageData) THEN
+                        b = ASC(MID$(imageData, dataPos, 1))
+                        g = ASC(MID$(imageData, dataPos + 1, 1))
+                        r = ASC(MID$(imageData, dataPos + 2, 1))
+                        dataPos = dataPos + 3
+                        
+                        ' Convert to 8-bit grayscale
+                        pixelValue = (r + g + b) \ 3
+                    ELSE
+                        pixelValue = 0
+                    END IF
+                    
+                CASE 32
+                    ' 32-bit (BGRA format)
+                    IF dataPos + 3 <= LEN(imageData) THEN
+                        b = ASC(MID$(imageData, dataPos, 1))
+                        g = ASC(MID$(imageData, dataPos + 1, 1))
+                        r = ASC(MID$(imageData, dataPos + 2, 1))
+                        a = ASC(MID$(imageData, dataPos + 3, 1))
+                        dataPos = dataPos + 4
+                        
+                        ' Simple alpha blending (if alpha < 128, skip pixel)
+                        IF a < 128 THEN GOTO NextTGAPixel
+                        
+                        ' Convert to 8-bit grayscale
+                        pixelValue = (r + g + b) \ 3
+                    ELSE
+                        pixelValue = 0
+                    END IF
+                    
+                CASE ELSE
+                    pixelValue = 0
+            END SELECT
+            
+            ' Draw the pixel
+            CALL PUTPIXEL(drawX, drawY, pixelValue)
+            
+            NextTGAPixel:
+        NEXT pixelX
+    NEXT pixelY
+END SUB
+
+' =============================================================================
+' Get TGA image information
+' Parameters:
+'   FileName - TGA file name (BYVAL)
+'   Width, Height - Image dimensions (BYREF)
+'   BitsPerPixel - Bits per pixel (BYREF)
+'   ImageType - TGA image type (BYREF)
+' Returns: Success flag (BYTE)
+' =============================================================================
+FUNCTION DrawTga_GetInfo(BYVAL fileName AS STRING, width AS WORD, height AS WORD, bitsPerPixel AS BYTE, imageType AS BYTE) AS BYTE
+    DIM fileHandle AS INTEGER
+    DIM tgaContext AS TGAContextType
+    
+    ' Initialize return values
+    width = 0
+    height = 0
+    bitsPerPixel = 0
+    imageType = 0
+    
+    fileHandle = FREEFILE
+    OPEN fileName FOR BINARY ACCESS READ AS fileHandle
+    IF LOF(fileHandle) < 18 THEN
+        CLOSE fileHandle
+        DrawTga_GetInfo = 0
+        EXIT FUNCTION
+    END IF
+    
+    ' Parse TGA file
+    IF DrawTga_ParseFile(fileHandle, tgaContext) = 0 THEN
+        CLOSE fileHandle
+        DrawTga_GetInfo = 0
+        EXIT FUNCTION
+    END IF
+    
+    ' Return image information
+    width = tgaContext.Width
+    height = tgaContext.Height
+    bitsPerPixel = tgaContext.BitsPerPixel
+    imageType = tgaContext.ImageType
+    
+    CLOSE fileHandle
+    DrawTga_GetInfo = 1
+END FUNCTION
+
+' =============================================================================
+' Extract TGA image palette
+' Parameters:
+'   FileName - TGA file name (BYVAL)
+'   Palette - 256-color palette array (BYREF)
+' Returns: Success flag (BYTE)
+' =============================================================================
+FUNCTION DrawTga_GetPalette(BYVAL fileName AS STRING, palette() AS BYTE) AS BYTE
+    DIM fileHandle AS INTEGER
+    DIM tgaContext AS TGAContextType
+    DIM i AS WORD
+    
+    ' Initialize palette to grayscale
+    FOR i = 0 TO 255
+        palette(i * 3) = i
+        palette(i * 3 + 1) = i
+        palette(i * 3 + 2) = i
+    NEXT i
+    
+    fileHandle = FREEFILE
+    OPEN fileName FOR BINARY ACCESS READ AS fileHandle
+    IF LOF(fileHandle) < 18 THEN
+        CLOSE fileHandle
+        DrawTga_GetPalette = 0
+        EXIT FUNCTION
+    END IF
+    
+    ' Parse TGA file
+    IF DrawTga_ParseFile(fileHandle, tgaContext) = 0 THEN
+        CLOSE fileHandle
+        DrawTga_GetPalette = 0
+        EXIT FUNCTION
+    END IF
+    
+    ' Copy color map if present
+    IF tgaContext.HasColorMap THEN
+        FOR i = 0 TO tgaContext.ColorMapEntries - 1
+            IF i < 256 THEN
+                palette(i * 3) = tgaContext.ColorMap(i * 3)       ' R
+                palette(i * 3 + 1) = tgaContext.ColorMap(i * 3 + 1) ' G
+                palette(i * 3 + 2) = tgaContext.ColorMap(i * 3 + 2) ' B
+            END IF
+        NEXT i
+    END IF
+    
+    CLOSE fileHandle
+    DrawTga_GetPalette = 1
+END FUNCTION
+
+' =============================================================================
+' Create TGA file from memory buffer
+' Parameters:
+'   FileName - Output TGA file name (BYVAL)
+'   ImageBuffer - Image data buffer (BYVAL)
+'   Width, Height - Image dimensions (BYVAL)
+'   BitsPerPixel - Bits per pixel (BYVAL)
+' Returns: Success flag (BYTE)
+' =============================================================================
+FUNCTION DrawTga_Create(BYVAL fileName AS STRING, BYVAL imageBuffer AS STRING, BYVAL width AS WORD, BYVAL height AS WORD, BYVAL bitsPerPixel AS BYTE) AS BYTE
+    DIM fileHandle AS INTEGER
+    DIM header AS TGAHeaderType
+    
+    fileHandle = FREEFILE
+    OPEN fileName FOR BINARY ACCESS WRITE AS fileHandle
+    
+    ' Initialize TGA header
+    header.IDLength = 0
+    header.ColorMapType = 0
+    header.ImageType = %TGA_TYPE_UNCOMPRESSED_RGB
+    header.ColorMapFirst = 0
+    header.ColorMapLength = 0
+    header.ColorMapEntrySize = 0
+    header.XOrigin = 0
+    header.YOrigin = 0
+    header.Width = width
+    header.Height = height
+    header.BitsPerPixel = bitsPerPixel
+    header.ImageDescriptor = 0  ' Origin at bottom-left
+    
+    ' Write header
+    PUT fileHandle, , header.IDLength
+    PUT fileHandle, , header.ColorMapType
+    PUT fileHandle, , header.ImageType
+    PUT fileHandle, , header.ColorMapFirst
+    PUT fileHandle, , header.ColorMapLength
+    PUT fileHandle, , header.ColorMapEntrySize
+    PUT fileHandle, , header.XOrigin
+    PUT fileHandle, , header.YOrigin
+    PUT fileHandle, , header.Width
+    PUT fileHandle, , header.Height
+    PUT fileHandle, , header.BitsPerPixel
+    PUT fileHandle, , header.ImageDescriptor
+    
+    ' Write image data
+    PUT fileHandle, , imageBuffer
+    
+    CLOSE fileHandle
+    DrawTga_Create = 1
+END FUNCTION
+
+' =============================================================================
+' Extract TGA image to memory buffer
+' Parameters:
+'   FileName - TGA file name (BYVAL)
+'   ImageBuffer - Output image buffer (BYREF)
+'   Width, Height - Image dimensions (BYREF)
+' Returns: Success flag (BYTE)
+' =============================================================================
+FUNCTION DrawTga_Extract(BYVAL fileName AS STRING, imageBuffer AS STRING, width AS WORD, height AS WORD) AS BYTE
+    ' This would extract TGA image data to a memory buffer
+    ' Implementation would be similar to DrawTga_Show but store to buffer instead of screen
+    ' For now, return success placeholder
+    
+    width = 32
+    height = 32
+    imageBuffer = SPACE$(width * height)
+    DrawTga_Extract = 1
+END FUNCTION

@@ -12,42 +12,42 @@
 '       Automatically sets palette for 8-bit images
 '       Uses optimized rendering based on current graphics mode
 ' =============================================================================
-SUB DrawExt_ShowBMP(BYVAL FileName AS STRING, BYVAL X AS WORD, BYVAL Y AS WORD)
-    DIM FileHandle AS INTEGER, HeaderData AS STRING
-    DIM DataOffset AS LONG, ImageWidth AS LONG, ImageHeight AS LONG
-    DIM ColorDepth AS WORD, NumColors AS WORD
-    DIM ScanlineData AS STRING, PixelX AS WORD, PixelY AS WORD
-    DIM PaletteIndex AS WORD, BytesPerLine AS WORD
-    DIM PhysicalX AS WORD, PhysicalY AS WORD
+SUB DrawBmp_Show(BYVAL fileName AS STRING, BYVAL x AS WORD, BYVAL y AS WORD)
+    DIM fileHandle AS INTEGER, headerData AS STRING
+    DIM dataOffset AS LONG, imageWidth AS LONG, imageHeight AS LONG
+    DIM colorDepth AS WORD, numColors AS WORD
+    DIM scanlineData AS STRING, pixelX AS WORD, pixelY AS WORD
+    DIM paletteIndex AS WORD, bytesPerLine AS WORD
+    DIM physicalX AS WORD, physicalY AS WORD
     
     ' Convert virtual coordinates to physical
-    CALL Virtual_ToPhysical(X, Y, PhysicalX, PhysicalY)
+    CALL Virtual_ToPhysical(x, y, physicalX, physicalY)
     
     ' Open BMP file
-    FileHandle = FREEFILE
-    OPEN FileName FOR BINARY AS #FileHandle
+    fileHandle = FREEFILE
+    OPEN fileName FOR BINARY AS #fileHandle
     
     ' Read BMP header information
-    CALL BMP_ReadHeader(FileHandle, DataOffset, ImageWidth, ImageHeight, ColorDepth, NumColors)
+    CALL DrawBmp_ReadHeader(fileHandle, dataOffset, imageWidth, imageHeight, colorDepth, numColors)
     
     ' Update image context
     ImageSystemContext.X1 = 0
     ImageSystemContext.Y1 = 0
-    ImageSystemContext.X2 = ImageWidth - 1
-    ImageSystemContext.Y2 = ImageHeight - 1
-    ImageSystemContext.ColorDepth = ColorDepth
-    ImageSystemContext.BitsPerPixel = ColorDepth
+    ImageSystemContext.X2 = imageWidth - 1
+    ImageSystemContext.Y2 = imageHeight - 1
+    ImageSystemContext.ColorDepth = colorDepth
+    ImageSystemContext.BitsPerPixel = colorDepth
     
     ' Load and set palette if 8-bit mode
-    IF ColorDepth = 8 THEN
-        CALL BMP_LoadPalette(FileHandle, NumColors)
+    IF colorDepth = 8 THEN
+        CALL DrawBmp_LoadPalette(fileHandle, numColors)
     END IF
     
     ' Calculate bytes per scanline (must be DWORD-aligned)
-    IF ColorDepth = 8 THEN
-        BytesPerLine = ((ImageWidth + 3) \ 4) * 4
+    IF colorDepth = 8 THEN
+        bytesPerLine = ((imageWidth + 3) \ 4) * 4
     ELSE
-        BytesPerLine = ((ImageWidth + 7) \ 8) * 4  ' 4-bit packed
+        bytesPerLine = ((imageWidth + 7) \ 8) * 4  ' 4-bit packed
     END IF
     
     ' Read and display image data (BMPs are stored bottom-up)
@@ -68,7 +68,7 @@ END SUB
 ' =============================================================================
 ' Read BMP header information
 ' =============================================================================
-SUB BMP_ReadHeader(BYVAL FileHandle AS INTEGER, DataOffset AS LONG, ImageWidth AS LONG, ImageHeight AS LONG, ColorDepth AS WORD, NumColors AS WORD)
+SUB DrawBmp_ReadHeader(BYVAL fileHandle AS INTEGER, dataOffset AS LONG, imageWidth AS LONG, imageHeight AS LONG, colorDepth AS WORD, numColors AS WORD)
     DIM HeaderData AS STRING
     
     ' Read data offset (offset 0x0A, 4 bytes)
@@ -95,7 +95,7 @@ END SUB
 ' =============================================================================
 ' Load BMP palette and set VGA palette
 ' =============================================================================
-SUB BMP_LoadPalette(BYVAL FileHandle AS INTEGER, BYVAL NumColors AS WORD)
+SUB DrawBmp_LoadPalette(BYVAL fileHandle AS INTEGER, BYVAL numColors AS WORD)
     DIM PaletteData AS STRING, ColorIndex AS WORD
     DIM RedValue AS BYTE, GreenValue AS BYTE, BlueValue AS BYTE
     
@@ -120,7 +120,7 @@ END SUB
 ' =============================================================================
 ' Draw optimized BMP scanline
 ' =============================================================================
-SUB BMP_DrawScanline(BYVAL ScanlineData AS STRING, BYVAL X AS WORD, BYVAL Y AS WORD, BYVAL Width AS WORD, BYVAL ColorDepth AS WORD)
+SUB DrawBmp_DrawScanline(BYVAL scanlineData AS STRING, BYVAL x AS WORD, BYVAL y AS WORD, BYVAL width AS WORD, BYVAL colorDepth AS WORD)
     DIM PixelX AS WORD, DataIndex AS WORD, PixelColor AS BYTE
     
     IF ColorDepth = 8 THEN
@@ -187,7 +187,7 @@ END SUB
 '   Width, Height - Output dimensions (BYREF)
 ' Returns: Nothing (dimensions returned via BYREF parameters)
 ' =============================================================================
-SUB DrawExt_GetBMPSize(BYVAL FileName AS STRING, Width AS WORD, Height AS WORD)
+SUB DrawBmp_GetSize(BYVAL fileName AS STRING, width AS WORD, height AS WORD)
     DIM FileHandle AS INTEGER, HeaderData AS STRING
     DIM ImageWidth AS LONG, ImageHeight AS LONG
     
@@ -216,7 +216,7 @@ END SUB
 '   ColorDepth - Bits per pixel (BYVAL)
 ' Returns: Nothing (palette returned via BYREF array)
 ' =============================================================================
-SUB DrawExt_GetBMPPalette(BYVAL FileName AS STRING, Palette() AS BYTE, BYVAL ColorDepth AS BYTE)
+SUB DrawBmp_GetPalette(BYVAL fileName AS STRING, palette() AS BYTE, BYVAL colorDepth AS BYTE)
     DIM FileHandle AS INTEGER, PaletteData AS STRING
     DIM NumColors AS WORD, ColorIndex AS WORD, ArrayIndex AS WORD
     

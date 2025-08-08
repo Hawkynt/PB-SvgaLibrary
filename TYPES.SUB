@@ -121,6 +121,65 @@ TYPE WindowContext
     Y2 AS WORD                  ' Window boundary Y2
 END TYPE
 
+' Timer System for Animations
+TYPE NamedTimerType
+    Active AS BYTE              ' Timer active flag
+    Delay AS WORD               ' Delay in 10ms units
+    NextTick AS LONG            ' Next trigger tick
+END TYPE
+
+TYPE TimerContextType
+    IsInitialized AS BYTE       ' Timer system initialized
+    TickCount AS LONG           ' Current tick count (10ms units)
+    AnimTimer AS LONG           ' Animation timer
+    AnimDelay AS WORD           ' Animation delay
+    LastSystemTick AS LONG      ' Last system timer value
+    NamedTimers(8) AS NamedTimerType  ' Named timers (0-7)
+END TYPE
+
+' Timer interrupt handler context (moved from TIMER.SUB)
+TYPE TimerInterruptType
+    IsInstalled AS BYTE        ' Interrupt handler installed
+    OldVector AS DWORD         ' Original interrupt vector
+    IntervalTicks AS WORD      ' Interrupt interval in ticks
+    HandlerAddress AS DWORD    ' Address of handler routine
+    UserRoutine AS DWORD       ' User routine to call
+END TYPE
+
+' Cursor Management System
+TYPE CursorContextType
+    IsInitialized AS BYTE       ' Cursor system initialized
+    IsVisible AS BYTE           ' Cursor visibility flag
+    CurrentX AS WORD            ' Current cursor X position
+    CurrentY AS WORD            ' Current cursor Y position
+    HotspotX AS WORD            ' Cursor hotspot X offset
+    HotspotY AS WORD            ' Cursor hotspot Y offset
+    Width AS WORD               ' Cursor width
+    Height AS WORD              ' Cursor height
+    HasBackground AS BYTE       ' Background saved flag
+    CursorData AS STRING        ' Cursor image data
+    MaskData AS STRING          ' Cursor transparency mask
+    BackgroundData AS STRING    ' Saved background data
+END TYPE
+
+' Icon/Cursor File Structures
+TYPE IconHeaderType
+    Reserved AS WORD            ' Reserved (must be 0)
+    Type AS WORD               ' 1 = ICO, 2 = CUR
+    Count AS WORD              ' Number of images
+END TYPE
+
+TYPE IconDirEntryType
+    Width AS BYTE              ' Image width
+    Height AS BYTE             ' Image height
+    ColorCount AS BYTE         ' Number of colors
+    Reserved AS BYTE           ' Reserved
+    Planes AS WORD             ' Color planes (hotspot X for CUR)
+    BitCount AS WORD           ' Bits per pixel (hotspot Y for CUR)
+    BytesInRes AS LONG         ' Image data size
+    ImageOffset AS LONG        ' Offset to image data
+END TYPE
+
 ' Global library state - single instance of each context
 DIM SVGAScreenContext AS SHARED SVGAScreen
 DIM VESASystemContext AS SHARED VESAContext
@@ -132,9 +191,25 @@ DIM AnimationSystemContext AS SHARED AnimationContext
 DIM ScaleSystemContext AS SHARED ScaleContext
 DIM WindowSystemContext AS SHARED WindowContext
 DIM SVGADispatch AS SHARED DispatchTable
+DIM TimerSystemContext AS SHARED TimerContextType
+DIM CursorSystemContext AS SHARED CursorContextType
+
+' Animation management arrays (separate from types due to PowerBASIC limitations)
+DIM SHARED AnimationStates(8) AS BYTE         ' Animation states
+DIM SHARED AnimationTimerIDs(8) AS BYTE       ' Associated timer IDs  
+DIM SHARED AnimationAutoCleanup(8) AS BYTE    ' Auto cleanup flags
+
+' Image format support arrays
+DIM SHARED GIFGlobalPalettes(8, 767) AS BYTE      ' GIF global palettes (8 contexts, 256*3 colors)
+DIM SHARED TIFFColorMaps(8, 767) AS WORD          ' TIFF color maps (8 contexts, 256*3 words)
+DIM SHARED TGAColorMaps(8, 767) AS BYTE           ' TGA color maps (8 contexts, 256*3 bytes)
+
+' Icon library arrays
+DIM SHARED ICOLIBIconGroupIDs(4, 15) AS WORD      ' Icon group IDs (4 libs, 16 groups max)
+DIM SHARED ICOLIBIconGroupNames(4, 15) AS STRING  ' Icon group names
 
 ' Initialize default values
-SUB InitializeSVGAContexts
+SUB Types_InitializeSvgaContexts
     WindowSystemContext.Current = 0
     VESASystemContext.OneLoadOnly = 0
     VESASystemContext.TransparentColor = 0

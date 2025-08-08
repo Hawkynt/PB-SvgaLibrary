@@ -11,15 +11,26 @@
 
 ' Include all module files
 $INCLUDE "TYPES.SUB"      ' Type definitions and global variables
+$INCLUDE "TIMER.SUB"      ' High-precision timer system
 $INCLUDE "VGA.SUB"        ' Standard VGA graphics functions
 $INCLUDE "MODEX.SUB"      ' Mode-X graphics functions
 $INCLUDE "VESA.SUB"       ' VESA graphics mode management
 $INCLUDE "VIRTUAL.SUB"    ' Virtual coordinate system management
 $INCLUDE "GRAPHICS.SUB"   ' Core drawing primitives
-$INCLUDE "MEMORY.SUB"     ' EMS memory management
+$INCLUDE "MEMORY.SUB"     ' EMS & Memory management
 $INCLUDE "FONTS.SUB"      ' Font loading and text rendering
-$INCLUDE "DRAW_EXT.SUB"   ' External image format drawing
-$INCLUDE "IMAGES.SUB"     ' Legacy image functions
+$INCLUDE "CURSOR.SUB"     ' Advanced cursor management
+$INCLUDE "SPRITE.SUB"     ' Sprite management and collision detection
+$INCLUDE "SCROLL.SUB"     ' Screen scrolling routines
+$INCLUDE "DRAW_ICO.SUB"   ' ICO image format support
+$INCLUDE "DRAW_CUR.SUB"   ' CUR cursor format support
+$INCLUDE "DRAW_ANI.SUB"   ' ANI animated cursor support
+$INCLUDE "DRAW_BMP.SUB"   ' BMP image format drawing
+$INCLUDE "DRAW_PCX.SUB"   ' PCX image format drawing
+$INCLUDE "DRAW_TIF.SUB"   ' TIFF image format support
+$INCLUDE "DRAW_TGA.SUB"   ' TGA image format support
+$INCLUDE "DRAW_GIF.SUB"   ' GIF image format support
+$INCLUDE "DRAW_ICL.SUB"   ' Windows DLL icon library support
 
 ' =============================================================================
 ' Initialize SVGA library
@@ -27,15 +38,27 @@ $INCLUDE "IMAGES.SUB"     ' Legacy image functions
 ' Returns: Nothing
 ' Note: Call this before using any other library functions
 ' =============================================================================
-SUB INITSVGA
+SUB Svga_Init
     ' Initialize all context structures
-    CALL InitializeSVGAContexts
+    CALL Types_InitializeSvgaContexts
+    
+    ' Initialize timer system for animations
+    CALL Timer_Init
+    
+    ' Initialize cursor management system
+    CALL Cursor_Init
+    
+    ' Initialize sprite system
+    CALL Sprite_InitSprites
+    
+    ' Initialize scrolling system
+    CALL Scroll_InitScroll
     
     ' Initialize Mode-X performance lookup tables
     CALL ModeX_InitTables
     
     ' Initialize dispatch table with default (Mode 13h) function pointers
-    CALL InitDispatchTable
+    CALL Svga_InitDispatchTable
     
     ' Set default values
     SVGAScreenContext.XRes = 0
@@ -68,7 +91,7 @@ END SUB
 ' Returns: Nothing
 ' Note: Must be called after mode is set to update function pointers
 ' =============================================================================
-SUB InitDispatchTable
+SUB Svga_InitDispatchTable
     SELECT CASE VESASystemContext.CurrentMode
         CASE %SVGA_MODEX
             SVGADispatch.PutPixel = CODEPTR(ModeX_PutPixel)
@@ -84,31 +107,31 @@ SUB InitDispatchTable
             SVGADispatch.CopyBlock = CODEPTR(ModeX_CopyBlock)
             
         CASE %SVGA_VESA
-            SVGADispatch.PutPixel = CODEPTR(VESA_PutPixel)
-            SVGADispatch.GetPixel = CODEPTR(VESA_GetPixel)
-            SVGADispatch.HLine = CODEPTR(VESA_HLine)
-            SVGADispatch.VLine = CODEPTR(VESA_VLine)
-            SVGADispatch.LineDraw = CODEPTR(VESA_LineDraw)
-            SVGADispatch.FillRect = CODEPTR(VESA_FillRect)
-            SVGADispatch.DrawRect = CODEPTR(VESA_DrawRect)
+            SVGADispatch.PutPixel = CODEPTR(Vesa_PutPixel)
+            SVGADispatch.GetPixel = CODEPTR(Vesa_GetPixel)
+            SVGADispatch.HLine = CODEPTR(Vesa_HLine)
+            SVGADispatch.VLine = CODEPTR(Vesa_VLine)
+            SVGADispatch.LineDraw = CODEPTR(Vesa_LineDraw)
+            SVGADispatch.FillRect = CODEPTR(Vesa_FillRect)
+            SVGADispatch.DrawRect = CODEPTR(Vesa_DrawRect)
             ' VESA doesn't have optimized circle functions - use NULL pointers
             SVGADispatch.DrawCircle = 0
             SVGADispatch.FillCircle = 0
-            SVGADispatch.ClearScreen = CODEPTR(VESA_ClearScreen)
-            SVGADispatch.CopyBlock = CODEPTR(VESA_CopyBlock)
+            SVGADispatch.ClearScreen = CODEPTR(Vesa_ClearScreen)
+            SVGADispatch.CopyBlock = CODEPTR(Vesa_CopyBlock)
             
         CASE %SVGA_MODE13, ELSE
-            SVGADispatch.PutPixel = CODEPTR(VGA_PutPixel)
-            SVGADispatch.GetPixel = CODEPTR(VGA_GetPixel)
-            SVGADispatch.HLine = CODEPTR(VGA_HLine)
-            SVGADispatch.VLine = CODEPTR(VGA_VLine)
-            SVGADispatch.LineDraw = CODEPTR(VGA_LineDraw)
-            SVGADispatch.FillRect = CODEPTR(VGA_FillRect)
-            SVGADispatch.DrawRect = CODEPTR(VGA_DrawRect)
-            SVGADispatch.DrawCircle = CODEPTR(VGA_DrawCircle)
-            SVGADispatch.FillCircle = CODEPTR(VGA_FillCircle)
-            SVGADispatch.ClearScreen = CODEPTR(VGA_ClearScreen)
-            SVGADispatch.CopyBlock = CODEPTR(VGA_CopyBlock)
+            SVGADispatch.PutPixel = CODEPTR(Vga_PutPixel)
+            SVGADispatch.GetPixel = CODEPTR(Vga_GetPixel)
+            SVGADispatch.HLine = CODEPTR(Vga_HLine)
+            SVGADispatch.VLine = CODEPTR(Vga_VLine)
+            SVGADispatch.LineDraw = CODEPTR(Vga_LineDraw)
+            SVGADispatch.FillRect = CODEPTR(Vga_FillRect)
+            SVGADispatch.DrawRect = CODEPTR(Vga_DrawRect)
+            SVGADispatch.DrawCircle = CODEPTR(Vga_DrawCircle)
+            SVGADispatch.FillCircle = CODEPTR(Vga_FillCircle)
+            SVGADispatch.ClearScreen = CODEPTR(Vga_ClearScreen)
+            SVGADispatch.CopyBlock = CODEPTR(Vga_CopyBlock)
     END SELECT
 END SUB
 
@@ -124,18 +147,18 @@ END SUB
 ' Returns: Nothing
 ' Note: Dispatcher function that calls appropriate mode-specific implementation
 ' =============================================================================
-SUB PUTPIXEL(BYVAL X AS WORD, BYVAL Y AS WORD, BYVAL Color AS BYTE)
+SUB Svga_PutPixel(BYVAL x AS WORD, BYVAL y AS WORD, BYVAL color AS BYTE)
     DIM PhysicalX AS WORD, PhysicalY AS WORD
     
     ' Convert virtual coordinates to physical coordinates
-    CALL Virtual_ToPhysical(X, Y, PhysicalX, PhysicalY)
+    CALL Virtual_ToPhysical(x, y, PhysicalX, PhysicalY)
     
     ' Check viewport clipping using virtual coordinates
-    IF Virtual_IsVisible(X, Y) = 0 THEN EXIT SUB
+    IF Virtual_IsVisible(x, y) = 0 THEN EXIT SUB
     
     ' Use function pointer for ultra-fast dispatch
     IF SVGADispatch.PutPixel <> 0 THEN
-        CALL DWORD SVGADispatch.PutPixel USING ModeX_PutPixel(PhysicalX, PhysicalY, Color)
+        CALL DWORD SVGADispatch.PutPixel USING ModeX_PutPixel(PhysicalX, PhysicalY, color)
     END IF
 END SUB
 
@@ -145,23 +168,23 @@ END SUB
 '   X, Y - Pixel coordinates (BYVAL)
 ' Returns: Pixel color value
 ' =============================================================================
-FUNCTION GETPIXEL (BYVAL X AS WORD, BYVAL Y AS WORD) AS BYTE
+FUNCTION Svga_GetPixel (BYVAL x AS WORD, BYVAL y AS WORD) AS BYTE
     DIM PhysicalX AS WORD, PhysicalY AS WORD
     
     ' Convert virtual coordinates to physical coordinates
-    CALL Virtual_ToPhysical(X, Y, PhysicalX, PhysicalY)
+    CALL Virtual_ToPhysical(x, y, PhysicalX, PhysicalY)
     
     ' Check viewport clipping using virtual coordinates
-    IF Virtual_IsVisible(X, Y) = 0 THEN
-        GETPIXEL = 0  ' Return black for clipped pixels
+    IF Virtual_IsVisible(x, y) = 0 THEN
+        Svga_GetPixel = 0  ' Return black for clipped pixels
         EXIT FUNCTION
     END IF
     
     ' Use function pointer for ultra-fast dispatch
     IF SVGADispatch.GetPixel <> 0 THEN
-        GETPIXEL = DWORD SVGADispatch.GetPixel USING ModeX_GetPixel(PhysicalX, PhysicalY)
+        Svga_GetPixel = DWORD SVGADispatch.GetPixel USING ModeX_GetPixel(PhysicalX, PhysicalY)
     ELSE
-        GETPIXEL = 0
+        Svga_GetPixel = 0
     END IF
 END FUNCTION
 
@@ -174,19 +197,19 @@ END FUNCTION
 ' Returns: Nothing
 ' Note: Dispatcher function that calls appropriate mode-specific implementation
 ' =============================================================================
-SUB LINEDRAW(BYVAL X1 AS WORD, BYVAL Y1 AS WORD, BYVAL X2 AS WORD, BYVAL Y2 AS WORD, BYVAL Color AS LONG)
+SUB Svga_LineDraw(BYVAL x1 AS WORD, BYVAL y1 AS WORD, BYVAL x2 AS WORD, BYVAL y2 AS WORD, BYVAL color AS LONG)
     DIM PhysicalX1 AS WORD, PhysicalY1 AS WORD, PhysicalX2 AS WORD, PhysicalY2 AS WORD
     
     ' Convert virtual coordinates to physical coordinates
-    CALL Virtual_ToPhysical(X1, Y1, PhysicalX1, PhysicalY1)
-    CALL Virtual_ToPhysical(X2, Y2, PhysicalX2, PhysicalY2)
+    CALL Virtual_ToPhysical(x1, y1, PhysicalX1, PhysicalY1)
+    CALL Virtual_ToPhysical(x2, y2, PhysicalX2, PhysicalY2)
     
     ' Basic clipping check (more sophisticated clipping could be added)
-    IF Virtual_IsVisible(X1, Y1) = 0 AND Virtual_IsVisible(X2, Y2) = 0 THEN EXIT SUB
+    IF Virtual_IsVisible(x1, y1) = 0 AND Virtual_IsVisible(x2, y2) = 0 THEN EXIT SUB
     
     ' Use function pointer for ultra-fast dispatch
     IF SVGADispatch.LineDraw <> 0 THEN
-        CALL DWORD SVGADispatch.LineDraw USING ModeX_LineDraw(PhysicalX1, PhysicalY1, PhysicalX2, PhysicalY2, Color)
+        CALL DWORD SVGADispatch.LineDraw USING ModeX_LineDraw(PhysicalX1, PhysicalY1, PhysicalX2, PhysicalY2, color)
     END IF
 END SUB
 
@@ -197,10 +220,10 @@ END SUB
 ' Returns: Nothing
 ' Note: Dispatcher function that calls appropriate mode-specific implementation
 ' =============================================================================
-SUB CLEARSCREEN(BYVAL Color AS BYTE)
+SUB Svga_ClearScreen(BYVAL color AS BYTE)
     ' Use function pointer for ultra-fast dispatch
     IF SVGADispatch.ClearScreen <> 0 THEN
-        CALL DWORD SVGADispatch.ClearScreen USING ModeX_ClearScreen(Color)
+        CALL DWORD SVGADispatch.ClearScreen USING ModeX_ClearScreen(color)
     END IF
 END SUB
 
@@ -210,7 +233,7 @@ END SUB
 ' Returns: Nothing
 ' Note: Prevents screen tearing during animation - much faster than BASIC loops
 ' =============================================================================
-SUB WAITVRETRACE
+SUB Svga_WaitVRetrace
     ' Ultra-fast assembly version of vertical retrace wait
     !MOV DX, &H3DA          ; VGA status port
     
@@ -233,7 +256,7 @@ END SUB
 ' Returns: Nothing
 ' Note: Much faster than BASIC loops for precise timing
 ' =============================================================================
-SUB WAITHRETRACE
+SUB Svga_WaitHRetrace
     ' Ultra-fast assembly version of horizontal retrace wait
     !MOV DX, &H3DA          ; VGA status port
     
@@ -252,8 +275,8 @@ END SUB
 ' Returns: Nothing
 ' Note: Affects all subsequent drawing operations
 ' =============================================================================
-SUB SETSCALE(BYVAL XScale AS WORD, BYVAL YScale AS WORD)
-    CALL Virtual_SetScale(XScale, YScale)
+SUB Svga_SetScale(BYVAL xScale AS WORD, BYVAL yScale AS WORD)
+    CALL Virtual_SetScale(xScale, yScale)
 END SUB
 
 ' =============================================================================
@@ -263,8 +286,8 @@ END SUB
 '   Unused - Unused parameter for compatibility (BYVAL)
 ' Returns: Requested scale value
 ' =============================================================================
-FUNCTION GETSCALE (BYVAL ScaleType AS BYTE, BYVAL Unused AS BYTE) AS WORD
-    GETSCALE = Virtual_GetScale(ScaleType, Unused)
+FUNCTION Svga_GetScale (BYVAL scaleType AS BYTE, BYVAL unused AS BYTE) AS WORD
+    Svga_GetScale = Virtual_GetScale(scaleType, unused)
 END FUNCTION
 
 ' =============================================================================
@@ -279,8 +302,8 @@ END FUNCTION
 ' Returns: Nothing
 ' Note: Sets up virtual coordinate system larger than physical screen
 ' =============================================================================
-SUB SETVGAWINDOW(BYVAL MaxX AS WORD, BYVAL MaxY AS WORD)
-    CALL Virtual_SetWindow(MaxX, MaxY)
+SUB Svga_SetWindow(BYVAL maxX AS WORD, BYVAL maxY AS WORD)
+    CALL Virtual_SetWindow(maxX, maxY)
 END SUB
 
 ' =============================================================================
@@ -291,8 +314,8 @@ END SUB
 ' Returns: Nothing
 ' Note: All subsequent drawing operations will be clipped to this region
 ' =============================================================================
-SUB SETVGAVIEW(BYVAL X1 AS WORD, BYVAL Y1 AS WORD, BYVAL X2 AS WORD, BYVAL Y2 AS WORD)
-    CALL Virtual_SetViewport(X1, Y1, X2, Y2)
+SUB Svga_SetView(BYVAL x1 AS WORD, BYVAL y1 AS WORD, BYVAL x2 AS WORD, BYVAL y2 AS WORD)
+    CALL Virtual_SetViewport(x1, y1, x2, y2)
 END SUB
 
 ' =============================================================================
@@ -301,14 +324,38 @@ END SUB
 ' Returns: Nothing
 ' Note: Call this before program termination to clean up resources
 ' =============================================================================
-SUB CLEANUPSVGA
+SUB Svga_Cleanup
+    ' Stop all animations first
+    DIM I AS BYTE
+    FOR I = 0 TO 7
+        CALL DrawAni_StopAni(I)
+        CALL DrawAni_FreeAni(I)
+    NEXT I
+    
+    ' Close all icon libraries
+    FOR I = 0 TO 3
+        CALL DrawIcl_CloseIcoLib(I)
+    NEXT I
+    
+    ' Cleanup sprite system
+    CALL Sprite_CleanupSprites
+    
+    ' Cleanup scrolling system
+    CALL Scroll_CleanupScroll
+    
+    ' Cleanup cursor system
+    CALL Cursor_CleanupCursor
+    
+    ' Cleanup timer system (this will restore interrupts)
+    CALL Timer_Cleanup
+    
     ' Close any open EMS handles
     IF EMSMemoryContext.Handle <> 0 THEN
-        CALL CLOSEEMS(EMSMemoryContext.Handle)
+        CALL Memory_CloseEms(EMSMemoryContext.Handle)
     END IF
     
     ' Return to text mode
-    CALL CLOSEVGA
+    CALL Vga_CloseVga
     
     ' Clear font data
     FontSystemContext.Data = ""
@@ -327,19 +374,19 @@ END SUB
 '   Color - Line color (BYVAL)
 ' Returns: Nothing
 ' =============================================================================
-SUB HLINE(BYVAL X1 AS WORD, BYVAL X2 AS WORD, BYVAL Y AS WORD, BYVAL Color AS BYTE)
+SUB Svga_HLine(BYVAL x1 AS WORD, BYVAL x2 AS WORD, BYVAL y AS WORD, BYVAL color AS BYTE)
     DIM PhysicalX1 AS WORD, PhysicalY AS WORD, PhysicalX2 AS WORD, DummyY AS WORD
     
     ' Convert virtual coordinates to physical coordinates
-    CALL Virtual_ToPhysical(X1, Y, PhysicalX1, PhysicalY)
-    CALL Virtual_ToPhysical(X2, Y, PhysicalX2, DummyY)
+    CALL Virtual_ToPhysical(x1, y, PhysicalX1, PhysicalY)
+    CALL Virtual_ToPhysical(x2, y, PhysicalX2, DummyY)
     
     ' Check viewport clipping
-    IF Virtual_IsVisible(X1, Y) = 0 AND Virtual_IsVisible(X2, Y) = 0 THEN EXIT SUB
+    IF Virtual_IsVisible(x1, y) = 0 AND Virtual_IsVisible(x2, y) = 0 THEN EXIT SUB
     
     ' Use function pointer for ultra-fast dispatch
     IF SVGADispatch.HLine <> 0 THEN
-        CALL DWORD SVGADispatch.HLine USING ModeX_HLine(PhysicalX1, PhysicalX2, PhysicalY, Color)
+        CALL DWORD SVGADispatch.HLine USING ModeX_HLine(PhysicalX1, PhysicalX2, PhysicalY, color)
     END IF
 END SUB
 
@@ -351,15 +398,15 @@ END SUB
 '   Color - Line color (BYVAL)
 ' Returns: Nothing
 ' =============================================================================
-SUB VLINE(BYVAL X AS WORD, BYVAL Y1 AS WORD, BYVAL Y2 AS WORD, BYVAL Color AS BYTE)
+SUB Svga_VLine(BYVAL x AS WORD, BYVAL y1 AS WORD, BYVAL y2 AS WORD, BYVAL color AS BYTE)
     ' Use function pointer for ultra-fast dispatch
     IF SVGADispatch.VLine <> 0 THEN
         ' Note: ModeX_VLine has different parameter order (Y1, Y2, X, Color)
         SELECT CASE VESASystemContext.CurrentMode
             CASE %SVGA_MODEX
-                CALL DWORD SVGADispatch.VLine USING ModeX_VLine(Y1, Y2, X, Color)
+                CALL DWORD SVGADispatch.VLine USING ModeX_VLine(y1, y2, x, color)
             CASE ELSE
-                CALL DWORD SVGADispatch.VLine USING VGA_VLine(X, Y1, Y2, Color)
+                CALL DWORD SVGADispatch.VLine USING Vga_VLine(x, y1, y2, color)
         END SELECT
     END IF
 END SUB
@@ -372,10 +419,10 @@ END SUB
 '   Color - Fill color (BYVAL)
 ' Returns: Nothing
 ' =============================================================================
-SUB FILLRECT(BYVAL X1 AS WORD, BYVAL Y1 AS WORD, BYVAL X2 AS WORD, BYVAL Y2 AS WORD, BYVAL Color AS BYTE)
+SUB Svga_FillRect(BYVAL x1 AS WORD, BYVAL y1 AS WORD, BYVAL x2 AS WORD, BYVAL y2 AS WORD, BYVAL color AS BYTE)
     ' Use function pointer for ultra-fast dispatch
     IF SVGADispatch.FillRect <> 0 THEN
-        CALL DWORD SVGADispatch.FillRect USING ModeX_FillRect(X1, Y1, X2, Y2, Color)
+        CALL DWORD SVGADispatch.FillRect USING ModeX_FillRect(x1, y1, x2, y2, color)
     END IF
 END SUB
 
@@ -387,10 +434,10 @@ END SUB
 '   Color - Border color (BYVAL)
 ' Returns: Nothing
 ' =============================================================================
-SUB DRAWRECT(BYVAL X1 AS WORD, BYVAL Y1 AS WORD, BYVAL X2 AS WORD, BYVAL Y2 AS WORD, BYVAL Color AS BYTE)
+SUB Svga_DrawRect(BYVAL x1 AS WORD, BYVAL y1 AS WORD, BYVAL x2 AS WORD, BYVAL y2 AS WORD, BYVAL color AS BYTE)
     ' Use function pointer for ultra-fast dispatch
     IF SVGADispatch.DrawRect <> 0 THEN
-        CALL DWORD SVGADispatch.DrawRect USING ModeX_DrawRect(X1, Y1, X2, Y2, Color)
+        CALL DWORD SVGADispatch.DrawRect USING ModeX_DrawRect(x1, y1, x2, y2, color)
     END IF
 END SUB
 
@@ -402,13 +449,13 @@ END SUB
 '   Color - Circle color (BYVAL)
 ' Returns: Nothing
 ' =============================================================================
-SUB DRAWCIRCLE(BYVAL CenterX AS WORD, BYVAL CenterY AS WORD, BYVAL Radius AS WORD, BYVAL Color AS BYTE)
+SUB Svga_DrawCircle(BYVAL centerX AS WORD, BYVAL centerY AS WORD, BYVAL radius AS WORD, BYVAL color AS BYTE)
     ' Use function pointer for ultra-fast dispatch
     IF SVGADispatch.DrawCircle <> 0 THEN
-        CALL DWORD SVGADispatch.DrawCircle USING ModeX_DrawCircle(CenterX, CenterY, Radius, Color)
+        CALL DWORD SVGADispatch.DrawCircle USING ModeX_DrawCircle(centerX, centerY, radius, color)
     ELSE
         ' VESA doesn't have optimized circle - use generic implementation
-        CALL DrawCircleGeneric(CenterX, CenterY, Radius, Color)
+        CALL Svga_DrawCircleGeneric(centerX, centerY, radius, color)
     END IF
 END SUB
 
@@ -420,31 +467,31 @@ END SUB
 '   Color - Fill color (BYVAL)
 ' Returns: Nothing
 ' =============================================================================
-SUB FILLCIRCLE(BYVAL CenterX AS WORD, BYVAL CenterY AS WORD, BYVAL Radius AS WORD, BYVAL Color AS BYTE)
+SUB Svga_FillCircle(BYVAL centerX AS WORD, BYVAL centerY AS WORD, BYVAL radius AS WORD, BYVAL color AS BYTE)
     ' Use function pointer for ultra-fast dispatch
     IF SVGADispatch.FillCircle <> 0 THEN
-        CALL DWORD SVGADispatch.FillCircle USING ModeX_FillCircle(CenterX, CenterY, Radius, Color)
+        CALL DWORD SVGADispatch.FillCircle USING ModeX_FillCircle(centerX, centerY, radius, color)
     ELSE
         ' VESA doesn't have optimized filled circle - use generic implementation
-        CALL FillCircleGeneric(CenterX, CenterY, Radius, Color)
+        CALL Svga_FillCircleGeneric(centerX, centerY, radius, color)
     END IF
 END SUB
 
 ' =============================================================================
 ' Generic circle drawing using PUTPIXEL (for modes without optimized circles)
 ' =============================================================================
-SUB DrawCircleGeneric(BYVAL CenterX AS WORD, BYVAL CenterY AS WORD, BYVAL Radius AS WORD, BYVAL Color AS BYTE)
+SUB Svga_DrawCircleGeneric(BYVAL centerX AS WORD, BYVAL centerY AS WORD, BYVAL radius AS WORD, BYVAL color AS BYTE)
     DIM X AS INTEGER, Y AS INTEGER, DecisionParam AS INTEGER
     
     X = 0
-    Y = Radius
-    DecisionParam = 1 - Radius
+    Y = radius
+    DecisionParam = 1 - radius
     
     ' Draw initial points
-    CALL PUTPIXEL(CenterX, CenterY + Radius, Color)
-    CALL PUTPIXEL(CenterX, CenterY - Radius, Color)
-    CALL PUTPIXEL(CenterX + Radius, CenterY, Color)
-    CALL PUTPIXEL(CenterX - Radius, CenterY, Color)
+    CALL Svga_PutPixel(centerX, centerY + radius, color)
+    CALL Svga_PutPixel(centerX, centerY - radius, color)
+    CALL Svga_PutPixel(centerX + radius, centerY, color)
+    CALL Svga_PutPixel(centerX - radius, centerY, color)
     
     ' Draw circle using midpoint algorithm
     DO WHILE X < Y
@@ -458,31 +505,31 @@ SUB DrawCircleGeneric(BYVAL CenterX AS WORD, BYVAL CenterY AS WORD, BYVAL Radius
         END IF
         
         ' Draw 8 symmetric points
-        CALL PUTPIXEL(CenterX + X, CenterY + Y, Color)
-        CALL PUTPIXEL(CenterX - X, CenterY + Y, Color)
-        CALL PUTPIXEL(CenterX + X, CenterY - Y, Color)
-        CALL PUTPIXEL(CenterX - X, CenterY - Y, Color)
-        CALL PUTPIXEL(CenterX + Y, CenterY + X, Color)
-        CALL PUTPIXEL(CenterX - Y, CenterY + X, Color)
-        CALL PUTPIXEL(CenterX + Y, CenterY - X, Color)
-        CALL PUTPIXEL(CenterX - Y, CenterY - X, Color)
+        CALL Svga_PutPixel(centerX + X, centerY + Y, color)
+        CALL Svga_PutPixel(centerX - X, centerY + Y, color)
+        CALL Svga_PutPixel(centerX + X, centerY - Y, color)
+        CALL Svga_PutPixel(centerX - X, centerY - Y, color)
+        CALL Svga_PutPixel(centerX + Y, centerY + X, color)
+        CALL Svga_PutPixel(centerX - Y, centerY + X, color)
+        CALL Svga_PutPixel(centerX + Y, centerY - X, color)
+        CALL Svga_PutPixel(centerX - Y, centerY - X, color)
     LOOP
 END SUB
 
 ' =============================================================================
 ' Generic filled circle drawing using HLINE (for modes without optimized circles)
 ' =============================================================================
-SUB FillCircleGeneric(BYVAL CenterX AS WORD, BYVAL CenterY AS WORD, BYVAL Radius AS WORD, BYVAL Color AS BYTE)
+SUB Svga_FillCircleGeneric(BYVAL centerX AS WORD, BYVAL centerY AS WORD, BYVAL radius AS WORD, BYVAL color AS BYTE)
     DIM X AS INTEGER, Y AS INTEGER, DecisionParam AS INTEGER
     DIM PrevY AS INTEGER
     
     X = 0
-    Y = Radius
-    DecisionParam = 1 - Radius
+    Y = radius
+    DecisionParam = 1 - radius
     PrevY = Y
     
     ' Draw initial horizontal line
-    CALL HLINE(CenterX - Radius, CenterX + Radius, CenterY, Color)
+    CALL Svga_HLine(centerX - radius, centerX + radius, centerY, color)
     
     ' Fill circle using horizontal lines
     DO WHILE X < Y
@@ -493,8 +540,8 @@ SUB FillCircleGeneric(BYVAL CenterX AS WORD, BYVAL CenterY AS WORD, BYVAL Radius
         ELSE
             ' Y changed, draw horizontal lines for previous Y
             IF Y <> PrevY THEN
-                CALL HLINE(CenterX - X + 1, CenterX + X - 1, CenterY + PrevY, Color)
-                CALL HLINE(CenterX - X + 1, CenterX + X - 1, CenterY - PrevY, Color)
+                CALL Svga_HLine(centerX - X + 1, centerX + X - 1, centerY + PrevY, color)
+                CALL Svga_HLine(centerX - X + 1, centerX + X - 1, centerY - PrevY, color)
                 PrevY = Y
             END IF
             
@@ -503,13 +550,13 @@ SUB FillCircleGeneric(BYVAL CenterX AS WORD, BYVAL CenterY AS WORD, BYVAL Radius
         END IF
         
         ' Draw horizontal lines for current positions
-        CALL HLINE(CenterX - Y, CenterX + Y, CenterY + X, Color)
-        CALL HLINE(CenterX - Y, CenterX + Y, CenterY - X, Color)
+        CALL Svga_HLine(centerX - Y, centerX + Y, centerY + X, color)
+        CALL Svga_HLine(centerX - Y, centerX + Y, centerY - X, color)
     LOOP
     
     ' Draw final lines if Y changed
     IF Y <> PrevY THEN
-        CALL HLINE(CenterX - X, CenterX + X, CenterY + Y, Color)
-        CALL HLINE(CenterX - X, CenterX + X, CenterY - Y, Color)
+        CALL Svga_HLine(centerX - X, centerX + X, centerY + Y, color)
+        CALL Svga_HLine(centerX - X, centerX + X, centerY - Y, color)
     END IF
 END SUB

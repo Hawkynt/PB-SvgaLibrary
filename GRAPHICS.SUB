@@ -13,37 +13,37 @@
 '   FillColor - Fill color (BYVAL)
 ' Returns: Nothing
 ' =============================================================================
-SUB BAR (BYVAL X1 AS WORD, BYVAL Y1 AS WORD, BYVAL X2 AS WORD, BYVAL Y2 AS WORD, BYVAL BorderColor AS BYTE, BYVAL FillColor AS BYTE)
+SUB Graphics_Bar (BYVAL x1 AS WORD, BYVAL y1 AS WORD, BYVAL x2 AS WORD, BYVAL y2 AS WORD, BYVAL borderColor AS BYTE, BYVAL fillColor AS BYTE)
     DIM TempX AS WORD, TempY AS WORD, ScanLine AS WORD
     
     ' Ensure coordinates are properly ordered
-    IF Y2 < Y1 THEN SWAP Y1, Y2
-    IF X2 < X1 THEN SWAP X1, X2
+    IF y2 < y1 THEN SWAP y1, y2
+    IF x2 < x1 THEN SWAP x1, x2
     
     IF VESASystemContext.CurrentMode = %SVGA_MODEX THEN
         ' Fill the interior using optimized Mode-X horizontal line drawing
-        FOR ScanLine = Y1 TO Y2
-            CALL ModeX_HLine(X1, X2, ScanLine, FillColor)
+        FOR ScanLine = y1 TO y2
+            CALL ModeX_HLine(x1, x2, ScanLine, fillColor)
         NEXT ScanLine
         
         ' Draw the border using optimized Mode-X horizontal/vertical line drawing
-        CALL ModeX_HLine(X1, X2, Y1, BorderColor)  ' Top
-        CALL ModeX_HLine(X1, X2, Y2, BorderColor)  ' Bottom
-        CALL ModeX_VLine(Y1, Y2, X1, BorderColor)  ' Left
-        CALL ModeX_VLine(Y1, Y2, X2, BorderColor)  ' Right
+        CALL ModeX_HLine(x1, x2, y1, borderColor)  ' Top
+        CALL ModeX_HLine(x1, x2, y2, borderColor)  ' Bottom
+        CALL ModeX_VLine(y1, y2, x1, borderColor)  ' Left
+        CALL ModeX_VLine(y1, y2, x2, borderColor)  ' Right
 		exit sub
 	end if
 
     ' Fill the interior
-    FOR ScanLine = Y1 TO Y2
-        CALL LINEDRAW(X1, ScanLine, X2, ScanLine, FillColor)
+    FOR ScanLine = y1 TO y2
+        CALL Svga_LineDraw(x1, ScanLine, x2, ScanLine, fillColor)
     NEXT ScanLine
     
     ' Draw the border
-    CALL LINEDRAW(X1, Y1, X2, Y1, BorderColor)  ' Top
-    CALL LINEDRAW(X1, Y1, X1, Y2, BorderColor)  ' Left
-    CALL LINEDRAW(X2, Y2, X1, Y2, BorderColor)  ' Bottom
-    CALL LINEDRAW(X2, Y2, X2, Y1, BorderColor)  ' Right
+    CALL Svga_LineDraw(x1, y1, x2, y1, borderColor)  ' Top
+    CALL Svga_LineDraw(x1, y1, x1, y2, borderColor)  ' Left
+    CALL Svga_LineDraw(x2, y2, x1, y2, borderColor)  ' Bottom
+    CALL Svga_LineDraw(x2, y2, x2, y1, borderColor)  ' Right
 END SUB
 
 ' =============================================================================
@@ -56,7 +56,7 @@ END SUB
 '   FillColor - Fill color (BYVAL, 0 = no fill)
 ' Returns: Nothing
 ' =============================================================================
-SUB BAR3D (BYVAL X1 AS WORD, BYVAL Y1 AS WORD, BYVAL X2 AS WORD, BYVAL Y2 AS WORD, BYVAL Depth AS WORD, BYVAL BorderColor AS BYTE, BYVAL FillColor AS BYTE)
+SUB Graphics_Bar3d (BYVAL x1 AS WORD, BYVAL y1 AS WORD, BYVAL x2 AS WORD, BYVAL y2 AS WORD, BYVAL depth AS WORD, BYVAL borderColor AS BYTE, BYVAL fillColor AS BYTE)
     DIM ScanLine AS WORD
     
     ' Ensure coordinates are properly ordered
@@ -107,7 +107,7 @@ END SUB
 '   Color - Color for both border and fill (BYVAL)
 ' Returns: Nothing
 ' =============================================================================
-SUB BOX (BYVAL X1 AS WORD, BYVAL Y1 AS WORD, BYVAL X2 AS WORD, BYVAL Y2 AS WORD, BYVAL Color AS BYTE)
+SUB Graphics_Box (BYVAL x1 AS WORD, BYVAL y1 AS WORD, BYVAL x2 AS WORD, BYVAL y2 AS WORD, BYVAL color AS BYTE)
     CALL BAR(X1, Y1, X2, Y2, Color, Color)
 END SUB
 
@@ -122,7 +122,7 @@ END SUB
 '   FillMode - 0=outline, 1=filled (BYVAL)
 ' Returns: Nothing
 ' =============================================================================
-SUB CIRCLEDRAW (BYVAL CenterX AS WORD, BYVAL CenterY AS WORD, BYVAL RadiusX AS WORD, BYVAL RadiusY AS WORD, BYVAL StartAngle AS SINGLE, BYVAL EndAngle AS SINGLE, BYVAL Color AS BYTE, BYVAL FillMode AS BYTE)
+SUB Graphics_CircleDraw (BYVAL centerX AS WORD, BYVAL centerY AS WORD, BYVAL radiusX AS WORD, BYVAL radiusY AS WORD, BYVAL startAngle AS SINGLE, BYVAL endAngle AS SINGLE, BYVAL color AS BYTE, BYVAL fillMode AS BYTE)
     DIM PI AS SINGLE, StepSize AS SINGLE, Angle AS SINGLE
     DIM X AS WORD, Y AS WORD, OldX AS WORD, OldY AS WORD
     DIM FillY AS WORD, FillStartX AS WORD, FillEndX AS WORD
@@ -179,7 +179,7 @@ END SUB
 '   Color - Border color (BYVAL)
 ' Returns: Nothing
 ' =============================================================================
-SUB FRAME (BYVAL X1 AS WORD, BYVAL Y1 AS WORD, BYVAL X2 AS WORD, BYVAL Y2 AS WORD, BYVAL Color AS BYTE)
+SUB Graphics_Frame (BYVAL x1 AS WORD, BYVAL y1 AS WORD, BYVAL x2 AS WORD, BYVAL y2 AS WORD, BYVAL color AS BYTE)
     ' Ensure coordinates are properly ordered
     IF Y2 < Y1 THEN SWAP Y1, Y2
     IF X2 < X1 THEN SWAP X1, X2
@@ -198,6 +198,6 @@ END SUB
 '   Color - Pixel color (BYVAL)
 ' Returns: Nothing
 ' =============================================================================
-SUB PIXEL (BYVAL X AS WORD, BYVAL Y AS WORD, BYVAL Color AS BYTE)
-    CALL PUTPIXEL(X, Y, Color)
+SUB Graphics_Pixel (BYVAL x AS WORD, BYVAL y AS WORD, BYVAL color AS BYTE)
+    CALL Svga_PutPixel(x, y, color)
 END SUB

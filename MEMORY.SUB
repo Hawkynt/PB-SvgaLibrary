@@ -12,17 +12,17 @@
 ' Returns: Nothing (Handle returned by reference)
 ' Note: Modifies global EMSMemoryContext.Handle and SVGAScreenContext variables
 ' =============================================================================
-SUB TAKEEMS(BYVAL SizeKB AS WORD, BYREF Handle AS WORD)
+SUB Memory_TakeEms(BYVAL sizeKb AS WORD, BYREF handle AS WORD)
     ' EMS Interrupt 67h, Function 43h - Allocate Pages
     REG 1, &H4300
     REG 2, INT(SizeKB / 16) + 1  ' Convert KB to 16KB pages
     CALL INTERRUPT &H67
-    Handle = REG(4)
+    handle = REG(4)
     
     ' Get page frame address (Function 41h)
     REG 1, &H4100
     CALL INTERRUPT &H67
-    EMSMemoryContext.Handle = Handle
+    EMSMemoryContext.Handle = handle
     ' Note: PFRAME% global variable still needed for assembly routines
 END SUB
 
@@ -36,12 +36,12 @@ END SUB
 ' Returns: If Value = -1, returns byte value; otherwise writes Value
 ' Note: Uses assembly for direct memory access
 ' =============================================================================
-SUB EMSBYTE(BYVAL Page AS WORD, BYVAL Offset AS WORD, BYREF Value AS INTEGER, BYVAL Handle AS WORD)
+SUB Memory_EmsByte(BYVAL page AS WORD, BYVAL offset AS WORD, BYREF value AS INTEGER, BYVAL handle AS WORD)
     DIM TempValue AS WORD, TempOffset AS WORD
     
     ' Switch to correct EMS page if different from current
-    IF Handle = EMSMemoryContext.OldHandle THEN
-        IF Page <> EMSMemoryContext.OldPage THEN
+    IF handle = EMSMemoryContext.OldHandle THEN
+        IF page <> EMSMemoryContext.OldPage THEN
             ' Unmap old page
             REG 1, &H4800
             REG 4, EMSMemoryContext.OldHandle
@@ -49,8 +49,8 @@ SUB EMSBYTE(BYVAL Page AS WORD, BYVAL Offset AS WORD, BYREF Value AS INTEGER, BY
             
             ' Map new page (Function 44h)
             REG 1, &H4400
-            REG 2, Page
-            REG 4, Handle
+            REG 2, page
+            REG 4, handle
             CALL INTERRUPT &H67
         END IF
     ELSE
@@ -60,19 +60,19 @@ SUB EMSBYTE(BYVAL Page AS WORD, BYVAL Offset AS WORD, BYREF Value AS INTEGER, BY
         CALL INTERRUPT &H67
         
         REG 1, &H4400
-        REG 2, Page
-        REG 4, Handle
+        REG 2, page
+        REG 4, handle
         CALL INTERRUPT &H67
     END IF
     
     ' Update tracking variables
-    EMSMemoryContext.OldPage = Page
-    EMSMemoryContext.OldHandle = Handle
+    EMSMemoryContext.OldPage = page
+    EMSMemoryContext.OldHandle = handle
     
-    TempValue = Value
-    TempOffset = Offset
+    TempValue = value
+    TempOffset = offset
     
-    IF Value = -1 THEN
+    IF value = -1 THEN
         ' Read operation - assembly code to read byte
         !PUSH ES
         !MOV ES, PFRAME%
@@ -81,7 +81,7 @@ SUB EMSBYTE(BYVAL Page AS WORD, BYVAL Offset AS WORD, BYREF Value AS INTEGER, BY
         !MOV AH, 0
         !MOV TempValue, AX
         !POP ES
-        Value = TempValue
+        value = TempValue
     ELSE
         ' Write operation - assembly code to write byte
         !PUSH ES
@@ -102,12 +102,12 @@ END SUB
 '   Handle - EMS handle (BYVAL)
 ' Returns: Nothing
 ' =============================================================================
-SUB PUTEMSSTRING(BYVAL Segment AS WORD, BYVAL Offset AS WORD, BYVAL Data AS STRING, BYVAL Handle AS WORD)
+SUB Memory_PutEmsString(BYVAL segment AS WORD, BYVAL offset AS WORD, BYVAL data AS STRING, BYVAL handle AS WORD)
     DIM Index AS WORD, CurrentByte AS INTEGER
     
-    FOR Index = 1 TO LEN(Data)
-        CurrentByte = ASC(MID$(Data, Index, 1))
-        CALL EMSBYTE(Segment, Offset + Index - 1, CurrentByte, Handle)
+    FOR Index = 1 TO LEN(data)
+        CurrentByte = ASC(MID$(data, Index, 1))
+        CALL Memory_EmsByte(segment, offset + Index - 1, CurrentByte, handle)
     NEXT Index
 END SUB
 
@@ -120,17 +120,17 @@ END SUB
 '   Handle - EMS handle (BYVAL)
 ' Returns: String data read from EMS
 ' =============================================================================
-FUNCTION GETEMSSTRING$(BYVAL Segment AS WORD, BYVAL Offset AS WORD, BYVAL Length AS WORD, BYVAL Handle AS WORD)
+FUNCTION Memory_GetEmsString$(BYVAL segment AS WORD, BYVAL offset AS WORD, BYVAL length AS WORD, BYVAL handle AS WORD)
     DIM Result AS STRING, Index AS WORD, CurrentByte AS INTEGER
     
     Result = ""
-    FOR Index = 0 TO Length - 1
+    FOR Index = 0 TO length - 1
         CurrentByte = -1  ' Signal read operation
-        CALL EMSBYTE(Segment, Offset + Index, CurrentByte, Handle)
+        CALL Memory_EmsByte(segment, offset + Index, CurrentByte, handle)
         Result = Result + CHR$(CurrentByte)
     NEXT Index
     
-    GETEMSSTRING$ = Result
+    Memory_GetEmsString$ = Result
 END FUNCTION
 
 ' =============================================================================
@@ -139,14 +139,14 @@ END FUNCTION
 '   Handle - EMS handle to release (BYVAL)
 ' Returns: Nothing
 ' =============================================================================
-SUB CLOSEEMS(BYVAL Handle AS WORD)
+SUB Memory_CloseEms(BYVAL handle AS WORD)
     ' EMS Function 45h - Release Handle
     REG 1, &H4500
-    REG 4, Handle
+    REG 4, handle
     CALL INTERRUPT &H67
     
     ' Clear tracking if this was the current handle
-    IF Handle = EMSMemoryContext.Handle THEN
+    IF handle = EMSMemoryContext.Handle THEN
         EMSMemoryContext.Handle = 0
         EMSMemoryContext.OldHandle = 0
         EMSMemoryContext.OldPage = 0
@@ -162,10 +162,10 @@ END SUB
 '   Handle - EMS handle (BYVAL)
 ' Returns: Nothing
 ' =============================================================================
-SUB PUTEMSBYTE(BYVAL Segment AS WORD, BYVAL Offset AS WORD, BYVAL ByteValue AS BYTE, BYVAL Handle AS WORD)
+SUB Memory_PutEmsByte(BYVAL segment AS WORD, BYVAL offset AS WORD, BYVAL byteValue AS BYTE, BYVAL handle AS WORD)
     DIM TempValue AS INTEGER
-    TempValue = ByteValue
-    CALL EMSBYTE(Segment, Offset, TempValue, Handle)
+    TempValue = byteValue
+    CALL Memory_EmsByte(segment, offset, TempValue, handle)
 END SUB
 
 ' =============================================================================
@@ -176,11 +176,11 @@ END SUB
 '   Handle - EMS handle (BYVAL)
 ' Returns: Byte value read from EMS
 ' =============================================================================
-FUNCTION GETEMSBYTE(BYVAL Segment AS WORD, BYVAL Offset AS WORD, BYVAL Handle AS WORD) AS BYTE
+FUNCTION Memory_GetEmsByte(BYVAL segment AS WORD, BYVAL offset AS WORD, BYVAL handle AS WORD) AS BYTE
     DIM TempValue AS INTEGER
     TempValue = -1  ' Signal read operation
-    CALL EMSBYTE(Segment, Offset, TempValue, Handle)
-    GETEMSBYTE = TempValue
+    CALL Memory_EmsByte(segment, offset, TempValue, handle)
+    Memory_GetEmsByte = TempValue
 END FUNCTION
 
 ' =============================================================================
@@ -190,14 +190,14 @@ END FUNCTION
 ' Returns: Nothing
 ' Note: Updates global VESASystemContext.Window
 ' =============================================================================
-SUB SETVESAWINDOW(BYVAL WindowNumber AS WORD)
+SUB Memory_SetVesaWindow(BYVAL windowNumber AS WORD)
     !MOV AX,&H4F05
     !XOR BX,BX
     !MOV BL,VESASystemContext.Window
-    !MOV DX,WindowNumber
+    !MOV DX,windowNumber
     !INT &H10
      
-    VESASystemContext.Window = WindowNumber
+    VESASystemContext.Window = windowNumber
 END SUB
 
 ' =============================================================================
@@ -211,19 +211,19 @@ END SUB
 ' Returns: Nothing
 ' Note: Uses assembly for efficient memory copying
 ' =============================================================================
-SUB MEMCOPY(BYVAL SourceSeg AS WORD, BYVAL SourceOff AS WORD, BYVAL SourceSize AS WORD, BYVAL DestSeg AS WORD, BYVAL DestOff AS WORD, BYVAL DestSize AS WORD, BYVAL ByteCount AS WORD)
+SUB Memory_MemCopy(BYVAL sourceSeg AS WORD, BYVAL sourceOff AS WORD, BYVAL sourceSize AS WORD, BYVAL destSeg AS WORD, BYVAL destOff AS WORD, BYVAL destSize AS WORD, BYVAL byteCount AS WORD)
     ' Assembly memory copy routine
     !PUSH DS
     !PUSH ES
     !PUSH SI
     !PUSH DI
-    !MOV AX, SourceSeg
+    !MOV AX, sourceSeg
     !MOV DS, AX
-    !MOV SI, SourceOff
-    !MOV AX, DestSeg
+    !MOV SI, sourceOff
+    !MOV AX, destSeg
     !MOV ES, AX
-    !MOV DI, DestOff
-    !MOV CX, ByteCount
+    !MOV DI, destOff
+    !MOV CX, byteCount
     !CLD
     !REP MOVSB
     !POP DI
@@ -235,29 +235,29 @@ END SUB
 ' =============================================================================
 ' Swap memory blocks between segments
 ' Parameters:
-'   Seg1, Off1 - First segment and offset (BYVAL)
+'   seg1, off1 - First segment and offset (BYVAL)
 '   Size1 - First block size (BYVAL)
-'   Seg2, Off2 - Second segment and offset (BYVAL)
+'   seg2, off2 - Second segment and offset (BYVAL)
 '   Size2 - Second block size (BYVAL)
 '   ByteCount - Number of bytes to swap (BYVAL)
 ' Returns: Nothing
 ' =============================================================================
-SUB MEMSWAP(BYVAL Seg1 AS WORD, BYVAL Off1 AS WORD, BYVAL Size1 AS WORD, BYVAL Seg2 AS WORD, BYVAL Off2 AS WORD, BYVAL Size2 AS WORD, BYVAL ByteCount AS WORD)
+SUB Memory_MemSwap(BYVAL seg1 AS WORD, BYVAL off1 AS WORD, BYVAL size1 AS WORD, BYVAL seg2 AS WORD, BYVAL off2 AS WORD, BYVAL size2 AS WORD, BYVAL byteCount AS WORD)
     DIM Index AS WORD, Temp1 AS BYTE, Temp2 AS BYTE
     
     ' Simple byte-by-byte swap (could be optimized with assembly)
-    FOR Index = 0 TO ByteCount - 1
+    FOR Index = 0 TO byteCount - 1
         ' Read bytes from both locations
         !PUSH DS
-        !MOV AX, Seg1
+        !MOV AX, seg1
         !MOV DS, AX
-        !MOV BX, Off1
+        !MOV BX, off1
         !ADD BX, Index
         !MOV AL, [BX]
         !MOV Temp1, AL
-        !MOV AX, Seg2
+        !MOV AX, seg2
         !MOV DS, AX
-        !MOV BX, Off2
+        !MOV BX, off2
         !ADD BX, Index
         !MOV AL, [BX]
         !MOV Temp2, AL
@@ -265,18 +265,42 @@ SUB MEMSWAP(BYVAL Seg1 AS WORD, BYVAL Off1 AS WORD, BYVAL Size1 AS WORD, BYVAL S
         
         ' Write swapped bytes
         !PUSH DS
-        !MOV AX, Seg1
+        !MOV AX, seg1
         !MOV DS, AX
-        !MOV BX, Off1
+        !MOV BX, off1
         !ADD BX, Index
         !MOV AL, Temp2
         !MOV [BX], AL
-        !MOV AX, Seg2
+        !MOV AX, seg2
         !MOV DS, AX
-        !MOV BX, Off2
+        !MOV BX, off2
         !ADD BX, Index
         !MOV AL, Temp1
         !MOV [BX], AL
         !POP DS
     NEXT Index
+END SUB
+
+SUB Memory_ClearVideoMemory(BYVAL color as BYTE)
+	!PUSH ES
+	!MOV AX, &HA000
+	!MOV BL, color
+	!MOV BH, BL
+	!MOV ES, AX
+	!XOR CL, CL
+	!MOV CH, 16
+Loop:
+	!STOSW
+	!STOSW
+	!STOSW
+	!STOSW
+	!STOSW
+	!STOSW
+	!STOSW
+	!STOSW
+	!DEC CL
+	!JNZ Loop
+	!DEC CH
+	!JNZ Loop
+	!POP ES
 END SUB

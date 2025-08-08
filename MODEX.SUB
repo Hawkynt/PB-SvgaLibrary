@@ -37,7 +37,7 @@ END SUB
 ' Note: All Mode-X modes are 256-color planar modes optimized for animation
 '       Requires VGA-compatible hardware (8086+ with VGA)
 ' =============================================================================
-SUB ModeX_SetMode(BYVAL ModeXType AS BYTE)
+SUB ModeX_SetMode(BYVAL modeXType AS BYTE)
     DIM TempByte AS BYTE
     
     ' Validate mode type
@@ -468,7 +468,7 @@ END SUB
 ' Returns: Nothing
 ' Note: Optimized block copy using Mode-X planar mode
 ' =============================================================================
-SUB ModeX_CopyBlock(BYVAL SrcX AS WORD, BYVAL SrcY AS WORD, BYVAL DestX AS WORD, BYVAL DestY AS WORD, BYVAL Width AS WORD, BYVAL Height AS WORD)
+SUB ModeX_CopyBlock(BYVAL srcX AS WORD, BYVAL srcY AS WORD, BYVAL destX AS WORD, BYVAL destY AS WORD, BYVAL width AS WORD, BYVAL height AS WORD)
     DIM CurrentY AS WORD, SrcOffset AS WORD, DestOffset AS WORD
     DIM SrcStartByte AS WORD, DestStartByte AS WORD, ByteWidth AS WORD
     
@@ -779,7 +779,7 @@ END SUB
 ' Returns: Nothing
 ' Note: Optimized for Mode-X with special cases for horizontal/vertical lines
 ' =============================================================================
-SUB MODEX_LineDraw(BYVAL X1 AS WORD, BYVAL Y1 AS WORD, BYVAL X2 AS WORD, BYVAL Y2 AS WORD, BYVAL Color AS BYTE)
+SUB ModeX_LineDraw(BYVAL X1 AS WORD, BYVAL Y1 AS WORD, BYVAL X2 AS WORD, BYVAL Y2 AS WORD, BYVAL Color AS BYTE)
     ' Check for horizontal line
     IF Y1 = Y2 THEN
         CALL ModeX_HLine(X1, X2, Y1, Color)
@@ -869,7 +869,7 @@ END SUB
 ' Returns: Nothing
 ' Note: Highly optimized for Mode-X planar architecture
 ' =============================================================================
-SUB MODEX_FillRect(BYVAL X1 AS WORD, BYVAL Y1 AS WORD, BYVAL X2 AS WORD, BYVAL Y2 AS WORD, BYVAL Color AS BYTE)
+SUB ModeX_FillRect(BYVAL X1 AS WORD, BYVAL Y1 AS WORD, BYVAL X2 AS WORD, BYVAL Y2 AS WORD, BYVAL Color AS BYTE)
     DIM ScanLine AS WORD
     
     ' Ensure coordinates are ordered
@@ -890,7 +890,7 @@ END SUB
 '   Color - Border color (BYVAL)
 ' Returns: Nothing
 ' =============================================================================
-SUB MODEX_DrawRect(BYVAL X1 AS WORD, BYVAL Y1 AS WORD, BYVAL X2 AS WORD, BYVAL Y2 AS WORD, BYVAL Color AS BYTE)
+SUB ModeX_DrawRect(BYVAL X1 AS WORD, BYVAL Y1 AS WORD, BYVAL X2 AS WORD, BYVAL Y2 AS WORD, BYVAL Color AS BYTE)
     ' Ensure coordinates are ordered
     IF X1 > X2 THEN SWAP X1, X2
     IF Y1 > Y2 THEN SWAP Y1, Y2
@@ -911,7 +911,7 @@ END SUB
 ' Returns: Nothing
 ' Note: Optimized for Mode-X with symmetry exploitation
 ' =============================================================================
-SUB MODEX_DrawCircle(BYVAL CenterX AS WORD, BYVAL CenterY AS WORD, BYVAL Radius AS WORD, BYVAL Color AS BYTE)
+SUB ModeX_DrawCircle(BYVAL centerX AS WORD, BYVAL centerY AS WORD, BYVAL radius AS WORD, BYVAL color AS BYTE)
     DIM X AS INTEGER, Y AS INTEGER, DecisionParam AS INTEGER
     
     X = 0
@@ -956,7 +956,7 @@ END SUB
 ' Returns: Nothing
 ' Note: Uses horizontal line fills for efficiency
 ' =============================================================================
-SUB MODEX_FillCircle(BYVAL CenterX AS WORD, BYVAL CenterY AS WORD, BYVAL Radius AS WORD, BYVAL Color AS BYTE)
+SUB ModeX_FillCircle(BYVAL centerX AS WORD, BYVAL centerY AS WORD, BYVAL radius AS WORD, BYVAL color AS BYTE)
     DIM X AS INTEGER, Y AS INTEGER, DecisionParam AS INTEGER
     DIM PrevY AS INTEGER
     
@@ -1006,7 +1006,7 @@ END SUB
 ' Returns: Nothing
 ' Note: Copies entire pages for double buffering
 ' =============================================================================
-SUB MODEX_CopyPage(BYVAL SrcPage AS BYTE, BYVAL DestPage AS BYTE)
+SUB ModeX_CopyPage(BYVAL srcPage AS BYTE, BYVAL destPage AS BYTE)
     DIM SrcOffset AS WORD, DestOffset AS WORD
     DIM PlaneNum AS BYTE
     
@@ -1061,7 +1061,7 @@ END SUB
 '   PageNumber - Page to make active (BYVAL)
 ' Returns: Nothing
 ' =============================================================================
-SUB MODEX_SetActivePage(BYVAL PageNumber AS BYTE)
+SUB ModeX_SetActivePage(BYVAL pageNumber AS BYTE)
     ModeXSystemContext.ActivePage = PageNumber
     ' Update drawing offset for all operations
     ' This would be used by drawing routines to offset their addresses
@@ -1074,7 +1074,7 @@ END SUB
 ' Returns: Nothing
 ' Note: Used for page flipping/double buffering
 ' =============================================================================
-SUB MODEX_SetVisiblePage(BYVAL PageNumber AS BYTE)
+SUB ModeX_SetVisiblePage(BYVAL pageNumber AS BYTE)
     DIM PageOffset AS WORD
     
     ModeXSystemContext.VisiblePage = PageNumber
@@ -1182,7 +1182,7 @@ END SUB
 ' Returns: Nothing
 ' Note: Extremely fast for large areas
 ' =============================================================================
-SUB MODEX_FastFill(BYVAL X1 AS WORD, BYVAL Y1 AS WORD, BYVAL X2 AS WORD, BYVAL Y2 AS WORD, BYVAL Color AS BYTE)
+SUB ModeX_FastFill(BYVAL X1 AS WORD, BYVAL Y1 AS WORD, BYVAL X2 AS WORD, BYVAL Y2 AS WORD, BYVAL Color AS BYTE)
     DIM StartByte AS WORD, EndByte AS WORD, ByteWidth AS WORD
     DIM CurrentY AS WORD, LineOffset AS WORD
     

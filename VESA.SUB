@@ -14,7 +14,7 @@
 ' Note: Automatically selects best available mode, falls back to simulation if exact mode unavailable
 '       Updates global VESASystemContext and SVGAScreenContext
 ' =============================================================================
-SUB SETRES (BYVAL XRes AS WORD, BYVAL YRes AS WORD, BYVAL Colors AS WORD)
+SUB Vesa_SetResolution (BYVAL xRes AS WORD, BYVAL yRes AS WORD, BYVAL colors AS WORD)
     DIM VESAInfo AS STRING, ModeInfo AS STRING
     DIM FarOffset AS WORD, FarSegment AS WORD
     DIM ModeIndex AS WORD, ModeNumber AS WORD, TestMode AS WORD
@@ -23,7 +23,7 @@ SUB SETRES (BYVAL XRes AS WORD, BYVAL YRes AS WORD, BYVAL Colors AS WORD)
     
     ' Handle standard VGA mode 13h (320x200x256)
     IF (XRes = 320) AND (YRes = 200) AND (Colors = 256) THEN
-        CALL SETVGA(13)
+        CALL Vesa_SetVgaMode(13)
         VESASystemContext.CurrentMode = %SVGA_MODE13
         CALL InitDispatchTable  ' Update function pointers for mode 13h
         EXIT SUB
@@ -64,7 +64,7 @@ SUB SETRES (BYVAL XRes AS WORD, BYVAL YRes AS WORD, BYVAL Colors AS WORD)
         
         ' Check for exact match
         IF XRes = ModeXRes AND YRes = ModeYRes AND Colors = ModeColors THEN
-            CALL SETVGA(ModeNumber)
+            CALL Vesa_SetVgaMode(modeNumber)
             VESASystemContext.CurrentMode = %SVGA_VESA
             CALL InitDispatchTable  ' Update function pointers for VESA mode
             EXIT SUB
@@ -114,7 +114,7 @@ SUB SETRES (BYVAL XRes AS WORD, BYVAL YRes AS WORD, BYVAL Colors AS WORD)
     
     ' Set the best available mode
     IF BestMode > 0 THEN
-        CALL SETVGA(BestMode)
+        CALL Vesa_SetVgaMode(bestMode)
         VESASystemContext.CurrentMode = %SVGA_VESA
         CALL InitDispatchTable  ' Update function pointers for VESA mode
         ' Set up coordinate scaling for simulation
@@ -122,7 +122,7 @@ SUB SETRES (BYVAL XRes AS WORD, BYVAL YRes AS WORD, BYVAL Colors AS WORD)
         VESASystemContext.YDecrease = BestYDiff / 2
     ELSE
         ' Fallback to mode 13h if no suitable mode found
-        CALL SETVGA(13)
+        CALL Vesa_SetVgaMode(13)
         VESASystemContext.CurrentMode = %SVGA_MODE13
         CALL InitDispatchTable  ' Update function pointers for mode 13h
         EXIT SUB
@@ -152,7 +152,7 @@ END SUB
 ' Returns: Nothing
 ' Note: Sets hardware graphics mode and updates global context variables
 ' =============================================================================
-SUB SETVGA (BYVAL ModeNumber AS INTEGER)
+SUB Vesa_SetVgaMode (BYVAL modeNumber AS INTEGER)
     DIM ModeInfo AS STRING
     
     ' Set VESA graphics mode (Function 4F02h)
@@ -194,7 +194,7 @@ END SUB
 ' Returns: Nothing
 ' Note: Restores original video mode and clears graphics context
 ' =============================================================================
-SUB CLOSEVGA
+SUB Vesa_Close
     ' Set text mode (Mode 03h - 80x25 color text)
     REG 1, &H0003
     CALL INTERRUPT &H10
@@ -225,7 +225,7 @@ END SUB
 '   Colors - Desired number of colors (BYVAL)
 ' Returns: VESA mode number, or 0 if no suitable mode found
 ' =============================================================================
-FUNCTION GETVESAMODE (BYVAL XRes AS WORD, BYVAL YRes AS WORD, BYVAL Colors AS WORD) AS WORD
+FUNCTION Vesa_GetMode (BYVAL xRes AS WORD, BYVAL yRes AS WORD, BYVAL colors AS WORD) AS WORD
     DIM VESAInfo AS STRING, ModeInfo AS STRING
     DIM FarOffset AS WORD, FarSegment AS WORD
     DIM ModeIndex AS WORD, ModeNumber AS WORD
@@ -284,7 +284,7 @@ END FUNCTION
 ' Returns: Nothing (displays information to console)
 ' Note: Shows VESA BIOS version, video memory, and available modes
 ' =============================================================================
-SUB VGAINFO
+SUB Vesa_Info
     DIM VESAInfo AS STRING
     DIM VESAVersion AS WORD, VideoMemory AS WORD
     
@@ -728,7 +728,7 @@ END SUB
 ' Returns: Nothing
 ' Note: Pre-calculates window operations to minimize banking overhead
 ' =============================================================================
-SUB VESA_CopyBlock(BYVAL SrcX AS WORD, BYVAL SrcY AS WORD, BYVAL DestX AS WORD, BYVAL DestY AS WORD, BYVAL Width AS WORD, BYVAL Height AS WORD)
+SUB Vesa_CopyBlock(BYVAL srcX AS WORD, BYVAL srcY AS WORD, BYVAL destX AS WORD, BYVAL destY AS WORD, BYVAL width AS WORD, BYVAL height AS WORD)
     DIM CurrentY AS WORD, CurrentX AS WORD
     DIM SrcOffset AS LONG, DestOffset AS LONG
     DIM SrcWindow AS WORD, DestWindow AS WORD, LastSrcWindow AS WORD, LastDestWindow AS WORD
@@ -789,7 +789,7 @@ END SUB
 ' =============================================================================
 ' Copy single scanline with window optimization
 ' =============================================================================
-SUB VESA_CopyScanline(BYVAL SrcX AS WORD, BYVAL SrcY AS WORD, BYVAL DestX AS WORD, BYVAL DestY AS WORD, BYVAL Width AS WORD)
+SUB Vesa_CopyScanline(BYVAL srcX AS WORD, BYVAL srcY AS WORD, BYVAL destX AS WORD, BYVAL destY AS WORD, BYVAL width AS WORD)
     DIM CurrentX AS WORD, PixelColor AS BYTE
     DIM SrcOffset AS LONG, DestOffset AS LONG
     DIM SrcWindow AS WORD, DestWindow AS WORD

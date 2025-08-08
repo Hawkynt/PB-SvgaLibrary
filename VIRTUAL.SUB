@@ -33,8 +33,8 @@ END SUB
 '   Unused - Unused parameter for compatibility (BYVAL)
 ' Returns: Requested scale value
 ' =============================================================================
-FUNCTION Virtual_GetScale(BYVAL ScaleType AS BYTE, BYVAL Unused AS BYTE) AS WORD
-    SELECT CASE ScaleType
+FUNCTION Virtual_GetScale(BYVAL scaleType AS BYTE, BYVAL unused AS BYTE) AS WORD
+    SELECT CASE scaleType
         CASE 0: Virtual_GetScale = ScaleSystemContext.XScale
         CASE 1: Virtual_GetScale = ScaleSystemContext.YScale
         CASE 2: Virtual_GetScale = ScaleSystemContext.XScaleMax
@@ -51,7 +51,7 @@ END FUNCTION
 ' Returns: Nothing
 ' Note: Maps virtual coordinates to physical screen coordinates
 ' =============================================================================
-SUB Virtual_SetWindow(BYVAL MaxX AS WORD, BYVAL MaxY AS WORD)
+SUB Virtual_SetWindow(BYVAL maxX AS WORD, BYVAL maxY AS WORD)
     ScaleSystemContext.XScaleMax = MaxX
     ScaleSystemContext.YScaleMax = MaxY
     
@@ -102,7 +102,7 @@ END SUB
 ' Returns: Nothing (coordinates returned via BYREF parameters)
 ' Note: Applies scaling and offset transformations
 ' =============================================================================
-SUB Virtual_ToPhysical(BYVAL VirtualX AS WORD, BYVAL VirtualY AS WORD, PhysicalX AS WORD, PhysicalY AS WORD)
+SUB Virtual_ToPhysical(BYVAL virtualX AS WORD, BYVAL virtualY AS WORD, physicalX AS WORD, physicalY AS WORD)
     ' Apply coordinate scaling if active
     IF ScaleSystemContext.XScale <> 1 OR ScaleSystemContext.YScale <> 1 THEN
         PhysicalX = VirtualX * ScaleSystemContext.XScale
@@ -123,7 +123,7 @@ END SUB
 '   VirtualX, VirtualY - Virtual coordinates to check (BYVAL)
 ' Returns: 1 if coordinates are visible, 0 if clipped
 ' =============================================================================
-FUNCTION Virtual_IsVisible(BYVAL VirtualX AS WORD, BYVAL VirtualY AS WORD) AS BYTE
+FUNCTION Virtual_IsVisible(BYVAL virtualX AS WORD, BYVAL virtualY AS WORD) AS BYTE
     ' Check viewport clipping if active
     IF WindowSystemContext.Current > 0 THEN
         IF VirtualX < WindowSystemContext.X1 OR VirtualX > WindowSystemContext.X2 THEN
@@ -147,7 +147,7 @@ END FUNCTION
 ' Returns: Nothing (coordinates returned via BYREF parameters)
 ' Note: Reverse transformation for mouse/input coordinate mapping
 ' =============================================================================
-SUB Virtual_ToVirtual(BYVAL PhysicalX AS WORD, BYVAL PhysicalY AS WORD, VirtualX AS WORD, VirtualY AS WORD)
+SUB Virtual_ToVirtual(BYVAL physicalX AS WORD, BYVAL physicalY AS WORD, virtualX AS WORD, virtualY AS WORD)
     ' Reverse coordinate offset adjustments
     PhysicalX = PhysicalX + VESASystemContext.XDecrease
     PhysicalY = PhysicalY + VESASystemContext.YDecrease

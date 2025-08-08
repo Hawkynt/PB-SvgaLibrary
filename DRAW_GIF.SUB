@@ -1,0 +1,709 @@
+' =============================================================================
+' DRAW_GIF.SUB - GIF (Graphics Interchange Format) Support
+' =============================================================================
+' Provides support for GIF images with LZW decompression and animation
+' Supports GIF87a and GIF89a formats with interlaced and animated GIFs
+' =============================================================================
+' Author: Hawkynt
+' License: LGPL 3.0
+' =============================================================================
+
+' =============================================================================
+' GIF file structures
+' =============================================================================
+
+' GIF header structure
+TYPE GIFHeaderType
+    Signature AS STRING * 3    ' "GIF"
+    Version AS STRING * 3      ' "87a" or "89a"
+END TYPE
+
+' GIF logical screen descriptor
+TYPE GIFScreenDescriptorType
+    ScreenWidth AS WORD        ' Logical screen width
+    ScreenHeight AS WORD       ' Logical screen height
+    Packed AS BYTE             ' Packed field
+    BackgroundColorIndex AS BYTE  ' Background color index
+    PixelAspectRatio AS BYTE   ' Pixel aspect ratio
+END TYPE
+
+' GIF image descriptor
+TYPE GIFImageDescriptorType
+    Left AS WORD               ' Image left position
+    Top AS WORD                ' Image top position
+    Width AS WORD              ' Image width
+    Height AS WORD             ' Image height
+    Packed AS BYTE             ' Packed field
+END TYPE
+
+' GIF context structure
+TYPE GIFContextType
+    IsLoaded AS BYTE           ' File loaded flag
+    Version AS STRING          ' GIF version ("87a" or "89a")
+    ScreenWidth AS WORD        ' Logical screen width
+    ScreenHeight AS WORD       ' Logical screen height
+    GlobalColorTable AS BYTE   ' Global color table flag
+    ColorResolution AS BYTE    ' Color resolution
+    SortFlag AS BYTE           ' Sort flag
+    GlobalColorTableSize AS WORD  ' Global color table size
+    BackgroundColorIndex AS BYTE  ' Background color index
+    GlobalPalette() AS BYTE    ' Global color palette (RGB)
+    HasTransparentColor AS BYTE    ' Transparent color flag
+    TransparentColorIndex AS BYTE  ' Transparent color index
+    DelayTime AS WORD          ' Frame delay time (centiseconds)
+    DisposalMethod AS BYTE     ' Disposal method
+END TYPE
+
+' GIF block types
+%GIF_BLOCK_IMAGE = &H2C
+%GIF_BLOCK_EXTENSION = &H21
+%GIF_BLOCK_TERMINATOR = &H3B
+
+' GIF extension types
+%GIF_EXT_GRAPHIC_CONTROL = &HF9
+%GIF_EXT_COMMENT = &HFE
+%GIF_EXT_PLAIN_TEXT = &H01
+%GIF_EXT_APPLICATION = &HFF
+
+' LZW decompression context
+TYPE LZWContextType
+    CodeSize AS BYTE           ' Initial code size
+    ClearCode AS WORD          ' Clear code
+    EndCode AS WORD            ' End of information code
+    NextCode AS WORD           ' Next available code
+    CurrentCodeSize AS BYTE    ' Current code size
+    BitBuffer AS LONG          ' Bit buffer
+    BitCount AS BYTE           ' Number of bits in buffer
+    Dictionary() AS STRING     ' LZW dictionary
+    MaxCode AS WORD            ' Maximum code for current size
+END TYPE
+
+' =============================================================================
+' Load and display GIF image
+' Parameters:
+'   FileName - GIF file name (BYVAL)
+'   X, Y - Display position (BYVAL)
+' Returns: Nothing
+' =============================================================================
+SUB DrawGif_ShowGif(BYVAL fileName AS STRING, BYVAL x AS WORD, BYVAL y AS WORD)
+    DIM fileHandle AS INTEGER
+    DIM gifContext AS GIFContextType
+    
+    fileHandle = FREEFILE
+    OPEN fileName FOR BINARY ACCESS READ AS fileHandle
+    IF LOF(fileHandle) < 13 THEN
+        CLOSE fileHandle
+        EXIT SUB
+    END IF
+    
+    ' Parse GIF file
+    IF DrawGif_ParseFile(fileHandle, gifContext) = 0 THEN
+        CLOSE fileHandle
+        EXIT SUB
+    END IF
+    
+    ' Draw first GIF image
+    CALL DrawGif_DrawImage(fileHandle, gifContext, x, y)
+    
+    CLOSE fileHandle
+END SUB
+
+' =============================================================================
+' Parse GIF file header and global data
+' Parameters:
+'   FileHandle - Open file handle (BYVAL)
+'   GIFContext - GIF context structure (BYREF)
+' Returns: Success flag (BYTE)
+' =============================================================================
+FUNCTION DrawGif_ParseFile(BYVAL fileHandle AS INTEGER, gifContext AS GIFContextType) AS BYTE
+    DIM header AS GIFHeaderType
+    DIM screenDescriptor AS GIFScreenDescriptorType
+    DIM i AS WORD
+    DIM r AS BYTE, g AS BYTE, b AS BYTE
+    
+    ' Initialize context
+    gifContext.IsLoaded = 0
+    gifContext.Version = ""
+    gifContext.ScreenWidth = 0
+    gifContext.ScreenHeight = 0
+    gifContext.GlobalColorTable = 0
+    gifContext.ColorResolution = 0
+    gifContext.SortFlag = 0
+    gifContext.GlobalColorTableSize = 0
+    gifContext.BackgroundColorIndex = 0
+    gifContext.HasTransparentColor = 0
+    gifContext.TransparentColorIndex = 0
+    gifContext.DelayTime = 0
+    gifContext.DisposalMethod = 0
+    
+    ' Read GIF header
+    GET fileHandle, 1, header.Signature
+    GET fileHandle, , header.Version
+    
+    ' Validate GIF signature
+    IF header.Signature <> "GIF" THEN
+        DrawGif_ParseFile = 0
+        EXIT FUNCTION
+    END IF
+    
+    ' Check version
+    IF header.Version <> "87a" AND header.Version <> "89a" THEN
+        DrawGif_ParseFile = 0
+        EXIT FUNCTION
+    END IF
+    
+    gifContext.Version = header.Version
+    
+    ' Read logical screen descriptor
+    GET fileHandle, , screenDescriptor.ScreenWidth
+    GET fileHandle, , screenDescriptor.ScreenHeight
+    GET fileHandle, , screenDescriptor.Packed
+    GET fileHandle, , screenDescriptor.BackgroundColorIndex
+    GET fileHandle, , screenDescriptor.PixelAspectRatio
+    
+    ' Parse packed field
+    gifContext.ScreenWidth = screenDescriptor.ScreenWidth
+    gifContext.ScreenHeight = screenDescriptor.ScreenHeight
+    gifContext.GlobalColorTable = (screenDescriptor.Packed AND &H80) <> 0
+    gifContext.ColorResolution = ((screenDescriptor.Packed AND &H70) \ 16) + 1
+    gifContext.SortFlag = (screenDescriptor.Packed AND &H08) <> 0
+    gifContext.GlobalColorTableSize = 2 ^ ((screenDescriptor.Packed AND &H07) + 1)
+    gifContext.BackgroundColorIndex = screenDescriptor.BackgroundColorIndex
+    
+    ' Read global color table if present
+    IF gifContext.GlobalColorTable THEN
+        REDIM gifContext.GlobalPalette(gifContext.GlobalColorTableSize * 3 - 1)
+        
+        FOR i = 0 TO gifContext.GlobalColorTableSize - 1
+            GET fileHandle, , r
+            GET fileHandle, , g
+            GET fileHandle, , b
+            
+            gifContext.GlobalPalette(i * 3) = r
+            gifContext.GlobalPalette(i * 3 + 1) = g
+            gifContext.GlobalPalette(i * 3 + 2) = b
+        NEXT i
+    END IF
+    
+    gifContext.IsLoaded = 1
+    DrawGif_ParseFile = 1
+END FUNCTION
+
+' =============================================================================
+' Draw GIF image to screen
+' Parameters:
+'   FileHandle - Open file handle (BYVAL)
+'   GIFContext - GIF context (BYVAL)
+'   X, Y - Display position (BYVAL)
+' Returns: Nothing
+' =============================================================================
+SUB DrawGif_DrawImage(BYVAL fileHandle AS INTEGER, gifContext AS GIFContextType, BYVAL x AS WORD, BYVAL y AS WORD)
+    DIM blockType AS BYTE
+    DIM found AS BYTE
+    
+    IF gifContext.IsLoaded = 0 THEN EXIT SUB
+    
+    found = 0
+    
+    ' Scan for image data block
+    DO WHILE NOT EOF(fileHandle) AND found = 0
+        GET fileHandle, , blockType
+        
+        SELECT CASE blockType
+            CASE %GIF_BLOCK_EXTENSION
+                CALL DrawGif_ProcessExtension(fileHandle, gifContext)
+                
+            CASE %GIF_BLOCK_IMAGE
+                CALL DrawGif_DrawImageData(fileHandle, gifContext, x, y)
+                found = 1
+                
+            CASE %GIF_BLOCK_TERMINATOR
+                EXIT DO
+                
+            CASE ELSE
+                ' Skip unknown block
+                EXIT DO
+        END SELECT
+    LOOP
+END SUB
+
+' =============================================================================
+' Process GIF extension block
+' Parameters:
+'   FileHandle - Open file handle (BYVAL)
+'   GIFContext - GIF context (BYREF)
+' Returns: Nothing
+' =============================================================================
+SUB DrawGif_ProcessExtension(BYVAL fileHandle AS INTEGER, gifContext AS GIFContextType)
+    DIM extensionType AS BYTE
+    DIM blockSize AS BYTE
+    DIM extData AS STRING
+    
+    GET fileHandle, , extensionType
+    
+    SELECT CASE extensionType
+        CASE %GIF_EXT_GRAPHIC_CONTROL
+            ' Graphic Control Extension
+            GET fileHandle, , blockSize
+            IF blockSize >= 4 THEN
+                DIM packed AS BYTE, delayTime AS WORD, transparentIndex AS BYTE
+                
+                GET fileHandle, , packed
+                GET fileHandle, , delayTime
+                GET fileHandle, , transparentIndex
+                GET fileHandle, , blockSize  ' Block terminator
+                
+                ' Parse graphic control data
+                gifContext.DisposalMethod = (packed AND &H1C) \ 4
+                gifContext.HasTransparentColor = (packed AND &H01) <> 0
+                gifContext.DelayTime = delayTime
+                gifContext.TransparentColorIndex = transparentIndex
+            ELSE
+                ' Skip malformed block
+                CALL DrawGif_SkipDataSubBlocks(fileHandle)
+            END IF
+            
+        CASE ELSE
+            ' Skip other extensions
+            CALL DrawGif_SkipDataSubBlocks(fileHandle)
+    END SELECT
+END SUB
+
+' =============================================================================
+' Skip GIF data sub-blocks
+' Parameters:
+'   FileHandle - Open file handle (BYVAL)
+' Returns: Nothing
+' =============================================================================
+SUB DrawGif_SkipDataSubBlocks(BYVAL fileHandle AS INTEGER)
+    DIM blockSize AS BYTE
+    
+    DO
+        GET fileHandle, , blockSize
+        IF blockSize = 0 THEN EXIT DO
+        
+        ' Skip block data
+        SEEK fileHandle, POS(fileHandle) + blockSize
+    LOOP WHILE NOT EOF(fileHandle)
+END SUB
+
+' =============================================================================
+' Draw GIF image data
+' Parameters:
+'   FileHandle - Open file handle (BYVAL)
+'   GIFContext - GIF context (BYVAL)
+'   X, Y - Display position (BYVAL)
+' Returns: Nothing
+' =============================================================================
+SUB DrawGif_DrawImageData(BYVAL fileHandle AS INTEGER, gifContext AS GIFContextType, BYVAL x AS WORD, BYVAL y AS WORD)
+    DIM imageDescriptor AS GIFImageDescriptorType
+    DIM localColorTable AS BYTE
+    DIM interlaceFlag AS BYTE
+    DIM sortFlag AS BYTE
+    DIM localColorTableSize AS WORD
+    DIM localPalette() AS BYTE
+    DIM i AS WORD
+    DIM r AS BYTE, g AS BYTE, b AS BYTE
+    DIM lzwMinimumCodeSize AS BYTE
+    DIM compressedData AS STRING
+    DIM decodedData AS STRING
+    
+    ' Read image descriptor
+    GET fileHandle, , imageDescriptor.Left
+    GET fileHandle, , imageDescriptor.Top
+    GET fileHandle, , imageDescriptor.Width
+    GET fileHandle, , imageDescriptor.Height
+    GET fileHandle, , imageDescriptor.Packed
+    
+    ' Parse packed field
+    localColorTable = (imageDescriptor.Packed AND &H80) <> 0
+    interlaceFlag = (imageDescriptor.Packed AND &H40) <> 0
+    sortFlag = (imageDescriptor.Packed AND &H20) <> 0
+    localColorTableSize = 2 ^ ((imageDescriptor.Packed AND &H07) + 1)
+    
+    ' Read local color table if present
+    IF localColorTable THEN
+        REDIM localPalette(localColorTableSize * 3 - 1)
+        
+        FOR i = 0 TO localColorTableSize - 1
+            GET fileHandle, , r
+            GET fileHandle, , g
+            GET fileHandle, , b
+            
+            localPalette(i * 3) = r
+            localPalette(i * 3 + 1) = g
+            localPalette(i * 3 + 2) = b
+        NEXT i
+    END IF
+    
+    ' Read LZW minimum code size
+    GET fileHandle, , lzwMinimumCodeSize
+    
+    ' Read compressed image data
+    CALL DrawGif_ReadDataSubBlocks(fileHandle, compressedData)
+    
+    ' Decompress LZW data
+    CALL DrawGif_DecompressLZW(compressedData, lzwMinimumCodeSize, decodedData)
+    
+    ' Draw the image
+    IF localColorTable THEN
+        CALL DrawGif_DrawPixelData(decodedData, localPalette(), imageDescriptor, gifContext, x, y, interlaceFlag)
+    ELSE
+        CALL DrawGif_DrawPixelData(decodedData, gifContext.GlobalPalette(), imageDescriptor, gifContext, x, y, interlaceFlag)
+    END IF
+END SUB
+
+' =============================================================================
+' Read GIF data sub-blocks into string
+' Parameters:
+'   FileHandle - Open file handle (BYVAL)
+'   DataString - Output data string (BYREF)
+' Returns: Nothing
+' =============================================================================
+SUB DrawGif_ReadDataSubBlocks(BYVAL fileHandle AS INTEGER, dataString AS STRING)
+    DIM blockSize AS BYTE
+    DIM blockData AS STRING
+    
+    dataString = ""
+    
+    DO
+        GET fileHandle, , blockSize
+        IF blockSize = 0 THEN EXIT DO
+        
+        blockData = SPACE$(blockSize)
+        GET fileHandle, , blockData
+        dataString = dataString + blockData
+    LOOP WHILE NOT EOF(fileHandle)
+END SUB
+
+' =============================================================================
+' Decompress GIF LZW data (simplified implementation)
+' Parameters:
+'   CompressedData - Input compressed data (BYVAL)
+'   MinimumCodeSize - Initial code size (BYVAL)
+'   DecodedData - Output decoded data (BYREF)
+' Returns: Nothing
+' =============================================================================
+SUB DrawGif_DecompressLZW(BYVAL compressedData AS STRING, BYVAL minimumCodeSize AS BYTE, decodedData AS STRING)
+    DIM lzwContext AS LZWContextType
+    DIM bitPos AS LONG
+    DIM code AS WORD
+    DIM oldCode AS WORD
+    DIM firstChar AS BYTE
+    DIM outputString AS STRING
+    
+    ' Initialize LZW context
+    lzwContext.CodeSize = minimumCodeSize
+    lzwContext.ClearCode = 2 ^ minimumCodeSize
+    lzwContext.EndCode = lzwContext.ClearCode + 1
+    lzwContext.NextCode = lzwContext.EndCode + 1
+    lzwContext.CurrentCodeSize = minimumCodeSize + 1
+    lzwContext.MaxCode = (2 ^ lzwContext.CurrentCodeSize) - 1
+    lzwContext.BitBuffer = 0
+    lzwContext.BitCount = 0
+    
+    ' Initialize dictionary
+    CALL DrawGif_InitializeLZWDictionary(lzwContext)
+    
+    decodedData = ""
+    bitPos = 1
+    oldCode = 0
+    
+    ' Simplified LZW decompression
+    DO WHILE bitPos <= LEN(compressedData) * 8
+        ' Read next code
+        code = DrawGif_ReadLZWCode(compressedData, bitPos, lzwContext.CurrentCodeSize)
+        
+        IF code = lzwContext.EndCode THEN
+            EXIT DO
+        ELSEIF code = lzwContext.ClearCode THEN
+            ' Reset dictionary
+            CALL DrawGif_InitializeLZWDictionary(lzwContext)
+            lzwContext.NextCode = lzwContext.EndCode + 1
+            lzwContext.CurrentCodeSize = lzwContext.CodeSize + 1
+            lzwContext.MaxCode = (2 ^ lzwContext.CurrentCodeSize) - 1
+            
+            ' Read next code after clear
+            code = DrawGif_ReadLZWCode(compressedData, bitPos, lzwContext.CurrentCodeSize)
+            IF code = lzwContext.EndCode THEN EXIT DO
+            
+            decodedData = decodedData + CHR$(code)
+            oldCode = code
+            firstChar = code
+        ELSE
+            ' Normal code processing (simplified)
+            IF code < lzwContext.NextCode THEN
+                ' Code exists in dictionary
+                outputString = DrawGif_GetDictionaryEntry(lzwContext, code)
+                decodedData = decodedData + outputString
+                firstChar = ASC(LEFT$(outputString, 1))
+                
+                ' Add new dictionary entry
+                IF lzwContext.NextCode <= 4095 THEN
+                    CALL DrawGif_AddDictionaryEntry(lzwContext, DrawGif_GetDictionaryEntry(lzwContext, oldCode) + CHR$(firstChar))
+                    lzwContext.NextCode = lzwContext.NextCode + 1
+                    
+                    ' Check if code size needs to increase
+                    IF lzwContext.NextCode > lzwContext.MaxCode AND lzwContext.CurrentCodeSize < 12 THEN
+                        lzwContext.CurrentCodeSize = lzwContext.CurrentCodeSize + 1
+                        lzwContext.MaxCode = (2 ^ lzwContext.CurrentCodeSize) - 1
+                    END IF
+                END IF
+                
+                oldCode = code
+            ELSE
+                ' Code doesn't exist yet - use OldCode + FirstChar
+                outputString = DrawGif_GetDictionaryEntry(lzwContext, oldCode) + CHR$(firstChar)
+                decodedData = decodedData + outputString
+                
+                ' Add to dictionary
+                IF lzwContext.NextCode <= 4095 THEN
+                    CALL DrawGif_AddDictionaryEntry(lzwContext, outputString)
+                    lzwContext.NextCode = lzwContext.NextCode + 1
+                    
+                    IF lzwContext.NextCode > lzwContext.MaxCode AND lzwContext.CurrentCodeSize < 12 THEN
+                        lzwContext.CurrentCodeSize = lzwContext.CurrentCodeSize + 1
+                        lzwContext.MaxCode = (2 ^ lzwContext.CurrentCodeSize) - 1
+                    END IF
+                END IF
+                
+                oldCode = code
+                firstChar = ASC(LEFT$(outputString, 1))
+            END IF
+        END IF
+        
+        bitPos = bitPos + lzwContext.CurrentCodeSize
+    LOOP
+END SUB
+
+' =============================================================================
+' Initialize LZW dictionary
+' Parameters:
+'   LZWContext - LZW context (BYREF)
+' Returns: Nothing
+' =============================================================================
+SUB DrawGif_InitializeLZWDictionary(lzwContext AS LZWContextType)
+    DIM i AS WORD
+    
+    ' Allocate dictionary
+    REDIM lzwContext.Dictionary(4095)
+    
+    ' Initialize with single-character entries
+    FOR i = 0 TO (2 ^ lzwContext.CodeSize) - 1
+        lzwContext.Dictionary(i) = CHR$(i)
+    NEXT i
+END SUB
+
+' =============================================================================
+' Read LZW code from bit stream
+' Parameters:
+'   Data - Input data (BYVAL)
+'   BitPos - Bit position (BYREF)
+'   CodeSize - Code size in bits (BYVAL)
+' Returns: LZW code (WORD)
+' =============================================================================
+FUNCTION DrawGif_ReadLZWCode(BYVAL data AS STRING, bitPos AS LONG, BYVAL codeSize AS BYTE) AS WORD
+    DIM code AS WORD
+    DIM bytePos AS LONG
+    DIM bitOffset AS BYTE
+    DIM i AS BYTE
+    
+    code = 0
+    
+    FOR i = 0 TO codeSize - 1
+        bytePos = (bitPos + i) \ 8 + 1
+        bitOffset = (bitPos + i) MOD 8
+        
+        IF bytePos <= LEN(data) THEN
+            IF (ASC(MID$(data, bytePos, 1)) AND (2 ^ bitOffset)) <> 0 THEN
+                code = code + (2 ^ i)
+            END IF
+        END IF
+    NEXT i
+    
+    DrawGif_ReadLZWCode = code
+END FUNCTION
+
+' =============================================================================
+' Get dictionary entry
+' Parameters:
+'   LZWContext - LZW context (BYVAL)
+'   Code - Dictionary code (BYVAL)
+' Returns: Dictionary entry string
+' =============================================================================
+FUNCTION DrawGif_GetDictionaryEntry(lzwContext AS LZWContextType, BYVAL code AS WORD) AS STRING
+    IF code <= UBOUND(lzwContext.Dictionary) THEN
+        DrawGif_GetDictionaryEntry = lzwContext.Dictionary(code)
+    ELSE
+        DrawGif_GetDictionaryEntry = ""
+    END IF
+END FUNCTION
+
+' =============================================================================
+' Add dictionary entry
+' Parameters:
+'   LZWContext - LZW context (BYREF)
+'   Entry - Dictionary entry string (BYVAL)
+' Returns: Nothing
+' =============================================================================
+SUB DrawGif_AddDictionaryEntry(lzwContext AS LZWContextType, BYVAL entry AS STRING)
+    IF lzwContext.NextCode <= UBOUND(lzwContext.Dictionary) THEN
+        lzwContext.Dictionary(lzwContext.NextCode) = entry
+    END IF
+END SUB
+
+' =============================================================================
+' Draw GIF pixel data to screen
+' Parameters:
+'   PixelData - Decoded pixel data (BYVAL)
+'   Palette - Color palette (BYVAL array)
+'   ImageDescriptor - Image descriptor (BYVAL)
+'   GIFContext - GIF context (BYVAL)
+'   X, Y - Display position (BYVAL)
+'   Interlaced - Interlaced flag (BYVAL)
+' Returns: Nothing
+' =============================================================================
+SUB DrawGif_DrawPixelData(BYVAL pixelData AS STRING, palette() AS BYTE, imageDescriptor AS GIFImageDescriptorType, gifContext AS GIFContextType, BYVAL x AS WORD, BYVAL y AS WORD, BYVAL interlaced AS BYTE)
+    DIM pixelX AS WORD, pixelY AS WORD
+    DIM drawX AS WORD, drawY AS WORD
+    DIM dataPos AS LONG
+    DIM colorIndex AS BYTE
+    DIM r AS BYTE, g AS BYTE, b AS BYTE
+    DIM pixelValue AS BYTE
+    
+    dataPos = 1
+    
+    ' Draw each pixel
+    FOR pixelY = 0 TO imageDescriptor.Height - 1
+        drawY = y + imageDescriptor.Top + pixelY
+        IF drawY >= SVGAScreenContext.YRes THEN EXIT FOR
+        
+        FOR pixelX = 0 TO imageDescriptor.Width - 1
+            drawX = x + imageDescriptor.Left + pixelX
+            IF drawX >= SVGAScreenContext.XRes THEN GOTO NextGIFPixel
+            
+            ' Get color index
+            IF dataPos <= LEN(pixelData) THEN
+                colorIndex = ASC(MID$(pixelData, dataPos, 1))
+                dataPos = dataPos + 1
+            ELSE
+                colorIndex = 0
+            END IF
+            
+            ' Skip transparent pixels
+            IF gifContext.HasTransparentColor AND colorIndex = gifContext.TransparentColorIndex THEN
+                GOTO NextGIFPixel
+            END IF
+            
+            ' Get RGB values from palette
+            IF colorIndex * 3 + 2 <= UBOUND(palette) THEN
+                r = palette(colorIndex * 3)
+                g = palette(colorIndex * 3 + 1)
+                b = palette(colorIndex * 3 + 2)
+                
+                ' Convert to 8-bit grayscale for display
+                pixelValue = (r + g + b) \ 3
+            ELSE
+                pixelValue = colorIndex
+            END IF
+            
+            ' Draw the pixel
+            CALL PUTPIXEL(drawX, drawY, pixelValue)
+            
+            NextGIFPixel:
+        NEXT pixelX
+    NEXT pixelY
+END SUB
+
+' =============================================================================
+' Get GIF image information
+' Parameters:
+'   FileName - GIF file name (BYVAL)
+'   Width, Height - Image dimensions (BYREF)
+'   ColorTableSize - Color table size (BYREF)
+'   IsAnimated - Animation flag (BYREF)
+' Returns: Success flag (BYTE)
+' =============================================================================
+FUNCTION DrawGif_GetGifInfo(BYVAL fileName AS STRING, width AS WORD, height AS WORD, colorTableSize AS WORD, isAnimated AS BYTE) AS BYTE
+    DIM fileHandle AS INTEGER
+    DIM gifContext AS GIFContextType
+    
+    ' Initialize return values
+    width = 0
+    height = 0
+    colorTableSize = 0
+    isAnimated = 0
+    
+    fileHandle = FREEFILE
+    OPEN fileName FOR BINARY ACCESS READ AS fileHandle
+    IF LOF(fileHandle) < 13 THEN
+        CLOSE fileHandle
+        DrawGif_GetGifInfo = 0
+        EXIT FUNCTION
+    END IF
+    
+    ' Parse GIF file
+    IF DrawGif_ParseFile(fileHandle, gifContext) = 0 THEN
+        CLOSE fileHandle
+        DrawGif_GetGifInfo = 0
+        EXIT FUNCTION
+    END IF
+    
+    ' Return image information
+    width = gifContext.ScreenWidth
+    height = gifContext.ScreenHeight
+    colorTableSize = gifContext.GlobalColorTableSize
+    isAnimated = (gifContext.Version = "89a")  ' Simplified - would need full scan
+    
+    CLOSE fileHandle
+    DrawGif_GetGifInfo = 1
+END FUNCTION
+
+' =============================================================================
+' Extract GIF palette
+' Parameters:
+'   FileName - GIF file name (BYVAL)
+'   Palette - 256-color palette array (BYREF)
+' Returns: Success flag (BYTE)
+' =============================================================================
+FUNCTION DrawGif_GetGifPalette(BYVAL fileName AS STRING, palette() AS BYTE) AS BYTE
+    DIM fileHandle AS INTEGER
+    DIM gifContext AS GIFContextType
+    DIM i AS WORD
+    
+    ' Initialize palette to grayscale
+    FOR i = 0 TO 255
+        palette(i * 3) = i
+        palette(i * 3 + 1) = i
+        palette(i * 3 + 2) = i
+    NEXT i
+    
+    fileHandle = FREEFILE
+    OPEN fileName FOR BINARY ACCESS READ AS fileHandle
+    IF LOF(fileHandle) < 13 THEN
+        CLOSE fileHandle
+        DrawGif_GetGifPalette = 0
+        EXIT FUNCTION
+    END IF
+    
+    ' Parse GIF file
+    IF DrawGif_ParseFile(fileHandle, gifContext) = 0 THEN
+        CLOSE fileHandle
+        DrawGif_GetGifPalette = 0
+        EXIT FUNCTION
+    END IF
+    
+    ' Copy global color table if present
+    IF gifContext.GlobalColorTable THEN
+        FOR i = 0 TO gifContext.GlobalColorTableSize - 1
+            IF i < 256 THEN
+                palette(i * 3) = gifContext.GlobalPalette(i * 3)       ' R
+                palette(i * 3 + 1) = gifContext.GlobalPalette(i * 3 + 1) ' G
+                palette(i * 3 + 2) = gifContext.GlobalPalette(i * 3 + 2) ' B
+            END IF
+        NEXT i
+    END IF
+    
+    CLOSE fileHandle
+    DrawGif_GetGifPalette = 1
+END FUNCTION

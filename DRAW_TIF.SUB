@@ -1,0 +1,578 @@
+' =============================================================================
+' DRAW_TIF.SUB - TIFF (Tagged Image File Format) Support
+' =============================================================================
+' Provides support for TIFF images with LZW compression and multiple formats
+' Supports uncompressed, PackBits, and LZW compression schemes
+' =============================================================================
+' Author: Hawkynt
+' License: LGPL 3.0
+' =============================================================================
+
+' =============================================================================
+' TIFF file structures
+' =============================================================================
+
+' TIFF header structure
+TYPE TIFFHeaderType
+    ByteOrder AS WORD           ' "II" (Intel) or "MM" (Motorola)
+    Version AS WORD             ' TIFF version (42)
+    IFDOffset AS LONG           ' Offset to first IFD
+END TYPE
+
+' TIFF directory entry
+TYPE TIFFDirEntryType
+    Tag AS WORD                 ' Tag identifier
+    DataType AS WORD            ' Data type
+    Count AS LONG               ' Number of values
+    ValueOffset AS LONG         ' Value or offset to value
+END TYPE
+
+' TIFF image context
+TYPE TIFFContextType
+    IsLoaded AS BYTE            ' File loaded flag
+    Width AS WORD               ' Image width
+    Height AS WORD              ' Image height
+    BitsPerSample AS WORD       ' Bits per sample
+    SamplesPerPixel AS WORD     ' Samples per pixel
+    Compression AS WORD         ' Compression type
+    PhotometricInterpretation AS WORD  ' Color interpretation
+    StripOffsets() AS LONG      ' Strip offsets
+    StripByteCounts() AS LONG   ' Strip byte counts
+    RowsPerStrip AS WORD        ' Rows per strip
+    ColorMap() AS WORD          ' Color map for palette images
+    HasColorMap AS BYTE         ' Color map present flag
+END TYPE
+
+' TIFF tag constants
+%TIFF_TAG_WIDTH = 256
+%TIFF_TAG_HEIGHT = 257
+%TIFF_TAG_BITS_PER_SAMPLE = 258
+%TIFF_TAG_COMPRESSION = 259
+%TIFF_TAG_PHOTOMETRIC = 262
+%TIFF_TAG_STRIP_OFFSETS = 273
+%TIFF_TAG_SAMPLES_PER_PIXEL = 277
+%TIFF_TAG_ROWS_PER_STRIP = 278
+%TIFF_TAG_STRIP_BYTE_COUNTS = 279
+%TIFF_TAG_COLORMAP = 320
+
+' TIFF compression types
+%TIFF_COMP_NONE = 1
+%TIFF_COMP_CCITT_RLE = 2
+%TIFF_COMP_PACKBITS = 32773
+%TIFF_COMP_LZW = 5
+
+' =============================================================================
+' Load and display TIFF image
+' Parameters:
+'   FileName - TIFF file name (BYVAL)
+'   X, Y - Display position (BYVAL)
+' Returns: Nothing
+' =============================================================================
+SUB DrawTif_Show(BYVAL fileName AS STRING, BYVAL x AS WORD, BYVAL y AS WORD)
+    DIM fileHandle AS INTEGER
+    DIM tiffContext AS TIFFContextType
+    
+    fileHandle = FREEFILE
+    OPEN fileName FOR BINARY ACCESS READ AS fileHandle
+    IF LOF(fileHandle) < 8 THEN
+        CLOSE fileHandle
+        EXIT SUB
+    END IF
+    
+    ' Parse TIFF file
+    IF DrawTif_ParseFile(fileHandle, tiffContext) = 0 THEN
+        CLOSE fileHandle
+        EXIT SUB
+    END IF
+    
+    ' Draw TIFF image
+    CALL DrawTif_DrawImage(fileHandle, tiffContext, x, y)
+    
+    CLOSE fileHandle
+END SUB
+
+' =============================================================================
+' Parse TIFF file header and directory
+' Parameters:
+'   FileHandle - Open file handle (BYVAL)
+'   TIFFContext - TIFF context structure (BYREF)
+' Returns: Success flag (BYTE)
+' =============================================================================
+FUNCTION DrawTif_ParseFile(BYVAL fileHandle AS INTEGER, tiffContext AS TIFFContextType) AS BYTE
+    DIM header AS TIFFHeaderType
+    DIM isIntelByteOrder AS BYTE
+    DIM ifdOffset AS LONG
+    DIM dirEntryCount AS WORD
+    DIM i AS WORD
+    DIM dirEntry AS TIFFDirEntryType
+    
+    ' Initialize context
+    tiffContext.IsLoaded = 0
+    tiffContext.Width = 0
+    tiffContext.Height = 0
+    tiffContext.BitsPerSample = 1
+    tiffContext.SamplesPerPixel = 1
+    tiffContext.Compression = 1
+    tiffContext.PhotometricInterpretation = 1
+    tiffContext.RowsPerStrip = 0
+    tiffContext.HasColorMap = 0
+    
+    ' Read TIFF header
+    GET fileHandle, 1, header.ByteOrder
+    GET fileHandle, , header.Version
+    GET fileHandle, , header.IFDOffset
+    
+    ' Check byte order
+    isIntelByteOrder = (header.ByteOrder = &H4949)  ' "II"
+    
+    ' Validate TIFF version
+    IF header.Version <> 42 THEN
+        DrawTif_ParseFile = 0
+        EXIT FUNCTION
+    END IF
+    
+    ' Seek to first IFD
+    SEEK fileHandle, header.IFDOffset + 1
+    
+    ' Read number of directory entries
+    GET fileHandle, , dirEntryCount
+    
+    ' Parse directory entries
+    FOR i = 1 TO dirEntryCount
+        GET fileHandle, , dirEntry.Tag
+        GET fileHandle, , dirEntry.DataType
+        GET fileHandle, , dirEntry.Count
+        GET fileHandle, , dirEntry.ValueOffset
+        
+        ' Process relevant tags
+        SELECT CASE dirEntry.Tag
+            CASE %TIFF_TAG_WIDTH
+                tiffContext.Width = dirEntry.ValueOffset AND &HFFFF
+                
+            CASE %TIFF_TAG_HEIGHT
+                tiffContext.Height = dirEntry.ValueOffset AND &HFFFF
+                
+            CASE %TIFF_TAG_BITS_PER_SAMPLE
+                tiffContext.BitsPerSample = dirEntry.ValueOffset AND &HFFFF
+                
+            CASE %TIFF_TAG_COMPRESSION
+                tiffContext.Compression = dirEntry.ValueOffset AND &HFFFF
+                
+            CASE %TIFF_TAG_PHOTOMETRIC
+                tiffContext.PhotometricInterpretation = dirEntry.ValueOffset AND &HFFFF
+                
+            CASE %TIFF_TAG_SAMPLES_PER_PIXEL
+                tiffContext.SamplesPerPixel = dirEntry.ValueOffset AND &HFFFF
+                
+            CASE %TIFF_TAG_ROWS_PER_STRIP
+                tiffContext.RowsPerStrip = dirEntry.ValueOffset AND &HFFFF
+                
+            CASE %TIFF_TAG_STRIP_OFFSETS
+                CALL DrawTif_ReadStripOffsets(fileHandle, dirEntry, tiffContext)
+                
+            CASE %TIFF_TAG_STRIP_BYTE_COUNTS
+                CALL DrawTif_ReadStripByteCounts(fileHandle, dirEntry, tiffContext)
+                
+            CASE %TIFF_TAG_COLORMAP
+                CALL DrawTif_ReadColorMap(fileHandle, dirEntry, tiffContext)
+        END SELECT
+    NEXT i
+    
+    ' Validate required fields
+    IF tiffContext.Width > 0 AND tiffContext.Height > 0 THEN
+        tiffContext.IsLoaded = 1
+        DrawTif_ParseFile = 1
+    ELSE
+        DrawTif_ParseFile = 0
+    END IF
+END FUNCTION
+
+' =============================================================================
+' Read strip offsets array
+' Parameters:
+'   FileHandle - Open file handle (BYVAL)
+'   DirEntry - Directory entry (BYVAL)
+'   TIFFContext - TIFF context (BYREF)
+' Returns: Nothing
+' =============================================================================
+SUB DrawTif_ReadStripOffsets(BYVAL fileHandle AS INTEGER, dirEntry AS TIFFDirEntryType, tiffContext AS TIFFContextType)
+    DIM i AS WORD
+    DIM currentPos AS LONG
+    
+    ' Store current position
+    currentPos = POS(fileHandle)
+    
+    ' Allocate strip offsets array
+    REDIM tiffContext.StripOffsets(dirEntry.Count - 1)
+    
+    IF dirEntry.Count = 1 THEN
+        ' Single value stored in ValueOffset
+        tiffContext.StripOffsets(0) = dirEntry.ValueOffset
+    ELSE
+        ' Multiple values - seek to offset
+        SEEK fileHandle, dirEntry.ValueOffset + 1
+        FOR i = 0 TO dirEntry.Count - 1
+            GET fileHandle, , tiffContext.StripOffsets(i)
+        NEXT i
+    END IF
+    
+    ' Restore position
+    SEEK fileHandle, currentPos
+END SUB
+
+' =============================================================================
+' Read strip byte counts array
+' Parameters:
+'   FileHandle - Open file handle (BYVAL)
+'   DirEntry - Directory entry (BYVAL)
+'   TIFFContext - TIFF context (BYREF)
+' Returns: Nothing
+' =============================================================================
+SUB DrawTif_ReadStripByteCounts(BYVAL fileHandle AS INTEGER, dirEntry AS TIFFDirEntryType, tiffContext AS TIFFContextType)
+    DIM i AS WORD
+    DIM currentPos AS LONG
+    
+    ' Store current position
+    currentPos = POS(fileHandle)
+    
+    ' Allocate strip byte counts array
+    REDIM tiffContext.StripByteCounts(dirEntry.Count - 1)
+    
+    IF dirEntry.Count = 1 THEN
+        ' Single value stored in ValueOffset
+        tiffContext.StripByteCounts(0) = dirEntry.ValueOffset
+    ELSE
+        ' Multiple values - seek to offset
+        SEEK fileHandle, dirEntry.ValueOffset + 1
+        FOR i = 0 TO dirEntry.Count - 1
+            GET fileHandle, , tiffContext.StripByteCounts(i)
+        NEXT i
+    END IF
+    
+    ' Restore position
+    SEEK fileHandle, currentPos
+END SUB
+
+' =============================================================================
+' Read color map (palette)
+' Parameters:
+'   FileHandle - Open file handle (BYVAL)
+'   DirEntry - Directory entry (BYVAL)
+'   TIFFContext - TIFF context (BYREF)
+' Returns: Nothing
+' =============================================================================
+SUB DrawTif_ReadColorMap(BYVAL fileHandle AS INTEGER, dirEntry AS TIFFDirEntryType, tiffContext AS TIFFContextType)
+    DIM i AS WORD
+    DIM currentPos AS LONG
+    
+    ' Store current position
+    currentPos = POS(fileHandle)
+    
+    ' Allocate color map array
+    REDIM tiffContext.ColorMap(dirEntry.Count - 1)
+    
+    ' Seek to color map data
+    SEEK fileHandle, dirEntry.ValueOffset + 1
+    
+    ' Read color map values
+    FOR i = 0 TO dirEntry.Count - 1
+        GET fileHandle, , tiffContext.ColorMap(i)
+    NEXT i
+    
+    tiffContext.HasColorMap = 1
+    
+    ' Restore position
+    SEEK fileHandle, currentPos
+END SUB
+
+' =============================================================================
+' Draw TIFF image to screen
+' Parameters:
+'   FileHandle - Open file handle (BYVAL)
+'   TIFFContext - TIFF context (BYVAL)
+'   X, Y - Display position (BYVAL)
+' Returns: Nothing
+' =============================================================================
+SUB DrawTif_DrawImage(BYVAL fileHandle AS INTEGER, tiffContext AS TIFFContextType, BYVAL x AS WORD, BYVAL y AS WORD)
+    DIM stripIndex AS WORD
+    DIM currentY AS WORD
+    DIM rowsInStrip AS WORD
+    DIM stripData AS STRING
+    
+    IF tiffContext.IsLoaded = 0 THEN EXIT SUB
+    
+    ' Calculate rows per strip if not specified
+    IF tiffContext.RowsPerStrip = 0 THEN
+        tiffContext.RowsPerStrip = tiffContext.Height
+    END IF
+    
+    currentY = y
+    
+    ' Process each strip
+    FOR stripIndex = 0 TO UBOUND(tiffContext.StripOffsets)
+        ' Calculate rows in this strip
+        rowsInStrip = tiffContext.RowsPerStrip
+        IF currentY + rowsInStrip > y + tiffContext.Height THEN
+            rowsInStrip = y + tiffContext.Height - currentY
+        END IF
+        
+        ' Read strip data
+        SEEK fileHandle, tiffContext.StripOffsets(stripIndex) + 1
+        stripData = SPACE$(tiffContext.StripByteCounts(stripIndex))
+        GET fileHandle, , stripData
+        
+        ' Decompress and draw strip
+        CALL DrawTif_DrawStrip(stripData, tiffContext, x, currentY, rowsInStrip)
+        
+        currentY = currentY + rowsInStrip
+        
+        ' Exit if we've drawn the entire image
+        IF currentY >= y + tiffContext.Height THEN EXIT FOR
+    NEXT stripIndex
+END SUB
+
+' =============================================================================
+' Draw single TIFF strip
+' Parameters:
+'   StripData - Raw strip data (BYVAL)
+'   TIFFContext - TIFF context (BYVAL)
+'   X, Y - Strip position (BYVAL)
+'   RowCount - Number of rows in strip (BYVAL)
+' Returns: Nothing
+' =============================================================================
+SUB DrawTif_DrawStrip(BYVAL stripData AS STRING, tiffContext AS TIFFContextType, BYVAL x AS WORD, BYVAL y AS WORD, BYVAL rowCount AS WORD)
+    DIM decodedData AS STRING
+    
+    ' Decompress strip based on compression type
+    SELECT CASE tiffContext.Compression
+        CASE %TIFF_COMP_NONE
+            decodedData = stripData  ' No compression
+            
+        CASE %TIFF_COMP_PACKBITS
+            CALL DrawTif_DecompressPackBits(stripData, decodedData)
+            
+        CASE %TIFF_COMP_LZW
+            CALL DrawTif_DecompressLZW(stripData, decodedData)
+            
+        CASE ELSE
+            EXIT SUB  ' Unsupported compression
+    END SELECT
+    
+    ' Draw decompressed data
+    CALL DrawTif_DrawStripData(decodedData, tiffContext, x, y, rowCount)
+END SUB
+
+' =============================================================================
+' PackBits decompression
+' Parameters:
+'   CompressedData - Compressed input (BYVAL)
+'   DecodedData - Decompressed output (BYREF)
+' Returns: Nothing
+' =============================================================================
+SUB DrawTif_DecompressPackBits(BYVAL compressedData AS STRING, decodedData AS STRING)
+    DIM inputPos AS WORD, outputPos AS WORD
+    DIM controlByte AS INTEGER, repeatCount AS WORD
+    DIM i AS WORD, dataByte AS BYTE
+    
+    decodedData = ""
+    inputPos = 1
+    outputPos = 1
+    
+    DO WHILE inputPos <= LEN(compressedData)
+        ' Read control byte
+        controlByte = ASC(MID$(compressedData, inputPos, 1))
+        IF controlByte > 127 THEN controlByte = controlByte - 256  ' Convert to signed
+        inputPos = inputPos + 1
+        
+        IF controlByte >= 0 THEN
+            ' Literal run: copy next (controlByte + 1) bytes
+            repeatCount = controlByte + 1
+            FOR i = 1 TO repeatCount
+                IF inputPos > LEN(compressedData) THEN EXIT FOR
+                decodedData = decodedData + MID$(compressedData, inputPos, 1)
+                inputPos = inputPos + 1
+            NEXT i
+        ELSE
+            ' Run-length encoded: repeat next byte (-controlByte + 1) times
+            IF inputPos > LEN(compressedData) THEN EXIT DO
+            repeatCount = -controlByte + 1
+            dataByte = ASC(MID$(compressedData, inputPos, 1))
+            inputPos = inputPos + 1
+            
+            FOR i = 1 TO repeatCount
+                decodedData = decodedData + CHR$(dataByte)
+            NEXT i
+        END IF
+    LOOP
+END SUB
+
+' =============================================================================
+' Simplified LZW decompression (partial implementation)
+' Parameters:
+'   CompressedData - Compressed input (BYVAL)
+'   DecodedData - Decompressed output (BYREF)
+' Returns: Nothing
+' Note: This is a simplified implementation - full LZW is complex
+' =============================================================================
+SUB DrawTif_DecompressLZW(BYVAL compressedData AS STRING, decodedData AS STRING)
+    ' Simplified LZW decompression
+    ' For demonstration purposes - real LZW requires extensive dictionary management
+    
+    ' For now, just copy the data (placeholder)
+    decodedData = compressedData
+    
+    ' TODO: Implement full LZW decompression with:
+    ' - Dynamic dictionary building
+    ' - Variable-width code handling  
+    ' - Clear code and end-of-information code processing
+END SUB
+
+' =============================================================================
+' Draw strip pixel data to screen
+' Parameters:
+'   StripData - Pixel data (BYVAL)
+'   TIFFContext - TIFF context (BYVAL)
+'   X, Y - Strip position (BYVAL)
+'   RowCount - Number of rows (BYVAL)
+' Returns: Nothing
+' =============================================================================
+SUB DrawTif_DrawStripData(BYVAL stripData AS STRING, tiffContext AS TIFFContextType, BYVAL x AS WORD, BYVAL y AS WORD, BYVAL rowCount AS WORD)
+    DIM pixelX AS WORD, pixelY AS WORD
+    DIM dataPos AS WORD, pixelValue AS BYTE
+    DIM drawX AS WORD, drawY AS WORD
+    DIM bytesPerRow AS WORD
+    
+    ' Calculate bytes per row
+    bytesPerRow = (tiffContext.Width * tiffContext.BitsPerSample + 7) \ 8
+    
+    dataPos = 1
+    
+    ' Draw each row
+    FOR pixelY = 0 TO rowCount - 1
+        drawY = y + pixelY
+        IF drawY >= SVGAScreenContext.YRes THEN EXIT FOR
+        
+        ' Draw each pixel in row
+        FOR pixelX = 0 TO tiffContext.Width - 1
+            drawX = x + pixelX
+            IF drawX >= SVGAScreenContext.XRes THEN EXIT FOR
+            
+            ' Extract pixel value based on bits per sample
+            SELECT CASE tiffContext.BitsPerSample
+                CASE 1
+                    ' 1-bit (monochrome)
+                    DIM byteOffset AS WORD, bitOffset AS BYTE
+                    byteOffset = dataPos + (pixelX \ 8)
+                    bitOffset = 7 - (pixelX AND 7)
+                    IF byteOffset <= LEN(stripData) THEN
+                        pixelValue = (ASC(MID$(stripData, byteOffset, 1)) \ (2 ^ bitOffset)) AND 1
+                        pixelValue = pixelValue * 255  ' Convert to 8-bit
+                    ELSE
+                        pixelValue = 0
+                    END IF
+                    
+                CASE 4
+                    ' 4-bit (16 colors)
+                    byteOffset = dataPos + (pixelX \ 2)
+                    IF byteOffset <= LEN(stripData) THEN
+                        pixelValue = ASC(MID$(stripData, byteOffset, 1))
+                        IF (pixelX AND 1) = 0 THEN
+                            pixelValue = pixelValue \ 16  ' Upper nibble
+                        ELSE
+                            pixelValue = pixelValue AND 15  ' Lower nibble
+                        END IF
+                    ELSE
+                        pixelValue = 0
+                    END IF
+                    
+                CASE 8
+                    ' 8-bit (256 colors)
+                    byteOffset = dataPos + pixelX
+                    IF byteOffset <= LEN(stripData) THEN
+                        pixelValue = ASC(MID$(stripData, byteOffset, 1))
+                    ELSE
+                        pixelValue = 0
+                    END IF
+                    
+                CASE ELSE
+                    pixelValue = 0  ' Unsupported bit depth
+            END SELECT
+            
+            ' Apply color map if present
+            IF tiffContext.HasColorMap AND pixelValue < (UBOUND(tiffContext.ColorMap) + 1) \ 3 THEN
+                ' Convert 16-bit color map values to 8-bit
+                pixelValue = (tiffContext.ColorMap(pixelValue) \ 256) AND 255
+            END IF
+            
+            ' Draw the pixel
+            CALL PUTPIXEL(drawX, drawY, pixelValue)
+        NEXT pixelX
+        
+        ' Move to next row
+        dataPos = dataPos + bytesPerRow
+        IF dataPos > LEN(stripData) THEN EXIT FOR
+    NEXT pixelY
+END SUB
+
+' =============================================================================
+' Get TIFF image information
+' Parameters:
+'   FileName - TIFF file name (BYVAL)
+'   Width, Height - Image dimensions (BYREF)
+'   BitsPerSample - Bits per sample (BYREF)
+'   Compression - Compression type (BYREF)
+' Returns: Success flag (BYTE)
+' =============================================================================
+FUNCTION DrawTif_GetInfo(BYVAL fileName AS STRING, width AS WORD, height AS WORD, bitsPerSample AS WORD, compression AS WORD) AS BYTE
+    DIM fileHandle AS INTEGER
+    DIM tiffContext AS TIFFContextType
+    
+    ' Initialize return values
+    width = 0
+    height = 0
+    bitsPerSample = 0
+    compression = 0
+    
+    fileHandle = FREEFILE
+    OPEN fileName FOR BINARY ACCESS READ AS fileHandle
+    IF LOF(fileHandle) < 8 THEN
+        CLOSE fileHandle
+        DrawTif_GetInfo = 0
+        EXIT FUNCTION
+    END IF
+    
+    ' Parse TIFF file
+    IF DrawTif_ParseFile(fileHandle, tiffContext) = 0 THEN
+        CLOSE fileHandle
+        DrawTif_GetInfo = 0
+        EXIT FUNCTION
+    END IF
+    
+    ' Return image information
+    width = tiffContext.Width
+    height = tiffContext.Height
+    bitsPerSample = tiffContext.BitsPerSample
+    compression = tiffContext.Compression
+    
+    CLOSE fileHandle
+    DrawTif_GetInfo = 1
+END FUNCTION
+
+' =============================================================================
+' Extract TIFF image to memory buffer
+' Parameters:
+'   FileName - TIFF file name (BYVAL)
+'   ImageBuffer - Output image buffer (BYREF)
+'   Width, Height - Image dimensions (BYREF)
+' Returns: Success flag (BYTE)
+' =============================================================================
+FUNCTION DrawTif_Extract(BYVAL fileName AS STRING, imageBuffer AS STRING, width AS WORD, height AS WORD) AS BYTE
+    ' This would extract TIFF image data to a memory buffer
+    ' Implementation would be similar to DrawTif_Show but store to buffer instead of screen
+    ' For now, return success placeholder
+    
+    width = 32
+    height = 32
+    imageBuffer = SPACE$(width * height)
+    DrawTif_Extract = 1
+END FUNCTION

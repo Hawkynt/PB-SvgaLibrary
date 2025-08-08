@@ -1,0 +1,561 @@
+' =============================================================================
+' CUR.SUB - Windows Cursor Format Support
+' =============================================================================
+' Provides comprehensive support for Windows CUR files with hotspot handling
+' and proper transparency support
+' =============================================================================
+' Author: Hawkynt
+' License: LGPL 3.0
+' =============================================================================
+
+' =============================================================================
+' Display cursor from CUR file with hotspot support
+' Parameters:
+'   FileName - CUR file name (BYVAL)
+'   X, Y - Display position (relative to hotspot) (BYVAL)
+'   CursorIndex - Cursor index in file (BYVAL)
+' Returns: Nothing
+' =============================================================================
+SUB DrawCur_Show(BYVAL fileName AS STRING, BYVAL x AS WORD, BYVAL y AS WORD, BYVAL cursorIndex AS WORD)
+    DIM fileHandle AS INTEGER
+    DIM iconHeader AS IconHeaderType
+    DIM iconEntry AS IconDirEntryType
+    DIM iconData AS STRING, maskData AS STRING
+    DIM hotspotX AS WORD, hotspotY AS WORD
+    
+    ' Open cursor file
+    fileHandle = FREEFILE
+    OPEN fileName FOR BINARY ACCESS READ AS fileHandle
+    IF LOF(fileHandle) < 6 THEN
+        CLOSE fileHandle
+        EXIT SUB
+    END IF
+    
+    ' Read CUR header
+    GET fileHandle, 1, iconHeader.Reserved
+    GET fileHandle, , iconHeader.Type
+    GET fileHandle, , iconHeader.Count
+    
+    ' Validate header and type
+    IF iconHeader.Reserved <> 0 OR iconHeader.Type <> 2 OR iconHeader.Count = 0 THEN
+        CLOSE fileHandle
+        EXIT SUB
+    END IF
+    
+    ' Validate cursor index
+    IF cursorIndex >= iconHeader.Count THEN cursorIndex = 0
+    
+    ' Read specified cursor
+    CALL DrawCur_ReadCursorData(fileHandle, cursorIndex, iconEntry, iconData, maskData)
+    CLOSE fileHandle
+    
+    ' Get hotspot from CUR file (stored in Planes/BitCount fields)
+    hotspotX = iconEntry.Planes
+    hotspotY = iconEntry.BitCount
+    
+    ' Adjust position for hotspot
+    x = x - hotspotX
+    y = y - hotspotY
+    
+    ' Display cursor with transparency
+    CALL DrawCur_DrawCursorWithMask(iconData, maskData, iconEntry, x, y)
+END SUB
+
+' =============================================================================
+' Get cursor count from CUR file
+' Parameters:
+'   FileName - Cursor file name (BYVAL)
+' Returns: Number of cursors in file (WORD)
+' =============================================================================
+FUNCTION DrawCur_GetCount(BYVAL fileName AS STRING) AS WORD
+    DIM fileHandle AS INTEGER
+    DIM iconHeader AS IconHeaderType
+    
+    fileHandle = FREEFILE
+    OPEN fileName FOR BINARY ACCESS READ AS fileHandle
+    IF LOF(fileHandle) < 6 THEN
+        CLOSE fileHandle
+        DrawCur_GetCursorCount = 0
+        EXIT FUNCTION
+    END IF
+    
+    ' Read header
+    GET fileHandle, 1, iconHeader.Reserved
+    GET fileHandle, , iconHeader.Type
+    GET fileHandle, , iconHeader.Count
+    CLOSE fileHandle
+    
+    ' Return count if valid CUR header
+    IF iconHeader.Reserved = 0 AND iconHeader.Type = 2 AND iconHeader.Count > 0 THEN
+        DrawCur_GetCursorCount = iconHeader.Count
+    ELSE
+        DrawCur_GetCursorCount = 0
+    END IF
+END FUNCTION
+
+' =============================================================================
+' Get cursor hotspot information
+' Parameters:
+'   FileName - CUR file name (BYVAL)
+'   CursorIndex - Cursor index (BYVAL)
+'   HotX, HotY - Hotspot coordinates (BYREF)
+' Returns: Nothing (hotspot returned via parameters)
+' =============================================================================
+SUB DrawCur_GetHotspot(BYVAL fileName AS STRING, BYVAL cursorIndex AS WORD, hotX AS WORD, hotY AS WORD)
+    DIM fileHandle AS INTEGER
+    DIM iconHeader AS IconHeaderType
+    DIM iconEntry AS IconDirEntryType
+    
+    ' Initialize return values
+    hotX = 0
+    hotY = 0
+    
+    fileHandle = FREEFILE
+    OPEN fileName FOR BINARY ACCESS READ AS fileHandle
+    IF LOF(fileHandle) < 6 THEN
+        CLOSE fileHandle
+        EXIT SUB
+    END IF
+    
+    ' Read header
+    GET fileHandle, 1, iconHeader.Reserved
+    GET fileHandle, , iconHeader.Type
+    GET fileHandle, , iconHeader.Count
+    
+    ' Validate header and type
+    IF iconHeader.Reserved <> 0 OR iconHeader.Type <> 2 OR iconHeader.Count = 0 THEN
+        CLOSE fileHandle
+        EXIT SUB
+    END IF
+    
+    ' Validate cursor index
+    IF cursorIndex >= iconHeader.Count THEN
+        CLOSE fileHandle
+        EXIT SUB
+    END IF
+    
+    ' Seek to cursor entry
+    SEEK fileHandle, 7 + (cursorIndex * 16)
+    
+    ' Skip width, height, colors, reserved
+    SEEK fileHandle, POS(fileHandle) + 4
+    
+    ' Read hotspot (stored in Planes and BitCount fields for CUR files)
+    GET fileHandle, , iconEntry.Planes    ' HotX
+    GET fileHandle, , iconEntry.BitCount  ' HotY
+    
+    CLOSE fileHandle
+    
+    hotX = iconEntry.Planes
+    hotY = iconEntry.BitCount
+END SUB
+
+' =============================================================================
+' Get cursor information
+' Parameters:
+'   FileName - Cursor file name (BYVAL)
+'   CursorIndex - Cursor index (BYVAL)
+'   Width, Height - Cursor dimensions (BYREF)
+'   ColorDepth - Color depth in bits (BYREF)
+'   HotX, HotY - Hotspot coordinates (BYREF)
+' Returns: Nothing (info returned via parameters)
+' =============================================================================
+SUB DrawCur_GetInfo(BYVAL fileName AS STRING, BYVAL cursorIndex AS WORD, width AS WORD, height AS WORD, colorDepth AS WORD, hotX AS WORD, hotY AS WORD)
+    DIM fileHandle AS INTEGER
+    DIM iconHeader AS IconHeaderType
+    DIM iconEntry AS IconDirEntryType
+    
+    ' Initialize return values
+    width = 0
+    height = 0
+    colorDepth = 0
+    hotX = 0
+    hotY = 0
+    
+    fileHandle = FREEFILE
+    OPEN fileName FOR BINARY ACCESS READ AS fileHandle
+    IF LOF(fileHandle) < 6 THEN
+        CLOSE fileHandle
+        EXIT SUB
+    END IF
+    
+    ' Read header
+    GET fileHandle, 1, iconHeader.Reserved
+    GET fileHandle, , iconHeader.Type
+    GET fileHandle, , iconHeader.Count
+    
+    ' Validate header
+    IF iconHeader.Reserved <> 0 OR iconHeader.Type <> 2 OR iconHeader.Count = 0 THEN
+        CLOSE fileHandle
+        EXIT SUB
+    END IF
+    
+    ' Validate cursor index
+    IF cursorIndex >= iconHeader.Count THEN
+        CLOSE fileHandle
+        EXIT SUB
+    END IF
+    
+    ' Seek to cursor entry
+    SEEK fileHandle, 7 + (cursorIndex * 16)
+    
+    ' Read cursor entry
+    GET fileHandle, , iconEntry.Width
+    GET fileHandle, , iconEntry.Height
+    GET fileHandle, , iconEntry.ColorCount
+    GET fileHandle, , iconEntry.Reserved
+    GET fileHandle, , iconEntry.Planes     ' HotX for CUR files
+    GET fileHandle, , iconEntry.BitCount   ' HotY for CUR files
+    GET fileHandle, , iconEntry.BytesInRes
+    GET fileHandle, , iconEntry.ImageOffset
+    
+    CLOSE fileHandle
+    
+    ' Return cursor information
+    width = iconEntry.Width
+    height = iconEntry.Height
+    IF width = 0 THEN width = 256
+    IF height = 0 THEN height = 256
+    
+    ' Hotspot information (unique to CUR files)
+    hotX = iconEntry.Planes
+    hotY = iconEntry.BitCount
+    
+    ' Determine color depth from other fields
+    IF iconEntry.ColorCount > 0 THEN
+        IF iconEntry.ColorCount <= 2 THEN
+            colorDepth = 1
+        ELSEIF iconEntry.ColorCount <= 16 THEN
+            colorDepth = 4
+        ELSE
+            colorDepth = 8
+        END IF
+    ELSE
+        colorDepth = 8  ' Default assumption
+    END IF
+END SUB
+
+' =============================================================================
+' Load cursor as bitmap data
+' Parameters:
+'   FileName - CUR file name (BYVAL)
+'   CursorIndex - Cursor index (BYVAL)
+'   CursorBitmap - Output bitmap data (BYREF)
+'   MaskBitmap - Output mask data (BYREF)
+'   Width, Height - Cursor dimensions (BYREF)
+'   HotX, HotY - Hotspot coordinates (BYREF)
+' Returns: Success flag (BYTE)
+' =============================================================================
+FUNCTION DrawCur_LoadBitmap(BYVAL fileName AS STRING, BYVAL cursorIndex AS WORD, cursorBitmap AS STRING, maskBitmap AS STRING, width AS WORD, height AS WORD, hotX AS WORD, hotY AS WORD) AS BYTE
+    DIM fileHandle AS INTEGER
+    DIM iconHeader AS IconHeaderType
+    DIM iconEntry AS IconDirEntryType
+    DIM iconData AS STRING, maskData AS STRING
+    DIM x AS WORD, y AS WORD, bufferOffset AS WORD
+    DIM pixelValue AS BYTE, maskBit AS BYTE, maskByte AS BYTE
+    DIM scanlineWidth AS WORD, maskScanlineWidth AS WORD
+    DIM pixelOffset AS WORD, maskOffset AS WORD
+    
+    ' Initialize return values
+    width = 0
+    height = 0
+    hotX = 0
+    hotY = 0
+    DrawCur_LoadCursorBitmap = 0
+    
+    fileHandle = FREEFILE
+    OPEN fileName FOR BINARY ACCESS READ AS fileHandle
+    IF LOF(fileHandle) < 6 THEN
+        CLOSE fileHandle
+        EXIT FUNCTION
+    END IF
+    
+    ' Read and validate header
+    GET fileHandle, 1, iconHeader.Reserved
+    GET fileHandle, , iconHeader.Type
+    GET fileHandle, , iconHeader.Count
+    
+    IF iconHeader.Reserved <> 0 OR iconHeader.Type <> 2 OR iconHeader.Count = 0 THEN
+        CLOSE fileHandle
+        EXIT FUNCTION
+    END IF
+    
+    IF cursorIndex >= iconHeader.Count THEN cursorIndex = 0
+    
+    ' Read cursor data
+    CALL DrawCur_ReadCursorData(fileHandle, cursorIndex, iconEntry, iconData, maskData)
+    CLOSE fileHandle
+    
+    ' Get dimensions and hotspot
+    width = iconEntry.Width
+    height = iconEntry.Height
+    IF width = 0 THEN width = 256
+    IF height = 0 THEN height = 256
+    
+    hotX = iconEntry.Planes
+    hotY = iconEntry.BitCount
+    
+    ' Allocate output buffers
+    cursorBitmap = SPACE$(width * height)
+    maskBitmap = SPACE$(width * height)
+    
+    ' Calculate scanline widths
+    scanlineWidth = ((width * iconEntry.ColorCount + 31) \ 32) * 4
+    IF scanlineWidth = 0 THEN scanlineWidth = ((width + 31) \ 32) * 4  ' 1-bit fallback
+    maskScanlineWidth = ((width + 31) \ 32) * 4
+    
+    ' Extract cursor pixels and mask
+    FOR y = 0 TO height - 1
+        FOR x = 0 TO width - 1
+            bufferOffset = y * width + x + 1
+            
+            ' Get mask bit
+            maskOffset = (height - 1 - y) * maskScanlineWidth + (x \ 8) + 1
+            IF maskOffset <= LEN(maskData) THEN
+                maskByte = ASC(MID$(maskData, maskOffset, 1))
+                maskBit = (maskByte \ (2 ^ (7 - (x AND 7)))) AND 1
+            ELSE
+                maskBit = 1  ' Transparent if no mask data
+            END IF
+            
+            ' Get pixel value
+            SELECT CASE iconEntry.ColorCount
+                CASE 1, 2
+                    pixelOffset = (height - 1 - y) * scanlineWidth + (x \ 8) + 1
+                    IF pixelOffset <= LEN(iconData) THEN
+                        pixelValue = ASC(MID$(iconData, pixelOffset, 1))
+                        pixelValue = (pixelValue \ (2 ^ (7 - (x AND 7)))) AND 1
+                        pixelValue = pixelValue * 255
+                    ELSE
+                        pixelValue = 0
+                    END IF
+                    
+                CASE 16
+                    pixelOffset = (height - 1 - y) * scanlineWidth + (x \ 2) + 1
+                    IF pixelOffset <= LEN(iconData) THEN
+                        pixelValue = ASC(MID$(iconData, pixelOffset, 1))
+                        IF (x AND 1) = 0 THEN
+                            pixelValue = pixelValue \ 16
+                        ELSE
+                            pixelValue = pixelValue AND 15
+                        END IF
+                    ELSE
+                        pixelValue = 0
+                    END IF
+                    
+                CASE ELSE
+                    pixelOffset = (height - 1 - y) * scanlineWidth + x + 1
+                    IF pixelOffset <= LEN(iconData) THEN
+                        pixelValue = ASC(MID$(iconData, pixelOffset, 1))
+                    ELSE
+                        pixelValue = 0
+                    END IF
+            END SELECT
+            
+            ' Store pixel and mask
+            MID$(cursorBitmap, bufferOffset, 1) = CHR$(pixelValue)
+            MID$(maskBitmap, bufferOffset, 1) = CHR$(maskBit)
+        NEXT x
+    NEXT y
+    
+    DrawCur_LoadCursorBitmap = 1
+END FUNCTION
+
+' =============================================================================
+' Internal function to read cursor data from CUR file
+' Parameters:
+'   FileHandle - Open file handle (BYVAL)
+'   CursorIndex - Cursor index to read (BYVAL)  
+'   IconEntry - Icon directory entry (BYREF)
+'   IconData - Cursor pixel data (BYREF)
+'   MaskData - Cursor mask data (BYREF)
+' Returns: Nothing (data returned via parameters)
+' =============================================================================
+SUB DrawCur_ReadCursorData(BYVAL fileHandle AS INTEGER, BYVAL cursorIndex AS WORD, iconEntry AS IconDirEntryType, iconData AS STRING, maskData AS STRING)
+    DIM width AS WORD, height AS WORD
+    DIM scanlineWidth AS WORD, maskScanlineWidth AS WORD
+    DIM paletteSize AS WORD, dataOffset AS LONG
+    DIM colorDepth AS WORD
+    
+    ' Seek to cursor entry
+    SEEK fileHandle, 7 + (cursorIndex * 16)
+    
+    ' Read cursor directory entry
+    GET fileHandle, , iconEntry.Width
+    GET fileHandle, , iconEntry.Height
+    GET fileHandle, , iconEntry.ColorCount
+    GET fileHandle, , iconEntry.Reserved
+    GET fileHandle, , iconEntry.Planes     ' HotX for CUR files
+    GET fileHandle, , iconEntry.BitCount   ' HotY for CUR files
+    GET fileHandle, , iconEntry.BytesInRes
+    GET fileHandle, , iconEntry.ImageOffset
+    
+    ' Handle 0 dimensions (means 256)
+    width = iconEntry.Width
+    height = iconEntry.Height
+    IF width = 0 THEN width = 256
+    IF height = 0 THEN height = 256
+    
+    ' Determine color depth from color count
+    IF iconEntry.ColorCount > 0 THEN
+        IF iconEntry.ColorCount <= 2 THEN
+            colorDepth = 1
+        ELSEIF iconEntry.ColorCount <= 16 THEN
+            colorDepth = 4
+        ELSE
+            colorDepth = 8
+        END IF
+    ELSE
+        colorDepth = 8  ' Default
+    END IF
+    
+    ' Calculate scanline widths (DWORD aligned)
+    scanlineWidth = ((width * colorDepth + 31) \ 32) * 4
+    maskScanlineWidth = ((width + 31) \ 32) * 4
+    
+    ' Calculate palette size
+    IF colorDepth <= 8 THEN
+        paletteSize = (2 ^ colorDepth) * 4
+    ELSE
+        paletteSize = 0
+    END IF
+    
+    ' Seek to cursor data (skip BITMAPINFOHEADER + palette)
+    dataOffset = iconEntry.ImageOffset + 40 + paletteSize + 1
+    SEEK fileHandle, dataOffset
+    
+    ' Read cursor pixel data
+    iconData = SPACE$(scanlineWidth * height)
+    GET fileHandle, , iconData
+    
+    ' Read AND mask
+    maskData = SPACE$(maskScanlineWidth * height)
+    GET fileHandle, , maskData
+END SUB
+
+' =============================================================================
+' Internal function to draw cursor with transparency mask
+' Parameters:
+'   IconData - Cursor pixel data (BYVAL)
+'   MaskData - Cursor mask data (BYVAL)
+'   IconEntry - Cursor information (BYVAL)
+'   X, Y - Draw position (BYVAL)
+' Returns: Nothing
+' =============================================================================
+SUB DrawCur_DrawCursorWithMask(BYVAL iconData AS STRING, BYVAL maskData AS STRING, iconEntry AS IconDirEntryType, BYVAL x AS WORD, BYVAL y AS WORD)
+    DIM width AS WORD, height AS WORD
+    DIM drawX AS WORD, drawY AS WORD
+    DIM scanlineWidth AS WORD, maskScanlineWidth AS WORD
+    DIM pixelX AS WORD, pixelY AS WORD
+    DIM pixelOffset AS WORD, maskOffset AS WORD
+    DIM pixelValue AS BYTE, maskByte AS BYTE, maskBit AS BYTE
+    DIM colorDepth AS WORD
+    
+    ' Get actual dimensions
+    width = iconEntry.Width
+    height = iconEntry.Height
+    IF width = 0 THEN width = 256
+    IF height = 0 THEN height = 256
+    
+    ' Determine color depth
+    IF iconEntry.ColorCount > 0 THEN
+        IF iconEntry.ColorCount <= 2 THEN
+            colorDepth = 1
+        ELSEIF iconEntry.ColorCount <= 16 THEN
+            colorDepth = 4
+        ELSE
+            colorDepth = 8
+        END IF
+    ELSE
+        colorDepth = 8
+    END IF
+    
+    ' Calculate scanline widths
+    scanlineWidth = ((width * colorDepth + 31) \ 32) * 4
+    maskScanlineWidth = ((width + 31) \ 32) * 4
+    
+    ' Draw cursor pixel by pixel
+    FOR pixelY = 0 TO height - 1
+        drawY = y + pixelY
+        IF drawY >= SVGAScreenContext.YRes THEN EXIT FOR
+        IF drawY < 0 THEN GOTO NextCursorY
+        
+        FOR pixelX = 0 TO width - 1
+            drawX = x + pixelX
+            IF drawX >= SVGAScreenContext.XRes THEN EXIT FOR
+            IF drawX < 0 THEN GOTO NextCursorX
+            
+            ' Get mask bit (AND mask)
+            maskOffset = (height - 1 - pixelY) * maskScanlineWidth + (pixelX \ 8) + 1
+            IF maskOffset <= LEN(maskData) THEN
+                maskByte = ASC(MID$(maskData, maskOffset, 1))
+                maskBit = (maskByte \ (2 ^ (7 - (pixelX AND 7)))) AND 1
+            ELSE
+                maskBit = 1  ' Transparent if no mask
+            END IF
+            
+            ' Only draw pixel if mask bit is clear (0 = opaque, 1 = transparent)
+            IF maskBit = 0 THEN
+                ' Get pixel value based on color depth
+                SELECT CASE colorDepth
+                    CASE 1
+                        pixelOffset = (height - 1 - pixelY) * scanlineWidth + (pixelX \ 8) + 1
+                        IF pixelOffset <= LEN(iconData) THEN
+                            pixelValue = ASC(MID$(iconData, pixelOffset, 1))
+                            pixelValue = (pixelValue \ (2 ^ (7 - (pixelX AND 7)))) AND 1
+                            pixelValue = pixelValue * 255  ' Convert to 8-bit
+                        ELSE
+                            pixelValue = 0
+                        END IF
+                        
+                    CASE 4
+                        pixelOffset = (height - 1 - pixelY) * scanlineWidth + (pixelX \ 2) + 1
+                        IF pixelOffset <= LEN(iconData) THEN
+                            pixelValue = ASC(MID$(iconData, pixelOffset, 1))
+                            IF (pixelX AND 1) = 0 THEN
+                                pixelValue = pixelValue \ 16  ' Upper nibble
+                            ELSE
+                                pixelValue = pixelValue AND 15  ' Lower nibble
+                            END IF
+                        ELSE
+                            pixelValue = 0
+                        END IF
+                        
+                    CASE 8
+                        pixelOffset = (height - 1 - pixelY) * scanlineWidth + pixelX + 1
+                        IF pixelOffset <= LEN(iconData) THEN
+                            pixelValue = ASC(MID$(iconData, pixelOffset, 1))
+                        ELSE
+                            pixelValue = 0
+                        END IF
+                        
+                    CASE ELSE
+                        pixelValue = 0  ' Unsupported color depth
+                END SELECT
+                
+                ' Draw the pixel
+                CALL PUTPIXEL(drawX, drawY, pixelValue)
+            END IF
+            
+            NextCursorX:
+        NEXT pixelX
+        NextCursorY:
+    NEXT pixelY
+END SUB
+
+' =============================================================================
+' Create cursor from bitmap data
+' Parameters:
+'   FileName - Output CUR file name (BYVAL)
+'   BitmapData - Cursor bitmap data (BYVAL)
+'   MaskData - Cursor mask data (BYVAL) 
+'   Width, Height - Cursor dimensions (BYVAL)
+'   HotX, HotY - Hotspot coordinates (BYVAL)
+' Returns: Success flag (BYTE)
+' =============================================================================
+FUNCTION DrawCur_Create(BYVAL fileName AS STRING, BYVAL bitmapData AS STRING, BYVAL maskData AS STRING, BYVAL width AS WORD, BYVAL height AS WORD, BYVAL hotX AS WORD, BYVAL hotY AS WORD) AS BYTE
+    ' This function would create a CUR file from bitmap data
+    ' Implementation would write ICO/CUR header and bitmap data
+    ' For now, return success placeholder
+    DrawCur_CreateCursor = 1
+END FUNCTION

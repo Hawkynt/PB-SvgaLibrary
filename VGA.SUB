@@ -17,24 +17,24 @@
 ' Returns: Nothing
 ' Note: Optimized for Mode 13h 320x200x256 linear memory layout
 ' =============================================================================
-SUB VGA_PutPixel(BYVAL X AS WORD, BYVAL Y AS WORD, BYVAL Color AS BYTE)
+SUB Vga_PutPixel(BYVAL x AS WORD, BYVAL y AS WORD, BYVAL color AS BYTE)
     ' Ultra-fast assembly optimized pixel write for Mode 13h
     !PUSH ES
 
     ' Hopefully this is loaded in parallel
-    !MOV BX, Y               ; Start: Y → BX
+    !MOV BX, y               ; Start: Y → BX
     !MOV AX, &HA000          ; Parallel: preload A000h in AX
 
     ' While copying DX, we may as well start fetching from memory again
     !MOV DX, BX              ; Copy Y to DX for parallel shift path
-    !MOV CX, X               ; In parallel: X → CX
+    !MOV CX, x               ; In parallel: X → CX
 
     ' Now we sadly block the shifter two times but we try get the mov in parallel
     !SHL BX, 8               ; BX = Y * 256
     !MOV ES, AX              ; Now set ES (last use of AX)
 
     !SHL DX, 6               ; DX = Y * 64
-    !MOV AL, Color           ; In parallel: load color to AL
+    !MOV AL, color           ; In parallel: load color to AL
     
     ' now here's a data dependency that keeps us waiting
     !ADD BX, DX              ; BX = Y * 320
@@ -52,16 +52,16 @@ END SUB
 '   X, Y - Pixel coordinates (BYVAL)
 ' Returns: Pixel color value
 ' =============================================================================
-FUNCTION VGA_GetPixel(BYVAL X AS WORD, BYVAL Y AS WORD) AS BYTE
+FUNCTION Vga_GetPixel(BYVAL x AS WORD, BYVAL y AS WORD) AS BYTE
     ' Ultra-fast assembly optimized pixel read for Mode 13h
     DIM PixelValue AS BYTE
         
     !PUSH ES
 
-    !MOV BX, Y               ; BX = Y
+    !MOV BX, y               ; BX = Y
     !MOV AX, &HA000          ; Prepare segment early
     !MOV DX, BX              ; DX = Y (copy for parallel shift path)
-    !MOV CX, X               ; CX = X
+    !MOV CX, x               ; CX = X
 
     !SHL BX, 8               ; BX = Y * 256
     !MOV ES, AX              ; Now set ES = A000h
@@ -77,7 +77,7 @@ FUNCTION VGA_GetPixel(BYVAL X AS WORD, BYVAL Y AS WORD) AS BYTE
 
     !POP ES
     
-    VGA_GetPixel = PixelValue
+    Vga_GetPixel = PixelValue
 END FUNCTION
 
 ' =============================================================================
@@ -89,18 +89,18 @@ END FUNCTION
 ' Returns: Nothing
 ' Note: Uses fast assembly for maximum speed
 ' =============================================================================
-SUB VGA_HLine(BYVAL X1 AS WORD, BYVAL X2 AS WORD, BYVAL Y AS WORD, BYVAL Color AS BYTE)
+SUB Vga_HLine(BYVAL x1 AS WORD, BYVAL x2 AS WORD, BYVAL y AS WORD, BYVAL color AS BYTE)
     DIM StartOffset AS WORD, LineLength AS WORD
     DIM ColorWord AS WORD, ColorDWord AS LONG
     
     ' Ensure X1 <= X2
-    IF X1 > X2 THEN SWAP X1, X2
+    IF x1 > x2 THEN SWAP x1, x2
     
-    StartOffset = Y * 320 + X1
-    LineLength = X2 - X1 + 1
+    StartOffset = y * 320 + x1
+    LineLength = x2 - x1 + 1
     
     ' Prepare color patterns for faster filling
-    ColorWord = (Color * 256) + Color      ' AABBH pattern
+    ColorWord = (color * 256) + color      ' AABBH pattern
     ColorDWord = (ColorWord * 65536&) + ColorWord  ' AABBAABBH pattern
     
     ' Ultra-optimized assembly using REP STOSW string instruction
@@ -115,7 +115,7 @@ SUB VGA_HLine(BYVAL X1 AS WORD, BYVAL X2 AS WORD, BYVAL Y AS WORD, BYVAL Color A
     ' Handle odd starting pixel if not word-aligned
     !TEST DI, 1             ; Check if starting address is odd
     !JZ VGAHLineWordAlign   ; Jump if even (word-aligned)
-    !MOV AL, Color
+    !MOV AL, color
     !STOSB                  ; Store AL to ES:[DI], increment DI
     !DEC CX
     !JZ VGAHLineDone        ; Done if only one pixel
@@ -132,7 +132,7 @@ SUB VGA_HLine(BYVAL X1 AS WORD, BYVAL X2 AS WORD, BYVAL Y AS WORD, BYVAL Color A
     ' Handle remaining odd pixel
     !TEST DX, 1             ; Check if original length was odd
     !JZ VGAHLineDone        ; Jump if no remainder
-    !MOV AL, Color
+    !MOV AL, color
     !STOSB                  ; Store final pixel
     
     VGAHLineDone:
@@ -149,21 +149,21 @@ END SUB
 ' Returns: Nothing
 ' Note: Uses direct memory calculation with no per-pixel overhead
 ' =============================================================================
-SUB VGA_VLine(BYVAL X AS WORD, BYVAL Y1 AS WORD, BYVAL Y2 AS WORD, BYVAL Color AS BYTE)
+SUB Vga_VLine(BYVAL x AS WORD, BYVAL y1 AS WORD, BYVAL y2 AS WORD, BYVAL color AS BYTE)
     DIM StartOffset AS WORD, LineLength AS WORD
     
     ' Ensure Y1 <= Y2
-    IF Y1 > Y2 THEN SWAP Y1, Y2
+    IF y1 > y2 THEN SWAP y1, y2
     
-    StartOffset = Y1 * 320 + X
-    LineLength = Y2 - Y1 + 1
+    StartOffset = y1 * 320 + x
+    LineLength = y2 - y1 + 1
     
     ' Ultra-optimized vertical line using assembly - no per-pixel calculations
     !PUSH ES
     !MOV AX, &HA000
     !MOV ES, AX
     !MOV BX, StartOffset      ; Starting memory address
-    !MOV AL, Color           ; Pixel color
+    !MOV AL, color           ; Pixel color
     !MOV DX, 320             ; Bytes per scanline (constant)
     !MOV CX, LineLength      ; Number of pixels to draw
     
@@ -185,16 +185,16 @@ END SUB
 ' Returns: Nothing
 ' Note: Uses optimized routines for horizontal/vertical lines
 ' =============================================================================
-SUB VGA_LineDraw(BYVAL X1 AS WORD, BYVAL Y1 AS WORD, BYVAL X2 AS WORD, BYVAL Y2 AS WORD, BYVAL Color AS BYTE)
+SUB Vga_LineDraw(BYVAL x1 AS WORD, BYVAL y1 AS WORD, BYVAL x2 AS WORD, BYVAL y2 AS WORD, BYVAL color AS BYTE)
     ' Check for horizontal line
-    IF Y1 = Y2 THEN
-        CALL VGA_HLine(X1, X2, Y1, Color)
+    IF y1 = y2 THEN
+        CALL Vga_HLine(x1, x2, y1, color)
         EXIT SUB
     END IF
     
     ' Check for vertical line
-    IF X1 = X2 THEN
-        CALL VGA_VLine(X1, Y1, Y2, Color)
+    IF x1 = x2 THEN
+        CALL Vga_VLine(x1, y1, y2, color)
         EXIT SUB
     END IF
     
@@ -203,25 +203,25 @@ SUB VGA_LineDraw(BYVAL X1 AS WORD, BYVAL Y1 AS WORD, BYVAL X2 AS WORD, BYVAL Y2 
     DIM ErrorTerm AS INTEGER, CurrentX AS WORD, CurrentY AS WORD
     
     ' Calculate deltas and step directions
-    DeltaX = ABS(X2 - X1)
-    DeltaY = ABS(Y2 - Y1)
+    DeltaX = ABS(x2 - x1)
+    DeltaY = ABS(y2 - y1)
     
-    IF X1 < X2 THEN StepX = 1 ELSE StepX = -1
-    IF Y1 < Y2 THEN StepY = 1 ELSE StepY = -1
+    IF x1 < x2 THEN StepX = 1 ELSE StepX = -1
+    IF y1 < y2 THEN StepY = 1 ELSE StepY = -1
     
     ' Initialize error term
     ErrorTerm = DeltaX - DeltaY
     
     ' Set starting position
-    CurrentX = X1
-    CurrentY = Y1
+    CurrentX = x1
+    CurrentY = y1
     
     ' Draw line using Bresenham's algorithm
     DO
-        CALL VGA_PutPixel(CurrentX, CurrentY, Color)
+        CALL Vga_PutPixel(CurrentX, CurrentY, color)
         
         ' Check if we've reached the end point
-        IF CurrentX = X2 AND CurrentY = Y2 THEN EXIT DO
+        IF CurrentX = x2 AND CurrentY = y2 THEN EXIT DO
         
         ' Calculate next point
         DIM Error2 AS INTEGER
@@ -248,16 +248,16 @@ END SUB
 ' Returns: Nothing
 ' Note: Uses optimized horizontal line fills
 ' =============================================================================
-SUB VGA_FillRect(BYVAL X1 AS WORD, BYVAL Y1 AS WORD, BYVAL X2 AS WORD, BYVAL Y2 AS WORD, BYVAL Color AS BYTE)
+SUB Vga_FillRect(BYVAL x1 AS WORD, BYVAL y1 AS WORD, BYVAL x2 AS WORD, BYVAL y2 AS WORD, BYVAL color AS BYTE)
     DIM ScanLine AS WORD
     
     ' Ensure coordinates are ordered
-    IF X1 > X2 THEN SWAP X1, X2
-    IF Y1 > Y2 THEN SWAP Y1, Y2
+    IF x1 > x2 THEN SWAP x1, x2
+    IF y1 > y2 THEN SWAP y1, y2
     
     ' Fill rectangle using horizontal lines
-    FOR ScanLine = Y1 TO Y2
-        CALL VGA_HLine(X1, X2, ScanLine, Color)
+    FOR ScanLine = y1 TO y2
+        CALL Vga_HLine(x1, x2, ScanLine, color)
     NEXT ScanLine
 END SUB
 
@@ -269,16 +269,16 @@ END SUB
 '   Color - Border color (BYVAL)
 ' Returns: Nothing
 ' =============================================================================
-SUB VGA_DrawRect(BYVAL X1 AS WORD, BYVAL Y1 AS WORD, BYVAL X2 AS WORD, BYVAL Y2 AS WORD, BYVAL Color AS BYTE)
+SUB Vga_DrawRect(BYVAL x1 AS WORD, BYVAL y1 AS WORD, BYVAL x2 AS WORD, BYVAL y2 AS WORD, BYVAL color AS BYTE)
     ' Ensure coordinates are ordered
-    IF X1 > X2 THEN SWAP X1, X2
-    IF Y1 > Y2 THEN SWAP Y1, Y2
+    IF x1 > x2 THEN SWAP x1, x2
+    IF y1 > y2 THEN SWAP y1, y2
     
     ' Draw four sides
-    CALL VGA_HLine(X1, X2, Y1, Color)  ' Top
-    CALL VGA_HLine(X1, X2, Y2, Color)  ' Bottom
-    CALL VGA_VLine(X1, Y1, Y2, Color)  ' Left
-    CALL VGA_VLine(X2, Y1, Y2, Color)  ' Right
+    CALL Vga_HLine(x1, x2, y1, color)  ' Top
+    CALL Vga_HLine(x1, x2, y2, color)  ' Bottom
+    CALL Vga_VLine(x1, y1, y2, color)  ' Left
+    CALL Vga_VLine(x2, y1, y2, color)  ' Right
 END SUB
 
 ' =============================================================================
@@ -290,18 +290,18 @@ END SUB
 ' Returns: Nothing
 ' Note: Standard midpoint circle algorithm
 ' =============================================================================
-SUB VGA_DrawCircle(BYVAL CenterX AS WORD, BYVAL CenterY AS WORD, BYVAL Radius AS WORD, BYVAL Color AS BYTE)
+SUB Vga_DrawCircle(BYVAL centerX AS WORD, BYVAL centerY AS WORD, BYVAL radius AS WORD, BYVAL color AS BYTE)
     DIM X AS INTEGER, Y AS INTEGER, DecisionParam AS INTEGER
     
     X = 0
-    Y = Radius
-    DecisionParam = 1 - Radius
+    Y = radius
+    DecisionParam = 1 - radius
     
     ' Draw initial points
-    CALL VGA_PutPixel(CenterX, CenterY + Radius, Color)
-    CALL VGA_PutPixel(CenterX, CenterY - Radius, Color)
-    CALL VGA_PutPixel(CenterX + Radius, CenterY, Color)
-    CALL VGA_PutPixel(CenterX - Radius, CenterY, Color)
+    CALL Vga_PutPixel(centerX, centerY + radius, color)
+    CALL Vga_PutPixel(centerX, centerY - radius, color)
+    CALL Vga_PutPixel(centerX + radius, centerY, color)
+    CALL Vga_PutPixel(centerX - radius, centerY, color)
     
     ' Draw circle using midpoint algorithm
     DO WHILE X < Y
@@ -315,14 +315,14 @@ SUB VGA_DrawCircle(BYVAL CenterX AS WORD, BYVAL CenterY AS WORD, BYVAL Radius AS
         END IF
         
         ' Draw 8 symmetric points
-        CALL VGA_PutPixel(CenterX + X, CenterY + Y, Color)
-        CALL VGA_PutPixel(CenterX - X, CenterY + Y, Color)
-        CALL VGA_PutPixel(CenterX + X, CenterY - Y, Color)
-        CALL VGA_PutPixel(CenterX - X, CenterY - Y, Color)
-        CALL VGA_PutPixel(CenterX + Y, CenterY + X, Color)
-        CALL VGA_PutPixel(CenterX - Y, CenterY + X, Color)
-        CALL VGA_PutPixel(CenterX + Y, CenterY - X, Color)
-        CALL VGA_PutPixel(CenterX - Y, CenterY - X, Color)
+        CALL Vga_PutPixel(centerX + X, centerY + Y, color)
+        CALL Vga_PutPixel(centerX - X, centerY + Y, color)
+        CALL Vga_PutPixel(centerX + X, centerY - Y, color)
+        CALL Vga_PutPixel(centerX - X, centerY - Y, color)
+        CALL Vga_PutPixel(centerX + Y, centerY + X, color)
+        CALL Vga_PutPixel(centerX - Y, centerY + X, color)
+        CALL Vga_PutPixel(centerX + Y, centerY - X, color)
+        CALL Vga_PutPixel(centerX - Y, centerY - X, color)
     LOOP
 END SUB
 
@@ -335,17 +335,17 @@ END SUB
 ' Returns: Nothing
 ' Note: Uses horizontal line fills for efficiency
 ' =============================================================================
-SUB VGA_FillCircle(BYVAL CenterX AS WORD, BYVAL CenterY AS WORD, BYVAL Radius AS WORD, BYVAL Color AS BYTE)
+SUB Vga_FillCircle(BYVAL centerX AS WORD, BYVAL centerY AS WORD, BYVAL radius AS WORD, BYVAL color AS BYTE)
     DIM X AS INTEGER, Y AS INTEGER, DecisionParam AS INTEGER
     DIM PrevY AS INTEGER
     
     X = 0
-    Y = Radius
-    DecisionParam = 1 - Radius
+    Y = radius
+    DecisionParam = 1 - radius
     PrevY = Y
     
     ' Draw initial horizontal line
-    CALL VGA_HLine(CenterX - Radius, CenterX + Radius, CenterY, Color)
+    CALL Vga_HLine(centerX - radius, centerX + radius, centerY, color)
     
     ' Fill circle using horizontal lines
     DO WHILE X < Y
@@ -356,8 +356,8 @@ SUB VGA_FillCircle(BYVAL CenterX AS WORD, BYVAL CenterY AS WORD, BYVAL Radius AS
         ELSE
             ' Y changed, draw horizontal lines for previous Y
             IF Y <> PrevY THEN
-                CALL VGA_HLine(CenterX - X + 1, CenterX + X - 1, CenterY + PrevY, Color)
-                CALL VGA_HLine(CenterX - X + 1, CenterX + X - 1, CenterY - PrevY, Color)
+                CALL Vga_HLine(centerX - X + 1, centerX + X - 1, centerY + PrevY, color)
+                CALL Vga_HLine(centerX - X + 1, centerX + X - 1, centerY - PrevY, color)
                 PrevY = Y
             END IF
             
@@ -366,14 +366,14 @@ SUB VGA_FillCircle(BYVAL CenterX AS WORD, BYVAL CenterY AS WORD, BYVAL Radius AS
         END IF
         
         ' Draw horizontal lines for current positions
-        CALL VGA_HLine(CenterX - Y, CenterX + Y, CenterY + X, Color)
-        CALL VGA_HLine(CenterX - Y, CenterX + Y, CenterY - X, Color)
+        CALL Vga_HLine(centerX - Y, centerX + Y, centerY + X, color)
+        CALL Vga_HLine(centerX - Y, centerX + Y, centerY - X, color)
     LOOP
     
     ' Draw final lines if Y changed
     IF Y <> PrevY THEN
-        CALL VGA_HLine(CenterX - X, CenterX + X, CenterY + Y, Color)
-        CALL VGA_HLine(CenterX - X, CenterX + X, CenterY - Y, Color)
+        CALL Vga_HLine(centerX - X, centerX + X, centerY + Y, color)
+        CALL Vga_HLine(centerX - X, centerX + X, centerY - Y, color)
     END IF
 END SUB
 
@@ -384,25 +384,11 @@ END SUB
 ' Returns: Nothing
 ' Note: Extremely fast for Mode 13h using assembly
 ' =============================================================================
-SUB VGA_ClearScreen(BYVAL Color AS BYTE)
-    DIM ColorWord AS WORD, ColorDWord AS LONG
-    
-    ' Prepare optimized color patterns
-    ColorWord = (Color * 256) + Color      ' AABBH pattern
-    ColorDWord = (ColorWord * 65536&) + ColorWord  ' AABBAABBH pattern
-    
-    ' Ultra-fast clear using REP STOSD string instruction (fastest possible)
-    !PUSH ES
-    !PUSH DI
-    !MOV AX, &HA000
-    !MOV ES, AX
-    !XOR DI, DI             ; Start at offset 0
-    !MOV CX, 16000          ; 64000 / 4 = 16000 DWORD writes
-    !MOV EAX, ColorDWord    ; Load 4 pixels worth of color
-    !CLD                    ; Clear direction flag (forward)
-    !REP STOSD              ; Ultra-fast: store EAX to ES:[DI], repeat CX times
-    !POP DI
-    !POP ES
+SUB Vga_ClearScreen(BYVAL color AS BYTE)
+    ' Use ultra-optimized ClearVideoMemory for maximum speed
+    ' This function uses unrolled loops with 16 STOSW operations per iteration
+    ' eliminating loop overhead for fastest possible A000h segment clear
+    CALL Memory_ClearVideoMemory(color)
 END SUB
 
 ' =============================================================================
@@ -410,19 +396,19 @@ END SUB
 ' Parameters:
 '   SrcX, SrcY - Source coordinates (BYVAL)
 '   DestX, DestY - Destination coordinates (BYVAL)
-'   Width, Height - Block dimensions (BYVAL)
+'   width, Height - Block dimensions (BYVAL)
 ' Returns: Nothing
 ' Note: Optimized for Mode 13h with overlap handling
 ' =============================================================================
-SUB VGA_CopyBlock(BYVAL SrcX AS WORD, BYVAL SrcY AS WORD, BYVAL DestX AS WORD, BYVAL DestY AS WORD, BYVAL Width AS WORD, BYVAL Height AS WORD)
+SUB Vga_CopyBlock(BYVAL srcX AS WORD, BYVAL srcY AS WORD, BYVAL destX AS WORD, BYVAL destY AS WORD, BYVAL width AS WORD, BYVAL height AS WORD)
     DIM CurrentY AS WORD, SrcOffset AS WORD, DestOffset AS WORD
     DIM CopyDirection AS INTEGER
     
     ' Determine copy direction to handle overlapping regions
-    IF SrcY < DestY OR (SrcY = DestY AND SrcX < DestX) THEN
+    IF srcY < destY OR (srcY = destY AND srcX < destX) THEN
         ' Copy backwards (bottom to top, right to left)
         CopyDirection = -1
-        CurrentY = Height - 1
+        CurrentY = height - 1
     ELSE
         ' Copy forwards (top to bottom, left to right)
         CopyDirection = 1
@@ -437,13 +423,13 @@ SUB VGA_CopyBlock(BYVAL SrcX AS WORD, BYVAL SrcY AS WORD, BYVAL DestX AS WORD, B
     
     IF CopyDirection = 1 THEN
         ' Forward copy
-        DO WHILE CurrentY < Height
-            SrcOffset = (SrcY + CurrentY) * 320 + SrcX
-            DestOffset = (DestY + CurrentY) * 320 + DestX
+        DO WHILE CurrentY < height
+            SrcOffset = (srcY + CurrentY) * 320 + srcX
+            DestOffset = (destY + CurrentY) * 320 + destX
             
             !MOV SI, SrcOffset
             !MOV DI, DestOffset
-            !MOV CX, Width
+            !MOV CX, width
             !CLD                    ; Clear direction flag (forward)
             
             ' 8086-compatible block move
@@ -457,12 +443,12 @@ SUB VGA_CopyBlock(BYVAL SrcX AS WORD, BYVAL SrcY AS WORD, BYVAL DestX AS WORD, B
     ELSE
         ' Backward copy
         DO WHILE CurrentY >= 0
-            SrcOffset = (SrcY + CurrentY) * 320 + SrcX + Width - 1
-            DestOffset = (DestY + CurrentY) * 320 + DestX + Width - 1
+            SrcOffset = (srcY + CurrentY) * 320 + srcX + width - 1
+            DestOffset = (destY + CurrentY) * 320 + destX + width - 1
             
             !MOV SI, SrcOffset
             !MOV DI, DestOffset
-            !MOV CX, Width
+            !MOV CX, width
             !STD                    ; Set direction flag (backward)
             
             ' 8086-compatible backward block move
@@ -489,19 +475,19 @@ END SUB
 ' Returns: Nothing
 ' Note: Fills area with repeating 8-byte pattern
 ' =============================================================================
-SUB VGA_PatternFill(BYVAL X1 AS WORD, BYVAL Y1 AS WORD, BYVAL X2 AS WORD, BYVAL Y2 AS WORD, Pattern AS STRING)
+SUB Vga_PatternFill(BYVAL x1 AS WORD, BYVAL y1 AS WORD, BYVAL x2 AS WORD, BYVAL y2 AS WORD, pattern AS STRING)
     DIM CurrentY AS WORD, CurrentX AS WORD, PatternIndex AS BYTE
     DIM LineOffset AS WORD
     
     ' Ensure coordinates are ordered
-    IF X1 > X2 THEN SWAP X1, X2
-    IF Y1 > Y2 THEN SWAP Y1, Y2
+    IF x1 > x2 THEN SWAP x1, x2
+    IF y1 > y2 THEN SWAP y1, y2
     
     ' Ensure pattern is at least 1 byte
-    IF LEN(Pattern) = 0 THEN Pattern = CHR$(0)
+    IF LEN(pattern) = 0 THEN pattern = CHR$(0)
     
-    FOR CurrentY = Y1 TO Y2
-        LineOffset = CurrentY * 320 + X1
+    FOR CurrentY = y1 TO y2
+        LineOffset = CurrentY * 320 + x1
         PatternIndex = 1
         
         !PUSH ES
@@ -509,13 +495,13 @@ SUB VGA_PatternFill(BYVAL X1 AS WORD, BYVAL Y1 AS WORD, BYVAL X2 AS WORD, BYVAL 
         !MOV ES, AX
         !MOV BX, LineOffset
         
-        FOR CurrentX = X1 TO X2
-            !MOV AL, ASC(MID$(Pattern, PatternIndex, 1))
+        FOR CurrentX = x1 TO x2
+            !MOV AL, ASC(MID$(pattern, PatternIndex, 1))
             !MOV ES:[BX], AL
             !INC BX
             
             PatternIndex = PatternIndex + 1
-            IF PatternIndex > LEN(Pattern) THEN PatternIndex = 1
+            IF PatternIndex > LEN(pattern) THEN PatternIndex = 1
         NEXT CurrentX
         
         !POP ES
@@ -528,7 +514,7 @@ END SUB
 ' Returns: Nothing (updates global contexts)
 ' Note: Sets up contexts for Mode 13h
 ' =============================================================================
-SUB VGA_InitMode13h
+SUB Vga_InitMode13h
     ' Set Mode 13h context information
     SVGAScreenContext.XRes = 320
     SVGAScreenContext.YRes = 200
@@ -545,7 +531,7 @@ SUB VGA_InitMode13h
     VESASystemContext.XDecrease = 0
     VESASystemContext.YDecrease = 0
     VESASystemContext.CurrentMode = %SVGA_MODE13
-    CALL InitDispatchTable  ' Update function pointers for Mode 13h
+    CALL Svga_InitDispatchTable  ' Update function pointers for Mode 13h
     
     ' Initialize scaling context
     ScaleSystemContext.XScale = 1

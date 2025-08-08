@@ -14,7 +14,7 @@
 '       representing an 8x8 bitmap for each ASCII character (0-255)
 '       Updates global FontSystemContext
 ' =============================================================================
-SUB INITFONT (BYVAL FontFile AS STRING, BYVAL DisplayMode AS BYTE)
+SUB Fonts_InitFont (BYVAL fontFile AS STRING, BYVAL displayMode AS BYTE)
     DIM FileHandle AS INTEGER, CharIndex AS WORD, InputLine AS STRING
     DIM Pos1 AS WORD, Pos2 AS WORD, Pos3 AS WORD, Pos4 AS WORD
     DIM Pos5 AS WORD, Pos6 AS WORD, Pos7 AS WORD, Pos8 AS WORD
@@ -25,17 +25,17 @@ SUB INITFONT (BYVAL FontFile AS STRING, BYVAL DisplayMode AS BYTE)
     FontSystemContext.Data = ""
     
     ' Display loading information based on mode
-    IF DisplayMode = 1 THEN
+    IF displayMode = 1 THEN
         CLS
-        PRINT "LOAD " + CHR$(34) + UCASE$(FontFile) + CHR$(34) + ",8,1"
+        PRINT "LOAD " + CHR$(34) + UCASE$(fontFile) + CHR$(34) + ",8,1"
         PRINT "LOADING FROM $2000 TO $3000"
-    ELSEIF DisplayMode = 2 THEN
+    ELSEIF displayMode = 2 THEN
         CALL LOADING(0)  ' Start loading animation
     END IF
     
     ' Open font file
     FileHandle = FREEFILE
-    OPEN "I", #FileHandle, FontFile
+    OPEN "I", #FileHandle, fontFile
     
     ' Read 256 character definitions (8 bytes each)
     FOR CharIndex = 0 TO 255
@@ -66,7 +66,7 @@ SUB INITFONT (BYVAL FontFile AS STRING, BYVAL DisplayMode AS BYTE)
             FontSystemContext.Data = FontSystemContext.Data + CHR$(VAL(Byte1)) + CHR$(VAL(Byte2)) + CHR$(VAL(Byte3)) + CHR$(VAL(Byte4)) + CHR$(VAL(Byte5)) + CHR$(VAL(Byte6)) + CHR$(VAL(Byte7)) + CHR$(VAL(Byte8))
             
             ' Show progress in verbose mode
-            IF DisplayMode = 1 THEN
+            IF displayMode = 1 THEN
                 PRINT CHR$(CharIndex);
                 LOCATE 3, 1
             END IF
@@ -78,17 +78,17 @@ SUB INITFONT (BYVAL FontFile AS STRING, BYVAL DisplayMode AS BYTE)
     CLOSE FileHandle
     
     ' Complete loading display
-    IF DisplayMode = 1 THEN
+    IF displayMode = 1 THEN
         PRINT
         PRINT "READY."
-    ELSEIF DisplayMode = 2 THEN
+    ELSEIF displayMode = 2 THEN
         CALL LOADING(1)  ' End loading animation
     END IF
     
     ' Set standard 8x8 character dimensions
     FontSystemContext.CharWidth = 8
     FontSystemContext.CharHeight = 8
-    FontSystemContext.LoadPath = FontFile
+    FontSystemContext.LoadPath = fontFile
 END SUB
 
 ' =============================================================================
@@ -102,24 +102,24 @@ END SUB
 ' Returns: Nothing
 ' Note: Requires font to be loaded with INITFONT first
 ' =============================================================================
-SUB VGAPRINT (BYVAL X AS WORD, BYVAL Y AS WORD, BYVAL ForeColor AS BYTE, BYVAL BackColor AS BYTE, BYVAL Text AS STRING, BYVAL Flags AS BYTE)
+SUB Fonts_VgaPrint (BYVAL x AS WORD, BYVAL y AS WORD, BYVAL foreColor AS BYTE, BYVAL backColor AS BYTE, BYVAL text AS STRING, BYVAL flags AS BYTE)
     DIM OriginalX AS WORD, OriginalY AS WORD, CharIndex AS WORD, CharCode AS BYTE
     DIM CharData AS STRING, RowIndex AS BYTE, BitPattern AS STRING
     DIM PixelX AS BYTE, ActualX AS WORD, ActualY AS WORD
     
     ' Store original coordinates
-    OriginalX = X
-    OriginalY = Y
+    OriginalX = x
+    OriginalY = y
     
     ' Convert text coordinates to pixel coordinates if flag 4 is set
-    IF (Flags AND 4) > 0 THEN
-        X = (X - 1) * FontSystemContext.CharWidth
-        Y = (Y - 1) * FontSystemContext.CharHeight
+    IF (flags AND 4) > 0 THEN
+        x = (x - 1) * FontSystemContext.CharWidth
+        y = (y - 1) * FontSystemContext.CharHeight
     END IF
     
     ' Process each character in the text
-    FOR CharIndex = 1 TO LEN(Text)
-        CharCode = ASC(MID$(Text, CharIndex, 1))
+    FOR CharIndex = 1 TO LEN(text)
+        CharCode = ASC(MID$(text, CharIndex, 1))
         
         ' Extract 8-byte character pattern from font data
         CharData = MID$(FontSystemContext.Data, CharCode * 8 + 1, 8)
@@ -134,27 +134,27 @@ SUB VGAPRINT (BYVAL X AS WORD, BYVAL Y AS WORD, BYVAL ForeColor AS BYTE, BYVAL B
             
             ' Draw each pixel in the row (8 pixels)
             FOR PixelX = 1 TO 8
-                ActualX = X + PixelX - 1
-                ActualY = Y + RowIndex - 1
+                ActualX = x + PixelX - 1
+                ActualY = y + RowIndex - 1
                 
                 IF MID$(BitPattern, PixelX, 1) = "1" THEN
                     ' Draw foreground pixel
-                    CALL PUTPIXEL(ActualX, ActualY, ForeColor)
+                    CALL Svga_PutPixel(ActualX, ActualY, foreColor)
                 ELSE
                     ' Draw background pixel if flag 2 is set
-                    IF (Flags AND 2) > 0 THEN
-                        CALL PUTPIXEL(ActualX, ActualY, BackColor)
+                    IF (flags AND 2) > 0 THEN
+                        CALL Svga_PutPixel(ActualX, ActualY, backColor)
                     END IF
                 END IF
             NEXT PixelX
         NEXT RowIndex
         
         ' Advance to next character position
-        X = X + FontSystemContext.CharWidth
+        x = x + FontSystemContext.CharWidth
         
         ' Scale coordinates if flag 1 is set
-        IF (Flags AND 1) > 0 THEN
-            X = OriginalX + (CharIndex * FontSystemContext.CharWidth * 2)
+        IF (flags AND 1) > 0 THEN
+            x = OriginalX + (CharIndex * FontSystemContext.CharWidth * 2)
         END IF
     NEXT CharIndex
 END SUB
@@ -170,24 +170,24 @@ END SUB
 ' Returns: Nothing
 ' Note: Similar to VGAPRINT but draws to BMP buffer instead of VGA screen
 ' =============================================================================
-SUB BMPPRINT (BYVAL X AS WORD, BYVAL Y AS WORD, BYVAL ForeColor AS BYTE, BYVAL BackColor AS BYTE, BYVAL Text AS STRING, BYVAL Flags AS BYTE)
+SUB Fonts_BmpPrint (BYVAL x AS WORD, BYVAL y AS WORD, BYVAL foreColor AS BYTE, BYVAL backColor AS BYTE, BYVAL text AS STRING, BYVAL flags AS BYTE)
     DIM OriginalX AS WORD, OriginalY AS WORD, CharIndex AS WORD, CharCode AS BYTE
     DIM CharData AS STRING, RowIndex AS BYTE, BitPattern AS STRING
     DIM PixelX AS BYTE, ActualX AS WORD, ActualY AS WORD
     
     ' Store original coordinates
-    OriginalX = X
-    OriginalY = Y
+    OriginalX = x
+    OriginalY = y
     
     ' Convert text coordinates to pixel coordinates if flag 4 is set
-    IF (Flags AND 4) > 0 THEN
-        X = (X - 1) * FontSystemContext.CharWidth
-        Y = (Y - 1) * FontSystemContext.CharHeight
+    IF (flags AND 4) > 0 THEN
+        x = (x - 1) * FontSystemContext.CharWidth
+        y = (y - 1) * FontSystemContext.CharHeight
     END IF
     
     ' Process each character in the text
-    FOR CharIndex = 1 TO LEN(Text)
-        CharCode = ASC(MID$(Text, CharIndex, 1))
+    FOR CharIndex = 1 TO LEN(text)
+        CharCode = ASC(MID$(text, CharIndex, 1))
         
         ' Extract 8-byte character pattern from font data
         CharData = MID$(FontSystemContext.Data, CharCode * 8 + 1, 8)
@@ -202,27 +202,27 @@ SUB BMPPRINT (BYVAL X AS WORD, BYVAL Y AS WORD, BYVAL ForeColor AS BYTE, BYVAL B
             
             ' Draw each pixel in the row (8 pixels)
             FOR PixelX = 1 TO 8
-                ActualX = X + PixelX - 1
-                ActualY = Y + RowIndex - 1
+                ActualX = x + PixelX - 1
+                ActualY = y + RowIndex - 1
                 
                 IF MID$(BitPattern, PixelX, 1) = "1" THEN
                     ' Draw foreground pixel to BMP buffer
-                    CALL PUTBMPPIXEL(ActualX, ActualY, ForeColor)
+                    CALL DrawBmp_PutBmpPixel(ActualX, ActualY, foreColor)
                 ELSE
                     ' Draw background pixel if flag 2 is set
-                    IF (Flags AND 2) > 0 THEN
-                        CALL PUTBMPPIXEL(ActualX, ActualY, BackColor)
+                    IF (flags AND 2) > 0 THEN
+                        CALL DrawBmp_PutBmpPixel(ActualX, ActualY, backColor)
                     END IF
                 END IF
             NEXT PixelX
         NEXT RowIndex
         
         ' Advance to next character position
-        X = X + FontSystemContext.CharWidth
+        x = x + FontSystemContext.CharWidth
         
         ' Scale coordinates if flag 1 is set  
-        IF (Flags AND 1) > 0 THEN
-            X = OriginalX + (CharIndex * FontSystemContext.CharWidth * 2)
+        IF (flags AND 1) > 0 THEN
+            x = OriginalX + (CharIndex * FontSystemContext.CharWidth * 2)
         END IF
     NEXT CharIndex
 END SUB
@@ -235,7 +235,7 @@ END SUB
 '       Font data available in FontSystemContext.Data
 '       Font file path available in FontSystemContext.LoadPath
 ' =============================================================================
-SUB GETFONTINFO()
+SUB Fonts_GetFontInfo()
     ' Font information is available through the global FontSystemContext:
     ' FontSystemContext.CharWidth - Character width (typically 8)
     ' FontSystemContext.CharHeight - Character height (typically 8) 

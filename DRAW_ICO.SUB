@@ -1,0 +1,494 @@
+' =============================================================================
+' ICO.SUB - Windows Icon Format Support
+' =============================================================================
+' Provides comprehensive support for Windows ICO files with multi-image capability
+' and proper transparency handling
+' =============================================================================
+' Author: Hawkynt
+' License: LGPL 3.0
+' =============================================================================
+
+' =============================================================================
+' Display specific icon from ICO file
+' Parameters:
+'   FileName - ICO file name (BYVAL)
+'   X, Y - Display position (BYVAL)
+'   IconIndex - Icon index in file (BYVAL)
+' Returns: Nothing
+' Note: Supports 1-bit, 4-bit, and 8-bit icons with transparency
+' =============================================================================
+SUB DrawIco_Show(BYVAL fileName AS STRING, BYVAL x AS WORD, BYVAL y AS WORD, BYVAL iconIndex AS WORD)
+    DIM fileHandle AS INTEGER
+    DIM iconHeader AS IconHeaderType
+    DIM iconEntry AS IconDirEntryType
+    DIM iconData AS STRING, maskData AS STRING
+    
+    ' Open icon file
+    fileHandle = FREEFILE
+    OPEN fileName FOR BINARY ACCESS READ AS fileHandle
+    IF LOF(fileHandle) < 6 THEN
+        CLOSE fileHandle
+        EXIT SUB
+    END IF
+    
+    ' Read ICO header
+    GET fileHandle, 1, iconHeader.Reserved
+    GET fileHandle, , iconHeader.Type
+    GET fileHandle, , iconHeader.Count
+    
+    ' Validate header and type
+    IF iconHeader.Reserved <> 0 OR iconHeader.Type <> 1 OR iconHeader.Count = 0 THEN
+        CLOSE fileHandle
+        EXIT SUB
+    END IF
+    
+    ' Validate icon index
+    IF iconIndex >= iconHeader.Count THEN iconIndex = 0
+    
+    ' Read specified icon
+    CALL DrawIco_ReadIconData(fileHandle, iconIndex, iconEntry, iconData, maskData)
+    CLOSE fileHandle
+    
+    ' Display icon with transparency
+    CALL DrawIco_DrawIconWithMask(iconData, maskData, iconEntry, x, y)
+END SUB
+
+' =============================================================================
+' Get icon count from ICO file
+' Parameters:
+'   FileName - Icon file name (BYVAL)
+' Returns: Number of icons in file (WORD)
+' =============================================================================
+FUNCTION DrawIco_GetCount(BYVAL fileName AS STRING) AS WORD
+    DIM fileHandle AS INTEGER
+    DIM iconHeader AS IconHeaderType
+    
+    fileHandle = FREEFILE
+    OPEN fileName FOR BINARY ACCESS READ AS fileHandle
+    IF LOF(fileHandle) < 6 THEN
+        CLOSE fileHandle
+        DrawIco_GetCount = 0
+        EXIT FUNCTION
+    END IF
+    
+    ' Read header
+    GET fileHandle, 1, iconHeader.Reserved
+    GET fileHandle, , iconHeader.Type
+    GET fileHandle, , iconHeader.Count
+    CLOSE fileHandle
+    
+    ' Return count if valid header
+    IF iconHeader.Reserved = 0 AND iconHeader.Type = 1 AND iconHeader.Count > 0 THEN
+        DrawIco_GetCount = iconHeader.Count
+    ELSE
+        DrawIco_GetCount = 0
+    END IF
+END FUNCTION
+
+' =============================================================================
+' Get icon information
+' Parameters:
+'   FileName - Icon file name (BYVAL)
+'   IconIndex - Icon index (BYVAL)
+'   Width, Height - Icon dimensions (BYREF)
+'   ColorDepth - Color depth in bits (BYREF)
+' Returns: Nothing (info returned via parameters)
+' =============================================================================
+SUB DrawIco_GetInfo(BYVAL fileName AS STRING, BYVAL iconIndex AS WORD, width AS WORD, height AS WORD, colorDepth AS WORD)
+    DIM fileHandle AS INTEGER
+    DIM iconHeader AS IconHeaderType
+    DIM iconEntry AS IconDirEntryType
+    
+    ' Initialize return values
+    width = 0
+    height = 0
+    colorDepth = 0
+    
+    fileHandle = FREEFILE
+    OPEN fileName FOR BINARY ACCESS READ AS fileHandle
+    IF LOF(fileHandle) < 6 THEN
+        CLOSE fileHandle
+        EXIT SUB
+    END IF
+    
+    ' Read header
+    GET fileHandle, 1, iconHeader.Reserved
+    GET fileHandle, , iconHeader.Type
+    GET fileHandle, , iconHeader.Count
+    
+    ' Validate header
+    IF iconHeader.Reserved <> 0 OR iconHeader.Type <> 1 OR iconHeader.Count = 0 THEN
+        CLOSE fileHandle
+        EXIT SUB
+    END IF
+    
+    ' Validate icon index
+    IF iconIndex >= iconHeader.Count THEN
+        CLOSE fileHandle
+        EXIT SUB
+    END IF
+    
+    ' Seek to icon entry
+    SEEK fileHandle, 7 + (iconIndex * 16)
+    
+    ' Read icon entry
+    GET fileHandle, , iconEntry.Width
+    GET fileHandle, , iconEntry.Height
+    GET fileHandle, , iconEntry.ColorCount
+    GET fileHandle, , iconEntry.Reserved
+    GET fileHandle, , iconEntry.Planes
+    GET fileHandle, , iconEntry.BitCount
+    GET fileHandle, , iconEntry.BytesInRes
+    GET fileHandle, , iconEntry.ImageOffset
+    
+    CLOSE fileHandle
+    
+    ' Return icon information
+    width = iconEntry.Width
+    height = iconEntry.Height
+    IF width = 0 THEN width = 256
+    IF height = 0 THEN height = 256
+    
+    ' Determine color depth
+    IF iconEntry.BitCount > 0 THEN
+        colorDepth = iconEntry.BitCount
+    ELSEIF iconEntry.ColorCount > 0 THEN
+        IF iconEntry.ColorCount <= 2 THEN
+            colorDepth = 1
+        ELSEIF iconEntry.ColorCount <= 16 THEN
+            colorDepth = 4
+        ELSE
+            colorDepth = 8
+        END IF
+    ELSE
+        colorDepth = 8  ' Default assumption
+    END IF
+END SUB
+
+' =============================================================================
+' Load icon palette from ICO file
+' Parameters:
+'   FileName - ICO file name (BYVAL)
+'   IconIndex - Icon index (BYVAL)
+'   Palette - 256-color palette array (BYREF)
+' Returns: Nothing (palette returned via parameter)
+' =============================================================================
+SUB DrawIco_GetPalette(BYVAL fileName AS STRING, BYVAL iconIndex AS WORD, palette() AS BYTE)
+    DIM fileHandle AS INTEGER
+    DIM iconHeader AS IconHeaderType
+    DIM iconEntry AS IconDirEntryType
+    DIM paletteSize AS WORD, i AS WORD
+    DIM r AS BYTE, g AS BYTE, b AS BYTE, reserved AS BYTE
+    
+    ' Initialize palette to grayscale
+    FOR i = 0 TO 255
+        palette(i * 3) = i
+        palette(i * 3 + 1) = i  
+        palette(i * 3 + 2) = i
+    NEXT i
+    
+    fileHandle = FREEFILE
+    OPEN fileName FOR BINARY ACCESS READ AS fileHandle
+    IF LOF(fileHandle) < 6 THEN
+        CLOSE fileHandle
+        EXIT SUB
+    END IF
+    
+    ' Read and validate header
+    GET fileHandle, 1, iconHeader.Reserved
+    GET fileHandle, , iconHeader.Type
+    GET fileHandle, , iconHeader.Count
+    
+    IF iconHeader.Reserved <> 0 OR iconHeader.Type <> 1 OR iconHeader.Count = 0 THEN
+        CLOSE fileHandle
+        EXIT SUB
+    END IF
+    
+    IF iconIndex >= iconHeader.Count THEN iconIndex = 0
+    
+    ' Read icon entry
+    SEEK fileHandle, 7 + (iconIndex * 16)
+    GET fileHandle, , iconEntry.Width
+    GET fileHandle, , iconEntry.Height
+    GET fileHandle, , iconEntry.ColorCount
+    GET fileHandle, , iconEntry.Reserved
+    GET fileHandle, , iconEntry.Planes
+    GET fileHandle, , iconEntry.BitCount
+    GET fileHandle, , iconEntry.BytesInRes
+    GET fileHandle, , iconEntry.ImageOffset
+    
+    ' Only read palette for <= 8-bit icons
+    IF iconEntry.BitCount > 8 THEN
+        CLOSE fileHandle
+        EXIT SUB
+    END IF
+    
+    ' Calculate palette size
+    IF iconEntry.BitCount <= 8 THEN
+        paletteSize = 2 ^ iconEntry.BitCount
+    ELSE
+        CLOSE fileHandle
+        EXIT SUB
+    END IF
+    
+    ' Seek to palette data (after BITMAPINFOHEADER)
+    SEEK fileHandle, iconEntry.ImageOffset + 40 + 1
+    
+    ' Read palette entries (BGRA format)
+    FOR i = 0 TO paletteSize - 1
+        GET fileHandle, , b
+        GET fileHandle, , g
+        GET fileHandle, , r
+        GET fileHandle, , reserved
+        
+        ' Convert to RGB format
+        palette(i * 3) = r
+        palette(i * 3 + 1) = g
+        palette(i * 3 + 2) = b
+    NEXT i
+    
+    CLOSE fileHandle
+END SUB
+
+' =============================================================================
+' Internal function to read icon data from ICO file
+' Parameters:
+'   FileHandle - Open file handle (BYVAL)
+'   IconIndex - Icon index to read (BYVAL)  
+'   IconEntry - Icon directory entry (BYREF)
+'   IconData - Icon pixel data (BYREF)
+'   MaskData - Icon mask data (BYREF)
+' Returns: Nothing (data returned via parameters)
+' =============================================================================
+SUB DrawIco_ReadIconData(BYVAL fileHandle AS INTEGER, BYVAL iconIndex AS WORD, iconEntry AS IconDirEntryType, iconData AS STRING, maskData AS STRING)
+    DIM width AS WORD, height AS WORD
+    DIM scanlineWidth AS WORD, maskScanlineWidth AS WORD
+    DIM paletteSize AS WORD, dataOffset AS LONG
+    
+    ' Seek to icon entry
+    SEEK fileHandle, 7 + (iconIndex * 16)
+    
+    ' Read icon directory entry
+    GET fileHandle, , iconEntry.Width
+    GET fileHandle, , iconEntry.Height
+    GET fileHandle, , iconEntry.ColorCount
+    GET fileHandle, , iconEntry.Reserved
+    GET fileHandle, , iconEntry.Planes
+    GET fileHandle, , iconEntry.BitCount
+    GET fileHandle, , iconEntry.BytesInRes
+    GET fileHandle, , iconEntry.ImageOffset
+    
+    ' Handle 0 dimensions (means 256)
+    width = iconEntry.Width
+    height = iconEntry.Height
+    IF width = 0 THEN width = 256
+    IF height = 0 THEN height = 256
+    
+    ' Calculate scanline widths (DWORD aligned)
+    scanlineWidth = ((width * iconEntry.BitCount + 31) \ 32) * 4
+    maskScanlineWidth = ((width + 31) \ 32) * 4
+    
+    ' Calculate palette size
+    IF iconEntry.BitCount <= 8 THEN
+        paletteSize = (2 ^ iconEntry.BitCount) * 4
+    ELSE
+        paletteSize = 0
+    END IF
+    
+    ' Seek to icon data (skip BITMAPINFOHEADER + palette)
+    dataOffset = iconEntry.ImageOffset + 40 + paletteSize + 1
+    SEEK fileHandle, dataOffset
+    
+    ' Read icon pixel data
+    iconData = SPACE$(scanlineWidth * height)
+    GET fileHandle, , iconData
+    
+    ' Read AND mask
+    maskData = SPACE$(maskScanlineWidth * height)
+    GET fileHandle, , maskData
+END SUB
+
+' =============================================================================
+' Internal function to draw icon with transparency mask
+' Parameters:
+'   IconData - Icon pixel data (BYVAL)
+'   MaskData - Icon mask data (BYVAL)
+'   IconEntry - Icon information (BYVAL)
+'   X, Y - Draw position (BYVAL)
+' Returns: Nothing
+' =============================================================================
+SUB DrawIco_DrawIconWithMask(BYVAL iconData AS STRING, BYVAL maskData AS STRING, iconEntry AS IconDirEntryType, BYVAL x AS WORD, BYVAL y AS WORD)
+    DIM width AS WORD, height AS WORD
+    DIM drawX AS WORD, drawY AS WORD
+    DIM scanlineWidth AS WORD, maskScanlineWidth AS WORD
+    DIM pixelX AS WORD, pixelY AS WORD
+    DIM pixelOffset AS WORD, maskOffset AS WORD
+    DIM pixelValue AS BYTE, maskByte AS BYTE, maskBit AS BYTE
+    
+    ' Get actual dimensions
+    width = iconEntry.Width
+    height = iconEntry.Height
+    IF width = 0 THEN width = 256
+    IF height = 0 THEN height = 256
+    
+    ' Calculate scanline widths
+    scanlineWidth = ((width * iconEntry.BitCount + 31) \ 32) * 4
+    maskScanlineWidth = ((width + 31) \ 32) * 4
+    
+    ' Draw icon pixel by pixel
+    FOR pixelY = 0 TO height - 1
+        drawY = y + pixelY
+        IF drawY >= SVGAScreenContext.YRes THEN EXIT FOR
+        IF drawY < 0 THEN GOTO NextIconY
+        
+        FOR pixelX = 0 TO width - 1
+            drawX = x + pixelX
+            IF drawX >= SVGAScreenContext.XRes THEN EXIT FOR
+            IF drawX < 0 THEN GOTO NextIconX
+            
+            ' Get mask bit (AND mask)
+            maskOffset = (height - 1 - pixelY) * maskScanlineWidth + (pixelX \ 8) + 1
+            maskByte = ASC(MID$(maskData, maskOffset, 1))
+            maskBit = (maskByte \ (2 ^ (7 - (pixelX AND 7)))) AND 1
+            
+            ' Only draw pixel if mask bit is clear (0 = opaque, 1 = transparent)
+            IF maskBit = 0 THEN
+                ' Get pixel value based on bit depth
+                SELECT CASE iconEntry.BitCount
+                    CASE 1
+                        pixelOffset = (height - 1 - pixelY) * scanlineWidth + (pixelX \ 8) + 1
+                        pixelValue = ASC(MID$(iconData, pixelOffset, 1))
+                        pixelValue = (pixelValue \ (2 ^ (7 - (pixelX AND 7)))) AND 1
+                        pixelValue = pixelValue * 255  ' Convert to 8-bit
+                        
+                    CASE 4
+                        pixelOffset = (height - 1 - pixelY) * scanlineWidth + (pixelX \ 2) + 1
+                        pixelValue = ASC(MID$(iconData, pixelOffset, 1))
+                        IF (pixelX AND 1) = 0 THEN
+                            pixelValue = pixelValue \ 16  ' Upper nibble
+                        ELSE
+                            pixelValue = pixelValue AND 15  ' Lower nibble
+                        END IF
+                        
+                    CASE 8
+                        pixelOffset = (height - 1 - pixelY) * scanlineWidth + pixelX + 1
+                        pixelValue = ASC(MID$(iconData, pixelOffset, 1))
+                        
+                    CASE ELSE
+                        pixelValue = 0  ' Unsupported bit depth
+                END SELECT
+                
+                ' Draw the pixel
+                CALL PUTPIXEL(drawX, drawY, pixelValue)
+            END IF
+            
+            NextIconX:
+        NEXT pixelX
+        NextIconY:
+    NEXT pixelY
+END SUB
+
+' =============================================================================
+' Extract icon to memory buffer
+' Parameters:
+'   FileName - ICO file name (BYVAL)
+'   IconIndex - Icon index (BYVAL)
+'   Buffer - Output buffer (BYREF)
+'   Width, Height - Icon dimensions (BYREF)
+' Returns: Success flag (BYTE)
+' =============================================================================
+FUNCTION DrawIco_Extract(BYVAL fileName AS STRING, BYVAL iconIndex AS WORD, buffer AS STRING, width AS WORD, height AS WORD) AS BYTE
+    DIM fileHandle AS INTEGER
+    DIM iconHeader AS IconHeaderType
+    DIM iconEntry AS IconDirEntryType
+    DIM iconData AS STRING, maskData AS STRING
+    DIM x AS WORD, y AS WORD, bufferOffset AS WORD
+    DIM pixelValue AS BYTE, maskBit AS BYTE, maskByte AS BYTE
+    DIM scanlineWidth AS WORD, maskScanlineWidth AS WORD
+    DIM pixelOffset AS WORD, maskOffset AS WORD
+    
+    width = 0
+    height = 0
+    DrawIco_Extract = 0
+    
+    fileHandle = FREEFILE
+    OPEN fileName FOR BINARY ACCESS READ AS fileHandle
+    IF LOF(fileHandle) < 6 THEN
+        CLOSE fileHandle
+        EXIT FUNCTION
+    END IF
+    
+    ' Read and validate header
+    GET fileHandle, 1, iconHeader.Reserved
+    GET fileHandle, , iconHeader.Type
+    GET fileHandle, , iconHeader.Count
+    
+    IF iconHeader.Reserved <> 0 OR iconHeader.Type <> 1 OR iconHeader.Count = 0 THEN
+        CLOSE fileHandle
+        EXIT FUNCTION
+    END IF
+    
+    IF iconIndex >= iconHeader.Count THEN iconIndex = 0
+    
+    ' Read icon data
+    CALL DrawIco_ReadIconData(fileHandle, iconIndex, iconEntry, iconData, maskData)
+    CLOSE fileHandle
+    
+    ' Get dimensions
+    width = iconEntry.Width
+    height = iconEntry.Height
+    IF width = 0 THEN width = 256
+    IF height = 0 THEN height = 256
+    
+    ' Allocate buffer
+    buffer = SPACE$(width * height)
+    
+    ' Calculate scanline widths
+    scanlineWidth = ((width * iconEntry.BitCount + 31) \ 32) * 4
+    maskScanlineWidth = ((width + 31) \ 32) * 4
+    
+    ' Extract pixels with transparency
+    FOR y = 0 TO height - 1
+        FOR x = 0 TO width - 1
+            bufferOffset = y * width + x + 1
+            
+            ' Get mask bit
+            maskOffset = (height - 1 - y) * maskScanlineWidth + (x \ 8) + 1
+            maskByte = ASC(MID$(maskData, maskOffset, 1))
+            maskBit = (maskByte \ (2 ^ (7 - (x AND 7)))) AND 1
+            
+            ' Extract pixel if not transparent
+            IF maskBit = 0 THEN
+                SELECT CASE iconEntry.BitCount
+                    CASE 1
+                        pixelOffset = (height - 1 - y) * scanlineWidth + (x \ 8) + 1
+                        pixelValue = ASC(MID$(iconData, pixelOffset, 1))
+                        pixelValue = (pixelValue \ (2 ^ (7 - (x AND 7)))) AND 1
+                        pixelValue = pixelValue * 255
+                        
+                    CASE 4
+                        pixelOffset = (height - 1 - y) * scanlineWidth + (x \ 2) + 1
+                        pixelValue = ASC(MID$(iconData, pixelOffset, 1))
+                        IF (x AND 1) = 0 THEN
+                            pixelValue = pixelValue \ 16
+                        ELSE
+                            pixelValue = pixelValue AND 15
+                        END IF
+                        
+                    CASE 8
+                        pixelOffset = (height - 1 - y) * scanlineWidth + x + 1
+                        pixelValue = ASC(MID$(iconData, pixelOffset, 1))
+                        
+                    CASE ELSE
+                        pixelValue = 0
+                END SELECT
+            ELSE
+                pixelValue = 255  ' Transparent pixels as white
+            END IF
+            
+            MID$(buffer, bufferOffset, 1) = CHR$(pixelValue)
+        NEXT x
+    NEXT y
+    
+    DrawIco_Extract = 1
+END FUNCTION

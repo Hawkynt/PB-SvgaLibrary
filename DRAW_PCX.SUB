@@ -10,44 +10,44 @@
 ' Returns: Nothing
 ' Note: Supports 8-bit PCX files with RLE compression
 ' =============================================================================
-SUB DrawExt_ShowPCX(BYVAL FileName AS STRING, BYVAL X AS WORD, BYVAL Y AS WORD)
-    DIM FileHandle AS INTEGER, HeaderData AS STRING
-    DIM ImageWidth AS WORD, ImageHeight AS WORD
-    DIM ScanlineData AS STRING, DecodedData AS STRING
-    DIM PixelY AS WORD, PhysicalX AS WORD, PhysicalY AS WORD
+SUB DrawPcx_Show(BYVAL fileName AS STRING, BYVAL x AS WORD, BYVAL y AS WORD)
+    DIM fileHandle AS INTEGER, headerData AS STRING
+    DIM imageWidth AS WORD, imageHeight AS WORD
+    DIM scanlineData AS STRING, decodedData AS STRING
+    DIM pixelY AS WORD, physicalX AS WORD, physicalY AS WORD
     
     ' Convert virtual coordinates to physical
-    CALL Virtual_ToPhysical(X, Y, PhysicalX, PhysicalY)
+    CALL Virtual_ToPhysical(x, y, physicalX, physicalY)
     
     ' Open PCX file
-    FileHandle = FREEFILE
-    OPEN FileName FOR BINARY AS #FileHandle
+    fileHandle = FREEFILE
+    OPEN fileName FOR BINARY AS #fileHandle
     
     ' Read PCX header
-    CALL PCX_ReadHeader(FileHandle, ImageWidth, ImageHeight)
+    CALL DrawPcx_ReadHeader(fileHandle, imageWidth, imageHeight)
     
     ' Load PCX palette
-    CALL PCX_LoadPalette(FileHandle)
+    CALL DrawPcx_LoadPalette(fileHandle)
     
     ' Update image context
     ImageSystemContext.X1 = 0
     ImageSystemContext.Y1 = 0
-    ImageSystemContext.X2 = ImageWidth - 1
-    ImageSystemContext.Y2 = ImageHeight - 1
+    ImageSystemContext.X2 = imageWidth - 1
+    ImageSystemContext.Y2 = imageHeight - 1
     ImageSystemContext.ColorDepth = 8
     ImageSystemContext.BitsPerPixel = 8
     
     ' Read and display image data with RLE decompression
-    SEEK FileHandle, 129  ' PCX data starts at byte 128
+    SEEK fileHandle, 129  ' PCX data starts at byte 128
     
-    FOR PixelY = 0 TO ImageHeight - 1
-        CALL PCX_ReadScanline(FileHandle, ScanlineData, ImageWidth)
+    FOR pixelY = 0 TO imageHeight - 1
+        CALL DrawPcx_ReadScanline(fileHandle, scanlineData, imageWidth)
         
         ' Check if scanline is visible
-        IF Virtual_IsVisible(X, Y + PixelY) THEN
-            CALL PCX_DrawScanline(ScanlineData, PhysicalX, PhysicalY + PixelY, ImageWidth)
+        IF Virtual_IsVisible(x, y + pixelY) THEN
+            CALL DrawPcx_DrawScanline(scanlineData, physicalX, physicalY + pixelY, imageWidth)
         END IF
-    NEXT PixelY
+    NEXT pixelY
     
     CLOSE #FileHandle
 END SUB
@@ -55,7 +55,7 @@ END SUB
 ' =============================================================================
 ' Read PCX header information
 ' =============================================================================
-SUB PCX_ReadHeader(BYVAL FileHandle AS INTEGER, ImageWidth AS WORD, ImageHeight AS WORD)
+SUB DrawPcx_ReadHeader(BYVAL fileHandle AS INTEGER, imageWidth AS WORD, imageHeight AS WORD)
     DIM HeaderData AS STRING
     DIM XMin AS WORD, YMin AS WORD, XMax AS WORD, YMax AS WORD
     
@@ -75,7 +75,7 @@ END SUB
 ' =============================================================================
 ' Load PCX palette (located at end of file)
 ' =============================================================================
-SUB PCX_LoadPalette(BYVAL FileHandle AS INTEGER)
+SUB DrawPcx_LoadPalette(BYVAL fileHandle AS INTEGER)
     DIM PaletteData AS STRING, ColorIndex AS WORD
     DIM FileSize AS LONG, PaletteMarker AS BYTE
     
@@ -103,7 +103,7 @@ END SUB
 ' =============================================================================
 ' Read and decompress PCX scanline with RLE
 ' =============================================================================
-SUB PCX_ReadScanline(BYVAL FileHandle AS INTEGER, DecodedData AS STRING, BYVAL Width AS WORD)
+SUB DrawPcx_ReadScanline(BYVAL fileHandle AS INTEGER, decodedData AS STRING, BYVAL width AS WORD)
     DIM CompressedByte AS BYTE, RunLength AS BYTE, PixelValue AS BYTE
     DIM ByteData AS STRING, DecodedIndex AS WORD, RunCount AS WORD
     
@@ -136,7 +136,7 @@ END SUB
 ' =============================================================================
 ' Draw PCX scanline with optimization
 ' =============================================================================
-SUB PCX_DrawScanline(BYVAL ScanlineData AS STRING, BYVAL X AS WORD, BYVAL Y AS WORD, BYVAL Width AS WORD)
+SUB DrawPcx_DrawScanline(BYVAL scanlineData AS STRING, BYVAL x AS WORD, BYVAL y AS WORD, BYVAL width AS WORD)
     ' Use the same optimized scanline drawing as BMP
     CALL BMP_DrawScanline(ScanlineData, X, Y, Width, 8)
 END SUB
@@ -152,7 +152,7 @@ END SUB
 '   Width, Height - Output dimensions (BYREF)
 ' Returns: Nothing (dimensions returned via BYREF parameters)
 ' =============================================================================
-SUB DrawExt_GetBMPSize(BYVAL FileName AS STRING, Width AS WORD, Height AS WORD)
+SUB DrawPcx_GetSize(BYVAL fileName AS STRING, width AS WORD, height AS WORD)
     DIM FileHandle AS INTEGER, HeaderData AS STRING
     DIM ImageWidth AS LONG, ImageHeight AS LONG
     
@@ -181,7 +181,7 @@ END SUB
 '   ColorDepth - Bits per pixel (BYVAL)
 ' Returns: Nothing (palette returned via BYREF array)
 ' =============================================================================
-SUB DrawExt_GetBMPPalette(BYVAL FileName AS STRING, Palette() AS BYTE, BYVAL ColorDepth AS BYTE)
+SUB DrawPcx_GetPalette(BYVAL fileName AS STRING, palette() AS BYTE, BYVAL colorDepth AS BYTE)
     DIM FileHandle AS INTEGER, PaletteData AS STRING
     DIM NumColors AS WORD, ColorIndex AS WORD, ArrayIndex AS WORD
     

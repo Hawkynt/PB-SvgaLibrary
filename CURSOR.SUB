@@ -1,0 +1,465 @@
+' =============================================================================
+' CURSOR.SUB - Advanced Cursor Management System
+' =============================================================================
+' Provides automatic background backup/restore, transparency support,
+' and damage-free cursor movement for professional GUI applications
+' =============================================================================
+' Author: Hawkynt
+' License: LGPL 3.0
+' =============================================================================
+
+' =============================================================================
+' Cursor system global variables
+' =============================================================================
+DIM SHARED CursorSystemContext AS CursorContextType
+
+' =============================================================================
+' Initialize cursor management system
+' Parameters: None
+' Returns: Nothing
+' Note: Must be called before using any cursor functions
+' =============================================================================
+SUB Cursor_Init
+    ' Reset cursor context
+    CursorSystemContext.IsInitialized = 1
+    CursorSystemContext.IsVisible = 0
+    CursorSystemContext.CurrentX = 0
+    CursorSystemContext.CurrentY = 0
+    CursorSystemContext.HotspotX = 0
+    CursorSystemContext.HotspotY = 0
+    CursorSystemContext.Width = 0
+    CursorSystemContext.Height = 0
+    CursorSystemContext.HasBackground = 0
+    CursorSystemContext.CursorData = ""
+    CursorSystemContext.MaskData = ""
+    CursorSystemContext.BackgroundData = ""
+END SUB
+
+' =============================================================================
+' Set cursor image from ICO/CUR file
+' Parameters:
+'   FileName - Cursor/Icon file name (BYVAL)
+'   ImageIndex - Image index in multi-image file (BYVAL)
+' Returns: Nothing
+' Note: Automatically determines hotspot from CUR files
+' =============================================================================
+SUB Cursor_Set(BYVAL fileName AS STRING, BYVAL imageIndex AS WORD)
+    DIM FileHandle AS INTEGER
+    DIM IconHeader AS IconHeaderType
+    DIM IconEntry AS IconDirEntryType
+    DIM IconData AS STRING
+    DIM MaskData AS STRING
+    DIM I AS WORD, J AS WORD
+    DIM PixelByte AS BYTE, MaskByte AS BYTE
+    DIM FilePos AS LONG
+    
+    IF CursorSystemContext.IsInitialized = 0 THEN CALL Cursor_Init
+    
+    ' Hide cursor if currently visible
+    IF CursorSystemContext.IsVisible THEN CALL Cursor_Hide
+    
+    ' Open cursor/icon file
+    FileHandle = FREEFILE
+    OPEN fileName FOR BINARY ACCESS READ AS FileHandle
+    IF LOF(FileHandle) < 6 THEN
+        CLOSE FileHandle
+        EXIT SUB
+    END IF
+    
+    ' Read ICO/CUR header
+    GET FileHandle, 1, IconHeader.Reserved
+    GET FileHandle, , IconHeader.Type
+    GET FileHandle, , IconHeader.Count
+    
+    ' Validate header
+    IF IconHeader.Reserved <> 0 OR IconHeader.Count = 0 THEN
+        CLOSE FileHandle
+        EXIT SUB
+    END IF
+    
+    ' Check if image index is valid
+    IF imageIndex >= IconHeader.Count THEN imageIndex = 0
+    
+    ' Seek to desired icon entry
+    SEEK FileHandle, 7 + (imageIndex * 16)
+    
+    ' Read icon directory entry
+    GET FileHandle, , IconEntry.Width
+    GET FileHandle, , IconEntry.Height
+    GET FileHandle, , IconEntry.ColorCount
+    GET FileHandle, , IconEntry.Reserved
+    GET FileHandle, , IconEntry.Planes
+    GET FileHandle, , IconEntry.BitCount
+    GET FileHandle, , IconEntry.BytesInRes
+    GET FileHandle, , IconEntry.ImageOffset
+    
+    ' Handle cursor hotspot (CUR files store hotspot in Planes/BitCount fields)
+    IF IconHeader.Type = 2 THEN  ' CUR file
+        CursorSystemContext.HotspotX = IconEntry.Planes
+        CursorSystemContext.HotspotY = IconEntry.BitCount
+    ELSE  ' ICO file
+        CursorSystemContext.HotspotX = IconEntry.Width \ 2
+        CursorSystemContext.HotspotY = IconEntry.Height \ 2
+    END IF
+    
+    ' Set cursor dimensions
+    CursorSystemContext.Width = IconEntry.Width
+    CursorSystemContext.Height = IconEntry.Height
+    IF CursorSystemContext.Width = 0 THEN CursorSystemContext.Width = 256
+    IF CursorSystemContext.Height = 0 THEN CursorSystemContext.Height = 256
+    
+    ' Seek to icon data
+    SEEK FileHandle, IconEntry.ImageOffset + 1
+    
+    ' Skip BITMAPINFOHEADER (40 bytes) and palette if present
+    FilePos = IconEntry.ImageOffset + 41  ' Skip header
+    IF IconEntry.BitCount <= 8 THEN
+        FilePos = FilePos + (2 ^ IconEntry.BitCount) * 4  ' Skip palette
+    END IF
+    SEEK FileHandle, FilePos
+    
+    ' Calculate scanline width (DWORD aligned)
+    DIM ScanlineWidth AS WORD
+    ScanlineWidth = ((CursorSystemContext.Width * IconEntry.BitCount + 31) \ 32) * 4
+    
+    ' Read cursor image data
+    IconData = SPACE$(ScanlineWidth * CursorSystemContext.Height)
+    GET FileHandle, , IconData
+    
+    ' Read AND mask (1 bit per pixel, DWORD aligned)
+    DIM MaskScanlineWidth AS WORD
+    MaskScanlineWidth = ((CursorSystemContext.Width + 31) \ 32) * 4
+    MaskData = SPACE$(MaskScanlineWidth * CursorSystemContext.Height)
+    GET FileHandle, , MaskData
+    
+    CLOSE FileHandle
+    
+    ' Convert cursor data to 8-bit format for current graphics mode
+    CALL ConvertCursorData(IconData, MaskData, IconEntry.BitCount, ScanlineWidth, MaskScanlineWidth)
+    
+    CursorSystemContext.CursorData = IconData
+    CursorSystemContext.MaskData = MaskData
+END SUB
+
+' =============================================================================
+' Convert cursor data to current graphics mode format
+' Parameters:
+'   IconData - Raw icon pixel data (STRING)
+'   MaskData - Raw mask data (STRING)  
+'   BitCount - Source bits per pixel (BYVAL)
+'   ScanWidth - Source scanline width (BYVAL)
+'   MaskWidth - Mask scanline width (BYVAL)
+' Returns: Nothing (modifies IconData and MaskData)
+' =============================================================================
+SUB Cursor_ConvertCursorData(iconData AS STRING, maskData AS STRING, BYVAL bitCount AS WORD, BYVAL scanWidth AS WORD, BYVAL maskWidth AS WORD)
+    DIM ConvertedData AS STRING, ConvertedMask AS STRING
+    DIM X AS WORD, Y AS WORD, SrcOffset AS WORD, DestOffset AS WORD
+    DIM PixelValue AS BYTE, MaskByte AS BYTE, MaskBit AS BYTE
+    
+    ' Allocate space for converted data
+    ConvertedData = SPACE$(CursorSystemContext.Width * CursorSystemContext.Height)
+    ConvertedMask = SPACE$(CursorSystemContext.Width * CursorSystemContext.Height)
+    
+    ' Convert pixel by pixel
+    FOR Y = 0 TO CursorSystemContext.Height - 1
+        FOR X = 0 TO CursorSystemContext.Width - 1
+            DestOffset = Y * CursorSystemContext.Width + X + 1
+            
+            ' Get source pixel
+            SELECT CASE bitCount
+                CASE 1
+                    SrcOffset = (CursorSystemContext.Height - 1 - Y) * scanWidth + (X \ 8) + 1
+                    PixelValue = ASC(MID$(iconData, SrcOffset, 1))
+                    PixelValue = (PixelValue \ (2 ^ (7 - (X AND 7)))) AND 1
+                    PixelValue = PixelValue * 255  ' Convert to 8-bit
+                    
+                CASE 4
+                    SrcOffset = (CursorSystemContext.Height - 1 - Y) * scanWidth + (X \ 2) + 1
+                    PixelValue = ASC(MID$(iconData, SrcOffset, 1))
+                    IF (X AND 1) = 0 THEN
+                        PixelValue = PixelValue \ 16  ' Upper nibble
+                    ELSE
+                        PixelValue = PixelValue AND 15  ' Lower nibble
+                    END IF
+                    
+                CASE 8
+                    SrcOffset = (CursorSystemContext.Height - 1 - Y) * scanWidth + X + 1
+                    PixelValue = ASC(MID$(iconData, SrcOffset, 1))
+                    
+                CASE ELSE
+                    PixelValue = 0  ' Unsupported format
+            END SELECT
+            
+            ' Get mask bit
+            DIM MaskSrcOffset AS WORD
+            MaskSrcOffset = (CursorSystemContext.Height - 1 - Y) * maskWidth + (X \ 8) + 1
+            MaskByte = ASC(MID$(maskData, MaskSrcOffset, 1))
+            MaskBit = (MaskByte \ (2 ^ (7 - (X AND 7)))) AND 1
+            
+            ' Store converted pixel and mask
+            MID$(ConvertedData, DestOffset, 1) = CHR$(PixelValue)
+            MID$(ConvertedMask, DestOffset, 1) = CHR$(MaskBit)
+        NEXT X
+    NEXT Y
+    
+    ' Replace original data with converted data
+    iconData = ConvertedData
+    maskData = ConvertedMask
+END SUB
+
+' =============================================================================
+' Show cursor at current position
+' Parameters: None
+' Returns: Nothing
+' Note: Automatically saves background before displaying cursor
+' =============================================================================
+SUB Cursor_Show
+    IF CursorSystemContext.IsInitialized = 0 THEN CALL Cursor_Init
+    IF CursorSystemContext.IsVisible THEN EXIT SUB
+    IF CursorSystemContext.Width = 0 OR CursorSystemContext.Height = 0 THEN EXIT SUB
+    
+    ' Save background area
+    CALL Cursor_SaveCursorBackground
+    
+    ' Draw cursor with transparency
+    CALL Cursor_DrawCursorAtPosition(CursorSystemContext.CurrentX, CursorSystemContext.CurrentY)
+    
+    CursorSystemContext.IsVisible = 1
+END SUB
+
+' =============================================================================
+' Hide cursor
+' Parameters: None
+' Returns: Nothing  
+' Note: Restores saved background
+' =============================================================================
+SUB Cursor_Hide
+    IF CursorSystemContext.IsInitialized = 0 OR CursorSystemContext.IsVisible = 0 THEN EXIT SUB
+    
+    ' Restore background
+    CALL Cursor_RestoreCursorBackground
+    
+    CursorSystemContext.IsVisible = 0
+    CursorSystemContext.HasBackground = 0
+END SUB
+
+' =============================================================================
+' Move cursor to new position
+' Parameters:
+'   NewX, NewY - New cursor position (BYVAL)
+' Returns: Nothing
+' Note: Automatically handles background save/restore
+' =============================================================================
+SUB Cursor_Move(BYVAL newX AS WORD, BYVAL newY AS WORD)
+    DIM WasVisible AS BYTE
+    
+    IF CursorSystemContext.IsInitialized = 0 THEN CALL Cursor_Init
+    
+    ' Adjust for hotspot
+    newX = newX - CursorSystemContext.HotspotX
+    newY = newY - CursorSystemContext.HotspotY
+    
+    ' Check if position actually changed
+    IF newX = CursorSystemContext.CurrentX AND newY = CursorSystemContext.CurrentY THEN EXIT SUB
+    
+    WasVisible = CursorSystemContext.IsVisible
+    
+    ' Hide cursor if visible
+    IF WasVisible THEN CALL Cursor_Hide
+    
+    ' Update position
+    CursorSystemContext.CurrentX = newX
+    CursorSystemContext.CurrentY = newY
+    
+    ' Show cursor at new position if it was visible
+    IF WasVisible THEN CALL Cursor_Show
+END SUB
+
+' =============================================================================
+' Save background area under cursor
+' Parameters: None
+' Returns: Nothing
+' Note: Internal function - saves screen area to background buffer
+' =============================================================================
+SUB Cursor_SaveCursorBackground
+    DIM X AS WORD, Y AS WORD, ScreenX AS WORD, ScreenY AS WORD
+    DIM PixelColor AS BYTE, BackgroundIndex AS WORD
+    
+    ' Allocate background buffer
+    CursorSystemContext.BackgroundData = SPACE$(CursorSystemContext.Width * CursorSystemContext.Height)
+    
+    ' Save each pixel
+    FOR Y = 0 TO CursorSystemContext.Height - 1
+        ScreenY = CursorSystemContext.CurrentY + Y
+        IF ScreenY >= SVGAScreenContext.YRes THEN EXIT FOR
+        IF ScreenY < 0 THEN GOTO NextSaveY
+        
+        FOR X = 0 TO CursorSystemContext.Width - 1
+            ScreenX = CursorSystemContext.CurrentX + X
+            IF ScreenX >= SVGAScreenContext.XRes THEN EXIT FOR
+            IF ScreenX < 0 THEN GOTO NextSaveX
+            
+            ' Get pixel from screen
+            PixelColor = GETPIXEL(ScreenX, ScreenY)
+            
+            ' Store in background buffer
+            BackgroundIndex = Y * CursorSystemContext.Width + X + 1
+            MID$(CursorSystemContext.BackgroundData, BackgroundIndex, 1) = CHR$(PixelColor)
+            
+            NextSaveX:
+        NEXT X
+        NextSaveY:
+    NEXT Y
+    
+    CursorSystemContext.HasBackground = 1
+END SUB
+
+' =============================================================================
+' Restore background area under cursor
+' Parameters: None
+' Returns: Nothing
+' Note: Internal function - restores saved background to screen
+' =============================================================================
+SUB Cursor_RestoreCursorBackground
+    DIM X AS WORD, Y AS WORD, ScreenX AS WORD, ScreenY AS WORD
+    DIM PixelColor AS BYTE, BackgroundIndex AS WORD
+    
+    IF CursorSystemContext.HasBackground = 0 THEN EXIT SUB
+    
+    ' Restore each pixel
+    FOR Y = 0 TO CursorSystemContext.Height - 1
+        ScreenY = CursorSystemContext.CurrentY + Y
+        IF ScreenY >= SVGAScreenContext.YRes THEN EXIT FOR
+        IF ScreenY < 0 THEN GOTO NextRestoreY
+        
+        FOR X = 0 TO CursorSystemContext.Width - 1
+            ScreenX = CursorSystemContext.CurrentX + X
+            IF ScreenX >= SVGAScreenContext.XRes THEN EXIT FOR
+            IF ScreenX < 0 THEN GOTO NextRestoreX
+            
+            ' Get pixel from background buffer
+            BackgroundIndex = Y * CursorSystemContext.Width + X + 1
+            PixelColor = ASC(MID$(CursorSystemContext.BackgroundData, BackgroundIndex, 1))
+            
+            ' Restore to screen
+            CALL PUTPIXEL(ScreenX, ScreenY, PixelColor)
+            
+            NextRestoreX:
+        NEXT X
+        NextRestoreY:
+    NEXT Y
+END SUB
+
+' =============================================================================
+' Draw cursor at specified position
+' Parameters:
+'   DrawX, DrawY - Position to draw cursor (BYVAL)
+' Returns: Nothing
+' Note: Internal function - draws cursor with transparency support
+' =============================================================================
+SUB Cursor_DrawCursorAtPosition(BYVAL drawX AS WORD, BYVAL drawY AS WORD)
+    DIM X AS WORD, Y AS WORD, ScreenX AS WORD, ScreenY AS WORD
+    DIM CursorPixel AS BYTE, MaskPixel AS BYTE, BackgroundPixel AS BYTE
+    DIM DataIndex AS WORD, FinalColor AS BYTE
+    
+    ' Draw each pixel with transparency
+    FOR Y = 0 TO CursorSystemContext.Height - 1
+        ScreenY = drawY + Y
+        IF ScreenY >= SVGAScreenContext.YRes THEN EXIT FOR
+        IF ScreenY < 0 THEN GOTO NextDrawY
+        
+        FOR X = 0 TO CursorSystemContext.Width - 1
+            ScreenX = drawX + X
+            IF ScreenX >= SVGAScreenContext.XRes THEN EXIT FOR
+            IF ScreenX < 0 THEN GOTO NextDrawX
+            
+            DataIndex = Y * CursorSystemContext.Width + X + 1
+            
+            ' Get cursor pixel and mask
+            CursorPixel = ASC(MID$(CursorSystemContext.CursorData, DataIndex, 1))
+            MaskPixel = ASC(MID$(CursorSystemContext.MaskData, DataIndex, 1))
+            
+            ' Apply transparency (AND mask)
+            IF MaskPixel = 0 THEN  ' Mask bit clear = show cursor pixel
+                FinalColor = CursorPixel
+            ELSE  ' Mask bit set = transparent (show background)
+                ' Get background pixel if available
+                IF CursorSystemContext.HasBackground THEN
+                    BackgroundPixel = ASC(MID$(CursorSystemContext.BackgroundData, DataIndex, 1))
+                    FinalColor = BackgroundPixel
+                ELSE
+                    GOTO NextDrawX  ' Skip transparent pixels if no background
+                END IF
+            END IF
+            
+            ' Draw final pixel
+            CALL PUTPIXEL(ScreenX, ScreenY, FinalColor)
+            
+            NextDrawX:
+        NEXT X
+        NextDrawY:
+    NEXT Y
+END SUB
+
+' =============================================================================
+' Check if cursor is currently visible
+' Parameters: None
+' Returns: True if cursor is visible (BYTE)
+' =============================================================================
+FUNCTION Cursor_IsVisible AS BYTE
+    IF CursorSystemContext.IsInitialized = 0 THEN
+        Cursor_IsVisible = 0
+    ELSE
+        Cursor_IsCursorVisible = CursorSystemContext.IsVisible
+    END IF
+END FUNCTION
+
+' =============================================================================
+' Get current cursor position
+' Parameters:
+'   CurrentX, CurrentY - Variables to receive position (BYREF)
+' Returns: Nothing (position returned via parameters)
+' =============================================================================
+SUB Cursor_GetPos(currentX AS WORD, currentY AS WORD)
+    IF CursorSystemContext.IsInitialized = 0 THEN
+        currentX = 0
+        currentY = 0
+    ELSE
+        ' Return position adjusted for hotspot
+        currentX = CursorSystemContext.CurrentX + CursorSystemContext.HotspotX
+        currentY = CursorSystemContext.CurrentY + CursorSystemContext.HotspotY
+    END IF
+END SUB
+
+' =============================================================================
+' Set cursor position directly (without movement animation)
+' Parameters:
+'   NewX, NewY - New cursor position (BYVAL)
+' Returns: Nothing
+' =============================================================================
+SUB Cursor_SetPos(BYVAL newX AS WORD, BYVAL newY AS WORD)
+    CALL Cursor_Move(newX, newY)
+END SUB
+
+' =============================================================================
+' Cleanup cursor system
+' Parameters: None
+' Returns: Nothing
+' Note: Call before program exit
+' =============================================================================
+SUB Cursor_Cleanup
+    IF CursorSystemContext.IsVisible THEN CALL Cursor_Hide
+    
+    CursorSystemContext.IsInitialized = 0
+    CursorSystemContext.IsVisible = 0
+    CursorSystemContext.CurrentX = 0
+    CursorSystemContext.CurrentY = 0
+    CursorSystemContext.HotspotX = 0
+    CursorSystemContext.HotspotY = 0
+    CursorSystemContext.Width = 0
+    CursorSystemContext.Height = 0
+    CursorSystemContext.HasBackground = 0
+    CursorSystemContext.CursorData = ""
+    CursorSystemContext.MaskData = ""
+    CursorSystemContext.BackgroundData = ""
+END SUB

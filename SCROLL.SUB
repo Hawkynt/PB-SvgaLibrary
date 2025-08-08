@@ -1,0 +1,689 @@
+' =============================================================================
+' SCROLL.SUB - Screen Scrolling Routines
+' =============================================================================
+' Provides hardware-accelerated scrolling for smooth gameplay and effects
+' Supports horizontal, vertical, and diagonal scrolling with wrapping
+' =============================================================================
+' Author: Hawkynt
+' License: LGPL 3.0
+' =============================================================================
+
+' =============================================================================
+' Scrolling system structures and constants
+' =============================================================================
+
+' Scroll directions
+%SCROLL_UP = 0
+%SCROLL_DOWN = 1
+%SCROLL_LEFT = 2
+%SCROLL_RIGHT = 3
+%SCROLL_UPLEFT = 4
+%SCROLL_UPRIGHT = 5
+%SCROLL_DOWNLEFT = 6
+%SCROLL_DOWNRIGHT = 7
+
+' Scroll modes
+%SCROLL_MODE_NORMAL = 0      ' Normal scrolling with fill
+%SCROLL_MODE_WRAP = 1        ' Wrap-around scrolling
+%SCROLL_MODE_BOUNCE = 2      ' Bounce at edges
+%SCROLL_MODE_PARALLAX = 3    ' Parallax scrolling layers
+
+' Virtual screen structure for scrolling
+TYPE VirtualScreenType
+    IsActive AS BYTE          ' Virtual screen active
+    Width AS WORD             ' Virtual screen width
+    Height AS WORD            ' Virtual screen height
+    OffsetX AS INTEGER        ' Current X offset
+    OffsetY AS INTEGER        ' Current Y offset
+    MaxOffsetX AS INTEGER     ' Maximum X offset
+    MaxOffsetY AS INTEGER     ' Maximum Y offset
+    ScrollSpeed AS WORD       ' Scrolling speed
+    ScrollMode AS BYTE        ' Scrolling mode
+    BackgroundData AS STRING  ' Background tile data
+    TileWidth AS WORD         ' Background tile width
+    TileHeight AS WORD        ' Background tile height
+END TYPE
+
+' Parallax layer structure
+TYPE ParallaxLayerType
+    IsActive AS BYTE          ' Layer active flag
+    OffsetX AS INTEGER        ' Layer X offset
+    OffsetY AS INTEGER        ' Layer Y offset
+    ScrollRateX AS WORD       ' X scroll rate (256 = 1:1, 128 = 1:2)
+    ScrollRateY AS WORD       ' Y scroll rate
+    ImageData AS STRING       ' Layer image data
+    Width AS WORD             ' Layer width
+    Height AS WORD            ' Layer height
+    Priority AS BYTE          ' Layer priority (0 = background)
+END TYPE
+
+' Global scrolling context
+DIM SHARED VirtualScreen AS VirtualScreenType
+DIM SHARED ParallaxLayers(8) AS ParallaxLayerType  ' Up to 8 parallax layers
+DIM SHARED ScrollSystemInitialized AS BYTE
+
+' Scrolling optimization arrays
+DIM SHARED ScrollBufferA AS STRING  ' Double buffering for smooth scrolling
+DIM SHARED ScrollBufferB AS STRING
+DIM SHARED CurrentScrollBuffer AS BYTE
+
+' =============================================================================
+' Initialize scrolling system
+' Parameters: None
+' Returns: Nothing
+' =============================================================================
+SUB Scroll_Init
+    DIM I AS BYTE
+    
+    ' Initialize virtual screen
+    VirtualScreen.IsActive = 0
+    VirtualScreen.Width = SVGAScreenContext.XRes
+    VirtualScreen.Height = SVGAScreenContext.YRes
+    VirtualScreen.OffsetX = 0
+    VirtualScreen.OffsetY = 0
+    VirtualScreen.MaxOffsetX = 0
+    VirtualScreen.MaxOffsetY = 0
+    VirtualScreen.ScrollSpeed = 1
+    VirtualScreen.ScrollMode = %SCROLL_MODE_NORMAL
+    VirtualScreen.BackgroundData = ""
+    VirtualScreen.TileWidth = 16
+    VirtualScreen.TileHeight = 16
+    
+    ' Initialize parallax layers
+    FOR I = 0 TO 7
+        ParallaxLayers(I).IsActive = 0
+        ParallaxLayers(I).OffsetX = 0
+        ParallaxLayers(I).OffsetY = 0
+        ParallaxLayers(I).ScrollRateX = 256  ' 1:1 ratio
+        ParallaxLayers(I).ScrollRateY = 256
+        ParallaxLayers(I).ImageData = ""
+        ParallaxLayers(I).Width = 0
+        ParallaxLayers(I).Height = 0
+        ParallaxLayers(I).Priority = I
+    NEXT I
+    
+    ' Initialize scroll buffers
+    DIM BufferSize AS LONG
+    BufferSize = SVGAScreenContext.XRes * SVGAScreenContext.YRes
+    ScrollBufferA = SPACE$(BufferSize)
+    ScrollBufferB = SPACE$(BufferSize)
+    CurrentScrollBuffer = 0
+    
+    ScrollSystemInitialized = 1
+END SUB
+
+' =============================================================================
+' Set virtual screen dimensions
+' Parameters:
+'   Width, Height - Virtual screen size (BYVAL)
+' Returns: Nothing
+' =============================================================================
+SUB Scroll_SetVirtualScreen(BYVAL width AS WORD, BYVAL height AS WORD)
+    IF ScrollSystemInitialized = 0 THEN CALL INITSCROLL
+    
+    VirtualScreen.Width = width
+    VirtualScreen.Height = height
+    VirtualScreen.MaxOffsetX = Width - SVGAScreenContext.XRes
+    VirtualScreen.MaxOffsetY = Height - SVGAScreenContext.YRes
+    
+    ' Clamp current offsets
+    IF VirtualScreen.OffsetX > VirtualScreen.MaxOffsetX THEN VirtualScreen.OffsetX = VirtualScreen.MaxOffsetX
+    IF VirtualScreen.OffsetY > VirtualScreen.MaxOffsetY THEN VirtualScreen.OffsetY = VirtualScreen.MaxOffsetY
+    IF VirtualScreen.OffsetX < 0 THEN VirtualScreen.OffsetX = 0
+    IF VirtualScreen.OffsetY < 0 THEN VirtualScreen.OffsetY = 0
+    
+    VirtualScreen.IsActive = 1
+END SUB
+
+' =============================================================================
+' Set scroll position
+' Parameters:
+'   X, Y - Scroll offset (BYVAL)
+' Returns: Nothing
+' =============================================================================
+SUB Scroll_SetPosition(BYVAL x AS INTEGER, BYVAL y AS INTEGER)
+    IF ScrollSystemInitialized = 0 OR VirtualScreen.IsActive = 0 THEN EXIT SUB
+    
+    SELECT CASE VirtualScreen.ScrollMode
+        CASE %SCROLL_MODE_NORMAL
+            ' Clamp to boundaries
+            IF x < 0 THEN x = 0
+            IF y < 0 THEN y = 0
+            IF x > VirtualScreen.MaxOffsetX THEN x = VirtualScreen.MaxOffsetX
+            IF y > VirtualScreen.MaxOffsetY THEN y = VirtualScreen.MaxOffsetY
+            
+        CASE %SCROLL_MODE_WRAP
+            ' Wrap around
+            WHILE x < 0
+                x = x + VirtualScreen.Width
+            WEND
+            WHILE x >= VirtualScreen.Width
+                x = x - VirtualScreen.Width
+            WEND
+            WHILE y < 0
+                y = y + VirtualScreen.Height
+            WEND
+            WHILE y >= VirtualScreen.Height
+                y = y - VirtualScreen.Height
+            WEND
+    END SELECT
+    
+    VirtualScreen.OffsetX = x
+    VirtualScreen.OffsetY = y
+END SUB
+
+' =============================================================================
+' Scroll screen by pixels
+' Parameters:
+'   DeltaX, DeltaY - Scroll amount (BYVAL)
+' Returns: Nothing
+' =============================================================================
+SUB Scroll_Screen(BYVAL deltaX AS INTEGER, BYVAL deltaY AS INTEGER)
+    IF ScrollSystemInitialized = 0 OR VirtualScreen.IsActive = 0 THEN EXIT SUB
+    
+    CALL Scroll_SetPosition(VirtualScreen.OffsetX + deltaX, VirtualScreen.OffsetY + deltaY)
+END SUB
+
+' =============================================================================
+' Scroll in direction
+' Parameters:
+'   Direction - Scroll direction (BYVAL)
+'   Speed - Scroll speed in pixels (BYVAL)
+' Returns: Nothing
+' =============================================================================
+SUB Scroll_Direction(BYVAL direction AS BYTE, BYVAL speed AS WORD)
+    DIM deltaX AS INTEGER, deltaY AS INTEGER
+    
+    deltaX = 0
+    deltaY = 0
+    
+    SELECT CASE direction
+        CASE %SCROLL_UP
+            deltaY = -speed
+        CASE %SCROLL_DOWN
+            deltaY = speed
+        CASE %SCROLL_LEFT
+            deltaX = -speed
+        CASE %SCROLL_RIGHT
+            deltaX = speed
+        CASE %SCROLL_UPLEFT
+            deltaX = -speed
+            deltaY = -speed
+        CASE %SCROLL_UPRIGHT
+            deltaX = speed
+            deltaY = -speed
+        CASE %SCROLL_DOWNLEFT
+            deltaX = -speed
+            deltaY = speed
+        CASE %SCROLL_DOWNRIGHT
+            deltaX = speed
+            deltaY = speed
+    END SELECT
+    
+    CALL Scroll_Screen(deltaX, deltaY)
+END SUB
+
+' =============================================================================
+' Hardware-accelerated horizontal scroll (Mode 13h optimized)
+' Parameters:
+'   Lines - Number of lines to scroll (BYVAL)
+'   Direction - Scroll direction (0=left, 1=right) (BYVAL)
+'   FillColor - Color to fill exposed area (BYVAL)
+' Returns: Nothing
+' =============================================================================
+SUB Scroll_HardwareHorizontal(BYVAL lines AS WORD, BYVAL direction AS BYTE, BYVAL fillColor AS BYTE)
+    DIM startY AS WORD, endY AS WORD
+    DIM sourceOffset AS LONG, destOffset AS LONG
+    DIM bytesToMove AS WORD
+    
+    IF lines = 0 OR lines > SVGAScreenContext.YRes THEN EXIT SUB
+    
+    startY = 0
+    endY = lines - 1
+    bytesToMove = 320  ' Mode 13h line width
+    
+    ' Set ES to VGA memory segment
+    !MOV AX, &HA000
+    !MOV ES, AX
+    !MOV DS, AX
+    
+    ' Scroll each line
+    IF direction = 0 THEN  ' Scroll left
+        FOR startY = 0 TO endY
+            sourceOffset = startY * 320 + 1
+            destOffset = startY * 320
+            
+            ' Move line data left by 1 pixel
+            !PUSH SI
+            !PUSH DI
+            !MOV SI, WORD PTR sourceOffset
+            !MOV DI, WORD PTR destOffset
+            !MOV CX, 319  ' 319 bytes to move
+            !REP MOVSB
+            !POP DI
+            !POP SI
+            
+            ' Fill rightmost pixel
+            !MOV DI, WORD PTR destOffset
+            !ADD DI, 319
+            !MOV AL, fillColor
+            !STOSB
+        NEXT startY
+    ELSE  ' Scroll right
+        FOR startY = 0 TO endY
+            sourceOffset = startY * 320
+            destOffset = startY * 320 + 1
+            
+            ' Move line data right by 1 pixel (backwards to avoid overlap)
+            !PUSH SI
+            !PUSH DI
+            !MOV SI, WORD PTR sourceOffset
+            !ADD SI, 318  ' Start from end-1
+            !MOV DI, WORD PTR destOffset
+            !ADD DI, 318  ' Destination end-1
+            !MOV CX, 319  ' 319 bytes to move
+            !STD          ' Set direction flag for backwards move
+            !REP MOVSB
+            !CLD          ' Clear direction flag
+            !POP DI
+            !POP SI
+            
+            ' Fill leftmost pixel
+            !MOV DI, WORD PTR sourceOffset
+            !MOV AL, fillColor
+            !STOSB
+        NEXT startY
+    END IF
+    
+    ' Restore DS
+    !PUSH CS
+    !POP DS
+END SUB
+
+' =============================================================================
+' Hardware-accelerated vertical scroll (Mode 13h optimized)
+' Parameters:
+'   Lines - Number of lines to scroll (BYVAL)
+'   Direction - Scroll direction (0=up, 1=down) (BYVAL)
+'   FillColor - Color to fill exposed area (BYVAL)
+' Returns: Nothing
+' =============================================================================
+SUB Scroll_HardwareVertical(BYVAL lines AS WORD, BYVAL direction AS BYTE, BYVAL fillColor AS BYTE)
+    DIM sourceLine AS WORD, destLine AS WORD
+    DIM linesToMove AS WORD
+    DIM y AS WORD
+    
+    IF lines = 0 OR lines >= SVGAScreenContext.YRes THEN EXIT SUB
+    
+    linesToMove = SVGAScreenContext.YRes - lines
+    
+    ' Set ES and DS to VGA memory segment
+    !MOV AX, &HA000
+    !MOV ES, AX
+    !MOV DS, AX
+    
+    IF direction = 0 THEN  ' Scroll up
+        ' Move screen data up
+        FOR y = 0 TO linesToMove - 1
+            sourceLine = (y + lines) * 320
+            destLine = y * 320
+            
+            !PUSH SI
+            !PUSH DI
+            !MOV SI, WORD PTR sourceLine
+            !MOV DI, WORD PTR destLine
+            !MOV CX, 320  ' Full line width
+            !REP MOVSB
+            !POP DI
+            !POP SI
+        NEXT y
+        
+        ' Fill exposed bottom lines
+        FOR y = linesToMove TO SVGAScreenContext.YRes - 1
+            destLine = y * 320
+            
+            !MOV DI, WORD PTR destLine
+            !MOV AL, fillColor
+            !MOV CX, 320
+            !REP STOSB
+        NEXT y
+        
+    ELSE  ' Scroll down
+        ' Move screen data down (start from bottom)
+        FOR y = linesToMove - 1 TO 0 STEP -1
+            sourceLine = y * 320
+            destLine = (y + lines) * 320
+            
+            !PUSH SI
+            !PUSH DI
+            !MOV SI, WORD PTR sourceLine
+            !MOV DI, WORD PTR destLine
+            !MOV CX, 320  ' Full line width
+            !REP MOVSB
+            !POP DI
+            !POP SI
+        NEXT y
+        
+        ' Fill exposed top lines
+        FOR y = 0 TO lines - 1
+            destLine = y * 320
+            
+            !MOV DI, WORD PTR destLine
+            !MOV AL, fillColor
+            !MOV CX, 320
+            !REP STOSB
+        NEXT y
+    END IF
+    
+    ' Restore DS
+    !PUSH CS
+    !POP DS
+END SUB
+
+' =============================================================================
+' Create parallax layer
+' Parameters:
+'   LayerID - Layer identifier (0-7) (BYVAL)
+'   Width, Height - Layer dimensions (BYVAL)
+'   ScrollRateX, ScrollRateY - Scroll rate multipliers (256 = 1:1) (BYVAL)
+'   Priority - Layer priority (BYVAL)
+' Returns: Nothing
+' =============================================================================
+SUB Scroll_CreateParallaxLayer(BYVAL layerId AS BYTE, BYVAL width AS WORD, BYVAL height AS WORD, BYVAL scrollRateX AS WORD, BYVAL scrollRateY AS WORD, BYVAL priority AS BYTE)
+    IF ScrollSystemInitialized = 0 THEN CALL Scroll_Init
+    IF layerId > 7 THEN EXIT SUB
+    
+    ParallaxLayers(layerId).IsActive = 1
+    ParallaxLayers(layerId).Width = width
+    ParallaxLayers(layerId).Height = height
+    ParallaxLayers(layerId).ScrollRateX = scrollRateX
+    ParallaxLayers(layerId).ScrollRateY = scrollRateY
+    ParallaxLayers(layerId).Priority = priority
+    ParallaxLayers(layerId).OffsetX = 0
+    ParallaxLayers(layerId).OffsetY = 0
+    ParallaxLayers(layerId).ImageData = SPACE$(width * height)
+END SUB
+
+' =============================================================================
+' Update parallax layers based on main scroll position
+' Parameters: None
+' Returns: Nothing
+' =============================================================================
+SUB Scroll_UpdateParallax
+    DIM I AS BYTE
+    
+    IF ScrollSystemInitialized = 0 OR VirtualScreen.IsActive = 0 THEN EXIT SUB
+    
+    FOR I = 0 TO 7
+        IF ParallaxLayers(I).IsActive THEN
+            ' Calculate parallax offset
+            ParallaxLayers(I).OffsetX = (VirtualScreen.OffsetX * ParallaxLayers(I).ScrollRateX) \ 256
+            ParallaxLayers(I).OffsetY = (VirtualScreen.OffsetY * ParallaxLayers(I).ScrollRateY) \ 256
+            
+            ' Wrap offsets if necessary
+            IF ParallaxLayers(I).Width > 0 THEN
+                WHILE ParallaxLayers(I).OffsetX >= ParallaxLayers(I).Width
+                    ParallaxLayers(I).OffsetX = ParallaxLayers(I).OffsetX - ParallaxLayers(I).Width
+                WEND
+                WHILE ParallaxLayers(I).OffsetX < 0
+                    ParallaxLayers(I).OffsetX = ParallaxLayers(I).OffsetX + ParallaxLayers(I).Width
+                WEND
+            END IF
+            
+            IF ParallaxLayers(I).Height > 0 THEN
+                WHILE ParallaxLayers(I).OffsetY >= ParallaxLayers(I).Height
+                    ParallaxLayers(I).OffsetY = ParallaxLayers(I).OffsetY - ParallaxLayers(I).Height
+                WEND
+                WHILE ParallaxLayers(I).OffsetY < 0
+                    ParallaxLayers(I).OffsetY = ParallaxLayers(I).OffsetY + ParallaxLayers(I).Height
+                WEND
+            END IF
+        END IF
+    NEXT I
+END SUB
+
+' =============================================================================
+' Draw parallax layers sorted by priority
+' Parameters: None
+' Returns: Nothing
+' =============================================================================
+SUB Scroll_DrawParallax
+    DIM I AS BYTE, J AS BYTE
+    DIM LayerOrder(8) AS BYTE
+    DIM OrderCount AS BYTE
+    DIM TempLayer AS BYTE
+    
+    IF ScrollSystemInitialized = 0 THEN EXIT SUB
+    
+    ' Build list of active layers
+    OrderCount = 0
+    FOR I = 0 TO 7
+        IF ParallaxLayers(I).IsActive THEN
+            LayerOrder(OrderCount) = I
+            OrderCount = OrderCount + 1
+        END IF
+    NEXT I
+    
+    ' Sort by priority (bubble sort)
+    FOR I = 0 TO OrderCount - 2
+        FOR J = I + 1 TO OrderCount - 1
+            IF ParallaxLayers(LayerOrder(I)).Priority > ParallaxLayers(LayerOrder(J)).Priority THEN
+                TempLayer = LayerOrder(I)
+                LayerOrder(I) = LayerOrder(J)
+                LayerOrder(J) = TempLayer
+            END IF
+        NEXT J
+    NEXT I
+    
+    ' Draw layers in priority order
+    FOR I = 0 TO OrderCount - 1
+        CALL Scroll_DrawParallaxLayer(LayerOrder(I))
+    NEXT I
+END SUB
+
+' =============================================================================
+' Draw single parallax layer
+' Parameters:
+'   LayerID - Layer to draw (BYVAL)
+' Returns: Nothing
+' =============================================================================
+SUB Scroll_DrawParallaxLayer(BYVAL layerId AS BYTE)
+    DIM tileX AS WORD, tileY AS WORD
+    DIM startTileX AS WORD, startTileY AS WORD
+    DIM endTileX AS WORD, endTileY AS WORD
+    DIM drawX AS INTEGER, drawY AS INTEGER
+    DIM layerColor AS BYTE
+    
+    IF layerId > 7 OR ParallaxLayers(layerId).IsActive = 0 THEN EXIT SUB
+    
+    ' Calculate visible tile range
+    startTileX = ParallaxLayers(layerId).OffsetX \ VirtualScreen.TileWidth
+    startTileY = ParallaxLayers(layerId).OffsetY \ VirtualScreen.TileHeight
+    endTileX = startTileX + (SVGAScreenContext.XRes \ VirtualScreen.TileWidth) + 1
+    endTileY = startTileY + (SVGAScreenContext.YRes \ VirtualScreen.TileHeight) + 1
+    
+    ' Draw visible tiles (simplified - draws colored rectangles)
+    layerColor = (layerId * 32) MOD 256
+    
+    FOR tileY = startTileY TO endTileY
+        FOR tileX = startTileX TO endTileX
+            drawX = tileX * VirtualScreen.TileWidth - ParallaxLayers(layerId).OffsetX
+            drawY = tileY * VirtualScreen.TileHeight - ParallaxLayers(layerId).OffsetY
+            
+            ' Only draw if tile is visible on screen
+            IF drawX < SVGAScreenContext.XRes AND drawY < SVGAScreenContext.YRes AND _
+               drawX + VirtualScreen.TileWidth > 0 AND drawY + VirtualScreen.TileHeight > 0 THEN
+                
+                ' Simplified tile drawing (colored rectangle)
+                CALL FILLRECT(drawX, drawY, drawX + VirtualScreen.TileWidth - 1, drawY + VirtualScreen.TileHeight - 1, layerColor + (tileX MOD 8))
+            END IF
+        NEXT tileX
+    NEXT tileY
+END SUB
+
+' =============================================================================
+' Get current scroll position
+' Parameters:
+'   X, Y - Scroll position (BYREF)
+' Returns: Nothing (position returned via parameters)
+' =============================================================================
+SUB Scroll_GetPosition(x AS INTEGER, y AS INTEGER)
+    IF ScrollSystemInitialized = 0 OR VirtualScreen.IsActive = 0 THEN
+        x = 0
+        y = 0
+    ELSE
+        x = VirtualScreen.OffsetX
+        y = VirtualScreen.OffsetY
+    END IF
+END SUB
+
+' =============================================================================
+' Set scroll mode
+' Parameters:
+'   Mode - Scroll mode (BYVAL)
+' Returns: Nothing
+' =============================================================================
+SUB Scroll_SetMode(BYVAL mode AS BYTE)
+    IF ScrollSystemInitialized = 0 THEN CALL Scroll_Init
+    
+    VirtualScreen.ScrollMode = mode
+END SUB
+
+' =============================================================================
+' Smooth scroll to position
+' Parameters:
+'   TargetX, TargetY - Target position (BYVAL)
+'   Speed - Scrolling speed (BYVAL)
+' Returns: True if scrolling complete (BYTE)
+' =============================================================================
+FUNCTION Scroll_SmoothTo(BYVAL targetX AS INTEGER, BYVAL targetY AS INTEGER, BYVAL speed AS WORD) AS BYTE
+    DIM deltaX AS INTEGER, deltaY AS INTEGER
+    DIM stepX AS INTEGER, stepY AS INTEGER
+    
+    IF ScrollSystemInitialized = 0 OR VirtualScreen.IsActive = 0 THEN
+        Scroll_SmoothTo = 1
+        EXIT FUNCTION
+    END IF
+    
+    deltaX = targetX - VirtualScreen.OffsetX
+    deltaY = targetY - VirtualScreen.OffsetY
+    
+    ' Calculate scroll steps
+    IF ABS(deltaX) <= speed THEN
+        stepX = deltaX
+    ELSE
+        stepX = SGN(deltaX) * speed
+    END IF
+    
+    IF ABS(deltaY) <= speed THEN
+        stepY = deltaY
+    ELSE
+        stepY = SGN(deltaY) * speed
+    END IF
+    
+    ' Apply scroll step
+    IF stepX <> 0 OR stepY <> 0 THEN
+        CALL Scroll_Screen(stepX, stepY)
+        Scroll_SmoothTo = 0  ' Still scrolling
+    ELSE
+        Scroll_SmoothTo = 1  ' Scrolling complete
+    END IF
+END FUNCTION
+
+' =============================================================================
+' Screen shake effect
+' Parameters:
+'   Intensity - Shake intensity (BYVAL)
+'   Duration - Shake duration in frames (BYVAL)
+' Returns: Nothing
+' =============================================================================
+SUB Scroll_ScreenShake(BYVAL intensity AS WORD, BYVAL duration AS WORD)
+    SHARED shakeFramesLeft AS WORD STATIC
+    SHARED shakeIntensity AS WORD STATIC
+    SHARED originalX AS INTEGER STATIC
+    SHARED originalY AS INTEGER STATIC
+    SHARED shakeActive AS BYTE STATIC
+    
+    IF ScrollSystemInitialized = 0 OR VirtualScreen.IsActive = 0 THEN EXIT SUB
+    
+    IF shakeActive = 0 THEN
+        ' Start new shake
+        originalX = VirtualScreen.OffsetX
+        originalY = VirtualScreen.OffsetY
+        shakeActive = 1
+    END IF
+    
+    shakeIntensity = intensity
+    shakeFramesLeft = duration
+END SUB
+
+' =============================================================================
+' Update screen shake effect (call once per frame)
+' Parameters: None
+' Returns: Nothing
+' =============================================================================
+SUB Scroll_UpdateScreenShake
+    SHARED shakeFramesLeft AS WORD STATIC
+    SHARED shakeIntensity AS WORD STATIC
+    SHARED originalX AS INTEGER STATIC
+    SHARED originalY AS INTEGER STATIC
+    SHARED shakeActive AS BYTE STATIC
+    
+    DIM shakeX AS INTEGER, shakeY AS INTEGER
+    
+    IF ScrollSystemInitialized = 0 OR VirtualScreen.IsActive = 0 OR shakeActive = 0 THEN EXIT SUB
+    
+    IF shakeFramesLeft > 0 THEN
+        ' Calculate random shake offset
+        shakeX = (RND * shakeIntensity * 2) - shakeIntensity
+        shakeY = (RND * shakeIntensity * 2) - shakeIntensity
+        
+        ' Apply shake
+        CALL Scroll_SetPosition(originalX + shakeX, originalY + shakeY)
+        
+        shakeFramesLeft = shakeFramesLeft - 1
+    ELSE
+        ' Restore original position
+        CALL Scroll_SetPosition(originalX, originalY)
+        shakeActive = 0
+    END IF
+END SUB
+
+' =============================================================================
+' Free parallax layer
+' Parameters:
+'   LayerID - Layer to free (BYVAL)
+' Returns: Nothing
+' =============================================================================
+SUB Scroll_FreeParallaxLayer(BYVAL layerId AS BYTE)
+    IF layerId > 7 THEN EXIT SUB
+    
+    ParallaxLayers(layerId).IsActive = 0
+    ParallaxLayers(layerId).ImageData = ""
+    ParallaxLayers(layerId).Width = 0
+    ParallaxLayers(layerId).Height = 0
+END SUB
+
+' =============================================================================
+' Cleanup scrolling system
+' Parameters: None
+' Returns: Nothing
+' =============================================================================
+SUB Scroll_Cleanup
+    DIM I AS BYTE
+    
+    ' Free all parallax layers
+    FOR I = 0 TO 7
+        CALL Scroll_FreeParallaxLayer(I)
+    NEXT I
+    
+    ' Clear virtual screen
+    VirtualScreen.IsActive = 0
+    VirtualScreen.BackgroundData = ""
+    
+    ' Free scroll buffers
+    ScrollBufferA = ""
+    ScrollBufferB = ""
+    
+    ScrollSystemInitialized = 0
+END SUB
