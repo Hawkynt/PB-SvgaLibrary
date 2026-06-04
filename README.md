@@ -1,9 +1,16 @@
 # 🖼️ PB-SvgaLibrary
 
-![License](https://img.shields.io/github/license/Hawkynt/PB-SvgaLibrary)
-[![PowerBASIC](https://img.shields.io/badge/powerbasic%203.5-100%25-purple.svg)](https://en.wikipedia.org/wiki/PowerBASIC)
-[![Last Commit](https://img.shields.io/github/last-commit/Hawkynt/PB-SvgaLibrary?branch=main)![Activity](https://img.shields.io/github/commit-activity/y/Hawkynt/PB-SvgaLibrary?branch=main)](https://github.com/Hawkynt/PB-SvgaLibrary/commits/main)
-[![Tests](https://github.com/Hawkynt/PB-SvgaLibrary/actions/workflows/tests.yml/badge.svg)](https://github.com/Hawkynt/PB-SvgaLibrary/actions/workflows/tests.yml)
+[![License](https://img.shields.io/github/license/Hawkynt/PB-SvgaLibrary)](https://github.com/Hawkynt/PB-SvgaLibrary/blob/main/LICENSE)
+[![Language](https://img.shields.io/github/languages/top/Hawkynt/PB-SvgaLibrary?color=8957D5)](https://github.com/Hawkynt/PB-SvgaLibrary)
+
+![Last Commit](https://img.shields.io/github/last-commit/Hawkynt/PB-SvgaLibrary?branch=main)
+![Activity](https://img.shields.io/github/commit-activity/m/Hawkynt/PB-SvgaLibrary)
+
+[![Stars](https://img.shields.io/github/stars/Hawkynt/PB-SvgaLibrary?color=FFD700)](https://github.com/Hawkynt/PB-SvgaLibrary/stargazers)
+[![Forks](https://img.shields.io/github/forks/Hawkynt/PB-SvgaLibrary?color=008080)](https://github.com/Hawkynt/PB-SvgaLibrary/network/members)
+[![Issues](https://img.shields.io/github/issues/Hawkynt/PB-SvgaLibrary)](https://github.com/Hawkynt/PB-SvgaLibrary/issues)
+![Code Size](https://img.shields.io/github/languages/code-size/Hawkynt/PB-SvgaLibrary?color=4CAF50)
+![Repo Size](https://img.shields.io/github/repo-size/Hawkynt/PB-SvgaLibrary?color=FF9800)
 
 > High-performance Power BASIC 3.5 library for VESA graphics with micro-optimized assembly routines
 
