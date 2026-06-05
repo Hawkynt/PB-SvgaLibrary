@@ -1,8 +1,9 @@
-# 🖼️ PB-SvgaLibrary
+# PB-SvgaLibrary
 
 [![License](https://img.shields.io/github/license/Hawkynt/PB-SvgaLibrary)](https://github.com/Hawkynt/PB-SvgaLibrary/blob/main/LICENSE)
 [![Language](https://img.shields.io/github/languages/top/Hawkynt/PB-SvgaLibrary?color=8957D5)](https://github.com/Hawkynt/PB-SvgaLibrary)
 
+[![CI](https://github.com/Hawkynt/PB-SvgaLibrary/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Hawkynt/PB-SvgaLibrary/actions/workflows/ci.yml)
 ![Last Commit](https://img.shields.io/github/last-commit/Hawkynt/PB-SvgaLibrary?branch=main)
 ![Activity](https://img.shields.io/github/commit-activity/m/Hawkynt/PB-SvgaLibrary)
 
@@ -16,7 +17,7 @@
 
 This library provides a comprehensive set of functions and subroutines for working with SVGA graphics in Power BASIC 3.5. It features heavily optimized assembly code for pixel operations, drawing primitives, and image manipulation across VGA, Mode-X, and VESA modes.
 
-## 🚀 Features
+## ✨ Features
 
 - **🎯 Micro-Optimized Assembly:** Hand-tuned x86 assembly for maximum performance
 - **📐 Graphics Primitives:** Hardware-accelerated lines, circles, rectangles, and 3D bars
@@ -108,7 +109,7 @@ STOSW              ; Eliminates loop overhead
 - **8086 Compatible:** Uses 16-bit operations for maximum compatibility
 - **Direct VGA Access:** Targets A000h segment for hardware speed
 
-## 🛠️ Usage
+## 🚀 Usage
 
 To use this library in your Power BASIC project, you need to include the `SVGA.SUB` file in your main program using the `$INCLUDE` metacommand. This includes everything else.
 
@@ -691,6 +692,21 @@ CALL DrawIcl_CloseLib(libHandle)
 - **Hardware Support:** Enhanced VGA features (unchained Mode-X variants)
 - **File Formats:** PNG support with proper alpha blending
 
+## 🛠️ Building
+
+The library targets **PowerBASIC 3.5 for DOS**: `$INCLUDE "SVGA.SUB"` in your program and compile with `PB.EXE` (runs fine under [DOSBox](https://www.dosbox.com/)). There is nothing to pre-build in this repo itself — CI verifies every source structurally (balanced `SUB`/`FUNCTION`/`IF`/`FOR`/`DO`/`SELECT` blocks):
+
+```bash
+node .github/workflows/scripts/check-basic.mjs .
+```
+
+## ❤️ Support
+
+If this project saves you time or money, consider supporting its development:
+
+[![GitHub Sponsors](https://img.shields.io/badge/GitHub-Sponsor-EA4AAA?logo=githubsponsors)](https://github.com/sponsors/Hawkynt)
+[![PayPal](https://img.shields.io/badge/PayPal-Donate-00457C?logo=paypal)](https://www.paypal.me/hawkynt)
+
 ## 📜 License
 
-This project is licensed under the LGPL 3.0 License - see the [LICENSE](https://licenses.nuget.org/LGPL-3.0-or-later) file for details.
+Licensed under LGPL-3.0-or-later — see [LICENSE](LICENSE).
