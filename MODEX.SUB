@@ -1,8 +1,11 @@
+DIM mxLogW AS SHARED WORD
+DIM mxPgSz AS SHARED WORD
+DIM mxPlane AS SHARED BYTE
 ' =============================================================================
 ' MODEX.SUB - Mode-X Graphics Functions
 ' =============================================================================
-' Contains Mode-X (256-color planar) graphics mode support
-' Mode-X provides higher resolution 256-color modes than standard VGA Mode 13h
+' Contains Mode-X (256-colorVal planar) graphics mode support
+' Mode-X provides higher resolution 256-colorVal modes than standard VGA Mode 13h
 ' =============================================================================
 
 ' Mode-X resolution definitions
@@ -16,7 +19,7 @@
 ' Type 7: 400x300 (4:3 aspect ratio)
 
 ' Performance optimization lookup tables
-DIM SHARED PlaneMaskTable(0 TO 3) AS BYTE     ' Plane select masks (only 4 bytes)
+DIM PlaneMaskTable(0 TO 3) AS SHARED BYTE     ' Plane select masks (only 4 bytes)
 
 ' =============================================================================
 ' Initialize Mode-X lookup tables for performance
@@ -34,7 +37,7 @@ END SUB
 ' Parameters:
 '   ModeXType - Mode-X variant (0-7) (BYVAL)
 ' Returns: Nothing
-' Note: All Mode-X modes are 256-color planar modes optimized for animation
+' Note: All Mode-X modes are 256-colorVal planar modes optimized for animation
 '       Requires VGA-compatible hardware (8086+ with VGA)
 ' =============================================================================
 SUB ModeX_SetMode(BYVAL modeXType AS BYTE)
@@ -51,10 +54,11 @@ SUB ModeX_SetMode(BYVAL modeXType AS BYTE)
     ' Disable chain-4 mode and enable planar mode
     
     ' Set Sequencer registers for planar mode
+    mxPlane = ShiftL(1, StartPlane)
     !MOV DX, &H3C4          ; Sequencer Address Register
     !MOV AL, 4              ; Memory Mode Register
     !OUT DX, AL
-    !INC DX                 ; Sequencer Data Register
+    !INC DX                 ; Sequencer dataBuf Register
     !IN AL, DX              ; Read current value
     !AND AL, &HF7           ; Clear bit 3 (chain-4)
     !OR AL, &H04            ; Set bit 2 (odd/even disable)
@@ -64,7 +68,7 @@ SUB ModeX_SetMode(BYVAL modeXType AS BYTE)
     !MOV DX, &H3D4          ; CRT Controller Address
     !MOV AL, &H11           ; Vertical Retrace End Register
     !OUT DX, AL
-    !INC DX                 ; CRT Controller Data
+    !INC DX                 ; CRT Controller dataBuf
     !IN AL, DX              ; Read current value
     !AND AL, &H7F           ; Clear bit 7 (write protect)
     !OUT DX, AL
@@ -135,7 +139,7 @@ SUB ModeX_SetMode(BYVAL modeXType AS BYTE)
     
     ' Set current graphics mode flag
     VESASystemContext.CurrentMode = %SVGA_MODEX
-    CALL InitDispatchTable  ' Update function pointers for Mode-X
+    CALL Svga_InitDispatchTable  ' Update function pointers for Mode-X
     
     ' Clear screen
     CALL ModeX_ClearScreen(0)
@@ -145,11 +149,11 @@ END SUB
 ' Set pixel in Mode-X (optimized for planar mode)
 ' Parameters:
 '   X, Y - Pixel coordinates (BYVAL)
-'   Color - Pixel color (BYVAL)
+'   colorVal - Pixel colorVal (BYVAL)
 ' Returns: Nothing
 ' Note: Uses VGA planar mode for efficient pixel access
 ' =============================================================================
-SUB ModeX_PutPixel(BYVAL X AS WORD, BYVAL Y AS WORD, BYVAL Color AS BYTE)
+SUB ModeX_PutPixel(BYVAL X AS WORD, BYVAL Y AS WORD, BYVAL colorVal AS BYTE)
     DIM PlaneNumber AS BYTE, ByteOffset AS WORD, BitMask AS BYTE
     
     ' Calculate which plane and byte offset using fast assembly
@@ -157,17 +161,19 @@ SUB ModeX_PutPixel(BYVAL X AS WORD, BYVAL Y AS WORD, BYVAL Color AS BYTE)
     
     ' Ultra-fast X/4 using bit shift (faster than lookup table)
     !MOV AX, X
-    !SHR AX, 2              ; Divide by 4 using right shift
+    !SHR AX, 1 ; Divide by 4 using rightV shift
+    !SHR AX, 1
     !MOV BX, AX             ; Store X/4 result
     
     ByteOffset = Y * ModeXSystemContext.LogicalWidth + BX
     BitMask = PlaneMaskTable(PlaneNumber)
     
     ' Set plane select register
+    mxPlane = ShiftL(1, StartPlane)
     !MOV DX, &H3C4          ; Sequencer Address Register
     !MOV AL, 2              ; Map Mask Register
     !OUT DX, AL
-    !INC DX                 ; Sequencer Data Register
+    !INC DX                 ; Sequencer dataBuf Register
     !MOV AL, BitMask
     !OUT DX, AL
     
@@ -176,7 +182,7 @@ SUB ModeX_PutPixel(BYVAL X AS WORD, BYVAL Y AS WORD, BYVAL Color AS BYTE)
     !MOV AX, &HA000
     !MOV ES, AX
     !MOV BX, ByteOffset
-    !MOV AL, Color
+    !MOV AL, colorVal
     !MOV ES:[BX], AL
     !POP ES
 END SUB
@@ -185,7 +191,7 @@ END SUB
 ' Get pixel from Mode-X
 ' Parameters:
 '   X, Y - Pixel coordinates (BYVAL)
-' Returns: Pixel color
+' Returns: Pixel colorVal
 ' =============================================================================
 FUNCTION ModeX_GetPixel(BYVAL X AS WORD, BYVAL Y AS WORD) AS BYTE
     DIM PlaneNumber AS BYTE, ByteOffset AS WORD, PixelValue AS BYTE
@@ -195,7 +201,8 @@ FUNCTION ModeX_GetPixel(BYVAL X AS WORD, BYVAL Y AS WORD) AS BYTE
     
     ' Ultra-fast X/4 using bit shift
     !MOV AX, X
-    !SHR AX, 2              ; Divide by 4 using right shift
+    !SHR AX, 1 ; Divide by 4 using rightV shift
+    !SHR AX, 1
     !MOV BX, AX             ; Store X/4 result
     
     ByteOffset = Y * ModeXSystemContext.LogicalWidth + BX
@@ -204,7 +211,7 @@ FUNCTION ModeX_GetPixel(BYVAL X AS WORD, BYVAL Y AS WORD) AS BYTE
     !MOV DX, &H3CE          ; Graphics Controller Address
     !MOV AL, 4              ; Read Map Select Register
     !OUT DX, AL
-    !INC DX                 ; Graphics Controller Data
+    !INC DX                 ; Graphics Controller dataBuf
     !MOV AL, PlaneNumber
     !OUT DX, AL
     
@@ -225,11 +232,11 @@ END FUNCTION
 ' Parameters:
 '   X1, X2 - Start and end X coordinates (BYVAL)
 '   Y - Y coordinate (BYVAL)
-'   Color - Line color (BYVAL)
+'   colorVal - Line colorVal (BYVAL)
 ' Returns: Nothing
 ' Note: Optimized for Mode-X planar mode, much faster than pixel-by-pixel
 ' =============================================================================
-SUB ModeX_HLine(BYVAL X1 AS WORD, BYVAL X2 AS WORD, BYVAL Y AS WORD, BYVAL Color AS BYTE)
+SUB ModeX_HLine(BYVAL X1 AS WORD, BYVAL X2 AS WORD, BYVAL Y AS WORD, BYVAL colorVal AS BYTE)
     DIM StartPlane AS BYTE, EndPlane AS BYTE, StartByte AS WORD, EndByte AS WORD
     DIM PlaneMask AS BYTE, CurrentByte AS WORD, ByteOffset AS WORD
     
@@ -242,25 +249,28 @@ SUB ModeX_HLine(BYVAL X1 AS WORD, BYVAL X2 AS WORD, BYVAL Y AS WORD, BYVAL Color
     
     ' Ultra-fast division using bit shifts
     !MOV AX, X1
-    !SHR AX, 2              ; X1/4
+    !SHR AX, 1 ; X1/4
+    !SHR AX, 1
     !MOV StartByte, AX
     !MOV AX, X2
-    !SHR AX, 2              ; X2/4
+    !SHR AX, 1 ; X2/4
+    !SHR AX, 1
     !MOV EndByte, AX
     ByteOffset = Y * ModeXSystemContext.LogicalWidth
     
     ' Set up VGA for block write
+    mxPlane = ShiftL(1, StartPlane)
     !MOV DX, &H3C4          ; Sequencer Address Register
     !MOV AL, 2              ; Map Mask Register
     !OUT DX, AL
-    !INC DX                 ; Sequencer Data Register
+    !INC DX                 ; Sequencer dataBuf Register
     
     IF StartByte = EndByte THEN
         ' Line fits in single byte across planes
         PlaneMask = 0
         DIM TempPlane AS BYTE
         FOR TempPlane = StartPlane TO EndPlane
-            PlaneMask = PlaneMask OR (1 SHL TempPlane)
+            PlaneMask = PlaneMask OR ShiftL(1, TempPlane)
         NEXT TempPlane
         
         !MOV AL, PlaneMask
@@ -271,7 +281,7 @@ SUB ModeX_HLine(BYVAL X1 AS WORD, BYVAL X2 AS WORD, BYVAL Y AS WORD, BYVAL Color
         !MOV ES, AX
         !MOV BX, ByteOffset
         !ADD BX, StartByte
-        !MOV AL, Color
+        !MOV AL, colorVal
         !MOV ES:[BX], AL
         !POP ES
     ELSE
@@ -279,7 +289,7 @@ SUB ModeX_HLine(BYVAL X1 AS WORD, BYVAL X2 AS WORD, BYVAL Y AS WORD, BYVAL Color
         
         ' First partial byte
         IF StartPlane > 0 THEN
-            PlaneMask = &HF SHL StartPlane
+            PlaneMask = ShiftL(&HF, StartPlane)
             !MOV AL, PlaneMask
             !OUT DX, AL
             
@@ -288,7 +298,7 @@ SUB ModeX_HLine(BYVAL X1 AS WORD, BYVAL X2 AS WORD, BYVAL Y AS WORD, BYVAL Color
             !MOV ES, AX
             !MOV BX, ByteOffset
             !ADD BX, StartByte
-            !MOV AL, Color
+            !MOV AL, colorVal
             !MOV ES:[BX], AL
             !POP ES
             
@@ -299,7 +309,7 @@ SUB ModeX_HLine(BYVAL X1 AS WORD, BYVAL X2 AS WORD, BYVAL Y AS WORD, BYVAL Color
         IF StartByte < EndByte THEN
             DIM ByteCount AS WORD, ColorWord AS WORD
             ByteCount = EndByte - StartByte
-            ColorWord = (Color * 256) + Color      ' AABBH pattern
+            ColorWord = (colorVal * 256) + colorVal      ' AABBH pattern
             
             !MOV AL, &HF        ; All planes
             !OUT DX, AL
@@ -316,7 +326,7 @@ SUB ModeX_HLine(BYVAL X1 AS WORD, BYVAL X2 AS WORD, BYVAL Y AS WORD, BYVAL Color
             !JZ ModeXHLineWordAlign ; Jump if even (word-aligned)
             !CMP CX, 0              ; Check if we have bytes to fill
             !JZ ModeXHLineFillDone  ; Done if no bytes
-            !MOV AL, Color
+            !MOV AL, colorVal
             !MOV ES:[BX], AL        ; Fill first byte
             !INC BX
             !DEC CX
@@ -326,7 +336,7 @@ SUB ModeX_HLine(BYVAL X1 AS WORD, BYVAL X2 AS WORD, BYVAL Y AS WORD, BYVAL Color
             ' Fill using WORD writes (2 bytes at a time)
             !MOV DX, CX
             !SHR CX, 1              ; Divide by 2 for word count
-            !JZ ModeXHLineRemainder ; Jump if less than 2 bytes left
+            !JZ ModeXHLineRemainder ; Jump if less than 2 bytes leftV
             !MOV AX, ColorWord
             
             ModeXHLineWordFill:
@@ -338,7 +348,7 @@ SUB ModeX_HLine(BYVAL X1 AS WORD, BYVAL X2 AS WORD, BYVAL Y AS WORD, BYVAL Color
             ' Handle remaining odd byte
             !TEST DX, 1             ; Check if original length was odd
             !JZ ModeXHLineFillDone  ; Jump if no remainder
-            !MOV AL, Color
+            !MOV AL, colorVal
             !MOV ES:[BX], AL        ; Fill last byte
             
             ModeXHLineFillDone:
@@ -347,7 +357,7 @@ SUB ModeX_HLine(BYVAL X1 AS WORD, BYVAL X2 AS WORD, BYVAL Y AS WORD, BYVAL Color
         
         ' Last partial byte
         IF EndPlane < 3 THEN
-            PlaneMask = (1 SHL (EndPlane + 1)) - 1
+            PlaneMask = ShiftL(1, EndPlane + 1) - 1
             !MOV AL, PlaneMask
             !OUT DX, AL
             
@@ -356,7 +366,7 @@ SUB ModeX_HLine(BYVAL X1 AS WORD, BYVAL X2 AS WORD, BYVAL Y AS WORD, BYVAL Color
             !MOV ES, AX
             !MOV BX, ByteOffset
             !ADD BX, EndByte
-            !MOV AL, Color
+            !MOV AL, colorVal
             !MOV ES:[BX], AL
             !POP ES
         END IF
@@ -368,11 +378,11 @@ END SUB
 ' Parameters:
 '   Y1, Y2 - Start and end Y coordinates (BYVAL)
 '   X - X coordinate (BYVAL)
-'   Color - Line color (BYVAL)
+'   colorVal - Line colorVal (BYVAL)
 ' Returns: Nothing
 ' Note: Optimized for Mode-X planar mode, much faster than pixel-by-pixel
 ' =============================================================================
-SUB ModeX_VLine(BYVAL Y1 AS WORD, BYVAL Y2 AS WORD, BYVAL X AS WORD, BYVAL Color AS BYTE)
+SUB ModeX_VLine(BYVAL Y1 AS WORD, BYVAL Y2 AS WORD, BYVAL X AS WORD, BYVAL colorVal AS BYTE)
     DIM StartPlane AS BYTE, ByteOffset AS WORD, CurrentY AS WORD
     
     ' Ensure Y1 <= Y2
@@ -382,25 +392,28 @@ SUB ModeX_VLine(BYVAL Y1 AS WORD, BYVAL Y2 AS WORD, BYVAL X AS WORD, BYVAL Color
     
     ' Ultra-fast X/4 using bit shift
     !MOV AX, X
-    !SHR AX, 2              ; Divide by 4
+    !SHR AX, 1 ; Divide by 4
+    !SHR AX, 1
     !MOV ByteOffset, AX
     
     ' Set up VGA for block write
+    mxPlane = ShiftL(1, StartPlane)
     !MOV DX, &H3C4          ; Sequencer Address Register
     !MOV AL, 2              ; Map Mask Register
     !OUT DX, AL
-    !INC DX                 ; Sequencer Data Register
-    !MOV AL, (1 SHL StartPlane) ; Enable only the relevant plane
+    !INC DX                 ; Sequencer dataBuf Register
+    !MOV AL, mxPlane ; Enable only the relevant plane
     !OUT DX, AL
     
+    mxLogW = ModeXSystemContext.LogicalWidth
     !PUSH ES
     !MOV AX, &HA000
     !MOV ES, AX
-    !MOV AL, Color
+    !MOV AL, colorVal
     
     FOR CurrentY = Y1 TO Y2
         !MOV BX, CurrentY
-        !MUL ModeXSystemContext.LogicalWidth
+        !MUL mxLogW
         !ADD BX, ByteOffset
         !MOV ES:[BX], AL
     NEXT CurrentY
@@ -411,21 +424,22 @@ END SUB
 ' =============================================================================
 ' Clear Mode-X screen
 ' Parameters:
-'   Color - Fill color (BYVAL)
+'   colorVal - Fill colorVal (BYVAL)
 ' Returns: Nothing
 ' Note: Very fast screen clear using Mode-X planar properties
 ' =============================================================================
-SUB ModeX_ClearScreen(BYVAL Color AS BYTE)
+SUB ModeX_ClearScreen(BYVAL colorVal AS BYTE)
     DIM TotalBytes AS WORD, ColorWord AS WORD
     
     TotalBytes = ModeXSystemContext.PageSize
-    ColorWord = (Color * 256) + Color      ' AABBH pattern
+    ColorWord = (colorVal * 256) + colorVal      ' AABBH pattern
     
     ' Enable all planes for writing
+    mxPlane = ShiftL(1, StartPlane)
     !MOV DX, &H3C4          ; Sequencer Address Register
     !MOV AL, 2              ; Map Mask Register
     !OUT DX, AL
-    !INC DX                 ; Sequencer Data Register
+    !INC DX                 ; Sequencer dataBuf Register
     !MOV AL, &HF            ; All planes enabled
     !OUT DX, AL
     
@@ -440,7 +454,7 @@ SUB ModeX_ClearScreen(BYVAL Color AS BYTE)
     ' Fill using WORD writes (2 bytes at a time)
     !MOV DX, CX
     !SHR CX, 1              ; Divide by 2 for word count
-    !JZ ModeXClearRemainder ; Jump if less than 2 bytes left
+    !JZ ModeXClearRemainder ; Jump if less than 2 bytes leftV
     !MOV AX, ColorWord
     
     ModeXClearWordFill:
@@ -452,7 +466,7 @@ SUB ModeX_ClearScreen(BYVAL Color AS BYTE)
     ' Handle remaining odd byte (if any)
     !TEST DX, 1             ; Check if original length was odd
     !JZ ModeXClearDone      ; Jump if no remainder
-    !MOV AL, Color
+    !MOV AL, colorVal
     !MOV ES:[BX], AL        ; Fill last byte
     
     ModeXClearDone:
@@ -464,22 +478,24 @@ END SUB
 ' Parameters:
 '   SrcX, SrcY - Source coordinates (BYVAL)
 '   DestX, DestY - Destination coordinates (BYVAL)
-'   Width, Height - Block dimensions (BYVAL)
+'   widthVal, Height - Block dimensions (BYVAL)
 ' Returns: Nothing
 ' Note: Optimized block copy using Mode-X planar mode
 ' =============================================================================
-SUB ModeX_CopyBlock(BYVAL srcX AS WORD, BYVAL srcY AS WORD, BYVAL destX AS WORD, BYVAL destY AS WORD, BYVAL width AS WORD, BYVAL height AS WORD)
+SUB ModeX_CopyBlock(BYVAL srcX AS WORD, BYVAL srcY AS WORD, BYVAL destX AS WORD, BYVAL destY AS WORD, BYVAL widthVal AS WORD, BYVAL height AS WORD)
     DIM CurrentY AS WORD, SrcOffset AS WORD, DestOffset AS WORD
     DIM SrcStartByte AS WORD, DestStartByte AS WORD, ByteWidth AS WORD
     
     ' Calculate byte-aligned parameters using fast assembly
     !MOV AX, SrcX
-    !SHR AX, 2              ; SrcX/4
+    !SHR AX, 1 ; SrcX/4
+    !SHR AX, 1
     !MOV SrcStartByte, AX
     !MOV AX, DestX
-    !SHR AX, 2              ; DestX/4
+    !SHR AX, 1 ; DestX/4
+    !SHR AX, 1
     !MOV DestStartByte, AX
-    ByteWidth = (Width + 3) \ 4  ' Round up to byte boundary
+    ByteWidth = (widthVal + 3) \ 4  ' Round up to byte boundary
     
     ' Process each plane separately for proper Mode-X copying
     DIM PlaneNum AS BYTE
@@ -488,17 +504,18 @@ SUB ModeX_CopyBlock(BYVAL srcX AS WORD, BYVAL srcY AS WORD, BYVAL destX AS WORD,
         !MOV DX, &H3CE          ; Graphics Controller Address
         !MOV AL, 4              ; Read Map Select Register
         !OUT DX, AL
-        !INC DX                 ; Graphics Controller Data
+        !INC DX                 ; Graphics Controller dataBuf
         !MOV AL, PlaneNum
         !OUT DX, AL
         
         ' Set write plane
-        !MOV DX, &H3C4          ; Sequencer Address Register
+    !MOV DX, &H3C4          ; Sequencer Address Register
         !MOV AL, 2              ; Map Mask Register
         !OUT DX, AL
-        !INC DX                 ; Sequencer Data Register
+        !INC DX                 ; Sequencer dataBuf Register
         !MOV AL, 1
-        !SHL AL, PlaneNum       ; Create plane mask
+        !MOV CL, PlaneNum
+        !SHL AL, CL             ; Create plane mask
         !OUT DX, AL
         
         ' Copy this plane
@@ -566,14 +583,9 @@ SUB SetModeXRegisters360x240
     RegisterValues(14) = &H00  ' Cursor Location High
     RegisterValues(15) = &H00  ' Cursor Location Low
     
-    !MOV DX, &H3D4
     FOR Index = 0 TO 15
-        !MOV AL, Index
-        !OUT DX, AL
-        !INC DX
-        !MOV AL, RegisterValues(Index)
-        !OUT DX, AL
-        !DEC DX
+        OUT &H3D4, Index
+        OUT (&H3D4 + 1), RegisterValues(Index)
     NEXT Index
 END SUB
 
@@ -592,7 +604,7 @@ SUB SetModeXRegisters320x400
     !MOV AL, &H06
     !OUT DX, AL
     !INC DX
-    !MOV AL, &HBF          ' Vertical total
+    !MOV AL, &HBF          ; Vertical total
     !OUT DX, AL
 END SUB
 
@@ -619,14 +631,9 @@ SUB SetModeXRegisters360x400
     RegisterValues(14) = &H00  ' Cursor Location High
     RegisterValues(15) = &H00  ' Cursor Location Low
     
-    !MOV DX, &H3D4
     FOR Index = 0 TO 15
-        !MOV AL, Index
-        !OUT DX, AL
-        !INC DX
-        !MOV AL, RegisterValues(Index)
-        !OUT DX, AL
-        !DEC DX
+        OUT &H3D4, Index
+        OUT (&H3D4 + 1), RegisterValues(Index)
     NEXT Index
 END SUB
 
@@ -653,14 +660,9 @@ SUB SetModeXRegisters320x480
     RegisterValues(14) = &H00  ' Cursor Location High
     RegisterValues(15) = &H00  ' Cursor Location Low
     
-    !MOV DX, &H3D4
     FOR Index = 0 TO 15
-        !MOV AL, Index
-        !OUT DX, AL
-        !INC DX
-        !MOV AL, RegisterValues(Index)
-        !OUT DX, AL
-        !DEC DX
+        OUT &H3D4, Index
+        OUT (&H3D4 + 1), RegisterValues(Index)
     NEXT Index
 END SUB
 
@@ -687,14 +689,9 @@ SUB SetModeXRegisters360x480
     RegisterValues(14) = &H00  ' Cursor Location High
     RegisterValues(15) = &H00  ' Cursor Location Low
     
-    !MOV DX, &H3D4
     FOR Index = 0 TO 15
-        !MOV AL, Index
-        !OUT DX, AL
-        !INC DX
-        !MOV AL, RegisterValues(Index)
-        !OUT DX, AL
-        !DEC DX
+        OUT &H3D4, Index
+        OUT (&H3D4 + 1), RegisterValues(Index)
     NEXT Index
 END SUB
 
@@ -721,14 +718,9 @@ SUB SetModeXRegisters256x256
     RegisterValues(14) = &H00  ' Cursor Location High
     RegisterValues(15) = &H00  ' Cursor Location Low
     
-    !MOV DX, &H3D4
     FOR Index = 0 TO 15
-        !MOV AL, Index
-        !OUT DX, AL
-        !INC DX
-        !MOV AL, RegisterValues(Index)
-        !OUT DX, AL
-        !DEC DX
+        OUT &H3D4, Index
+        OUT (&H3D4 + 1), RegisterValues(Index)
     NEXT Index
 END SUB
 
@@ -755,14 +747,9 @@ SUB SetModeXRegisters400x300
     RegisterValues(14) = &H00  ' Cursor Location High
     RegisterValues(15) = &H00  ' Cursor Location Low
     
-    !MOV DX, &H3D4
     FOR Index = 0 TO 15
-        !MOV AL, Index
-        !OUT DX, AL
-        !INC DX
-        !MOV AL, RegisterValues(Index)
-        !OUT DX, AL
-        !DEC DX
+        OUT &H3D4, Index
+        OUT (&H3D4 + 1), RegisterValues(Index)
     NEXT Index
 END SUB
 
@@ -775,20 +762,20 @@ END SUB
 ' Parameters:
 '   X1, Y1 - Starting point coordinates (BYVAL)
 '   X2, Y2 - Ending point coordinates (BYVAL)
-'   Color - Line color (BYVAL)
+'   colorVal - Line colorVal (BYVAL)
 ' Returns: Nothing
 ' Note: Optimized for Mode-X with special cases for horizontal/vertical lines
 ' =============================================================================
-SUB ModeX_LineDraw(BYVAL X1 AS WORD, BYVAL Y1 AS WORD, BYVAL X2 AS WORD, BYVAL Y2 AS WORD, BYVAL Color AS BYTE)
+SUB ModeX_LineDraw(BYVAL X1 AS WORD, BYVAL Y1 AS WORD, BYVAL X2 AS WORD, BYVAL Y2 AS WORD, BYVAL colorVal AS BYTE)
     ' Check for horizontal line
     IF Y1 = Y2 THEN
-        CALL ModeX_HLine(X1, X2, Y1, Color)
+        CALL ModeX_HLine(X1, X2, Y1, colorVal)
         EXIT SUB
     END IF
     
     ' Check for vertical line
     IF X1 = X2 THEN
-        CALL ModeX_VLine(Y1, Y2, X1, Color)
+        CALL ModeX_VLine(Y1, Y2, X1, colorVal)
         EXIT SUB
     END IF
     
@@ -818,17 +805,19 @@ SUB ModeX_LineDraw(BYVAL X1 AS WORD, BYVAL Y1 AS WORD, BYVAL X2 AS WORD, BYVAL Y
         
         ' Ultra-fast CurrentX/4 using bit shift
         !MOV AX, CurrentX
-        !SHR AX, 2              ; Divide by 4
+        !SHR AX, 1 ; Divide by 4
+        !SHR AX, 1
         !MOV BX, AX             ; Store CurrentX/4
         
         ByteOffset = CurrentY * ModeXSystemContext.LogicalWidth + BX
         BitMask = PlaneMaskTable(PlaneNumber)
         
         ' Set plane select register
-        !MOV DX, &H3C4          ; Sequencer Address Register
+        mxPlane = ShiftL(1, StartPlane)
+    !MOV DX, &H3C4          ; Sequencer Address Register
         !MOV AL, 2              ; Map Mask Register
         !OUT DX, AL
-        !INC DX                 ; Sequencer Data Register
+        !INC DX                 ; Sequencer dataBuf Register
         !MOV AL, BitMask
         !OUT DX, AL
         
@@ -837,7 +826,7 @@ SUB ModeX_LineDraw(BYVAL X1 AS WORD, BYVAL Y1 AS WORD, BYVAL X2 AS WORD, BYVAL Y
         !MOV AX, &HA000
         !MOV ES, AX
         !MOV BX, ByteOffset
-        !MOV AL, Color
+        !MOV AL, colorVal
         !MOV ES:[BX], AL
         !POP ES
         
@@ -863,13 +852,13 @@ END SUB
 ' =============================================================================
 ' Draw filled rectangle in Mode-X
 ' Parameters:
-'   X1, Y1 - Top-left corner (BYVAL)
-'   X2, Y2 - Bottom-right corner (BYVAL)
-'   Color - Fill color (BYVAL)
+'   X1, Y1 - Top-leftV corner (BYVAL)
+'   X2, Y2 - Bottom-rightV corner (BYVAL)
+'   colorVal - Fill colorVal (BYVAL)
 ' Returns: Nothing
 ' Note: Highly optimized for Mode-X planar architecture
 ' =============================================================================
-SUB ModeX_FillRect(BYVAL X1 AS WORD, BYVAL Y1 AS WORD, BYVAL X2 AS WORD, BYVAL Y2 AS WORD, BYVAL Color AS BYTE)
+SUB ModeX_FillRect(BYVAL X1 AS WORD, BYVAL Y1 AS WORD, BYVAL X2 AS WORD, BYVAL Y2 AS WORD, BYVAL colorVal AS BYTE)
     DIM ScanLine AS WORD
     
     ' Ensure coordinates are ordered
@@ -878,28 +867,28 @@ SUB ModeX_FillRect(BYVAL X1 AS WORD, BYVAL Y1 AS WORD, BYVAL X2 AS WORD, BYVAL Y
     
     ' Use optimized horizontal line drawing for each scanline
     FOR ScanLine = Y1 TO Y2
-        CALL ModeX_HLine(X1, X2, ScanLine, Color)
+        CALL ModeX_HLine(X1, X2, ScanLine, colorVal)
     NEXT ScanLine
 END SUB
 
 ' =============================================================================
 ' Draw rectangle outline in Mode-X
 ' Parameters:
-'   X1, Y1 - Top-left corner (BYVAL)
-'   X2, Y2 - Bottom-right corner (BYVAL)
-'   Color - Border color (BYVAL)
+'   X1, Y1 - Top-leftV corner (BYVAL)
+'   X2, Y2 - Bottom-rightV corner (BYVAL)
+'   colorVal - Border colorVal (BYVAL)
 ' Returns: Nothing
 ' =============================================================================
-SUB ModeX_DrawRect(BYVAL X1 AS WORD, BYVAL Y1 AS WORD, BYVAL X2 AS WORD, BYVAL Y2 AS WORD, BYVAL Color AS BYTE)
+SUB ModeX_DrawRect(BYVAL X1 AS WORD, BYVAL Y1 AS WORD, BYVAL X2 AS WORD, BYVAL Y2 AS WORD, BYVAL colorVal AS BYTE)
     ' Ensure coordinates are ordered
     IF X1 > X2 THEN SWAP X1, X2
     IF Y1 > Y2 THEN SWAP Y1, Y2
     
     ' Draw four sides using optimized line routines
-    CALL ModeX_HLine(X1, X2, Y1, Color)  ' Top
-    CALL ModeX_HLine(X1, X2, Y2, Color)  ' Bottom
-    CALL ModeX_VLine(Y1, Y2, X1, Color)  ' Left
-    CALL ModeX_VLine(Y1, Y2, X2, Color)  ' Right
+    CALL ModeX_HLine(X1, X2, Y1, colorVal)  ' Top
+    CALL ModeX_HLine(X1, X2, Y2, colorVal)  ' Bottom
+    CALL ModeX_VLine(Y1, Y2, X1, colorVal)  ' leftV
+    CALL ModeX_VLine(Y1, Y2, X2, colorVal)  ' rightV
 END SUB
 
 ' =============================================================================
@@ -907,11 +896,11 @@ END SUB
 ' Parameters:
 '   CenterX, CenterY - Center coordinates (BYVAL)
 '   Radius - Circle radius (BYVAL)
-'   Color - Circle color (BYVAL)
+'   colorVal - Circle colorVal (BYVAL)
 ' Returns: Nothing
 ' Note: Optimized for Mode-X with symmetry exploitation
 ' =============================================================================
-SUB ModeX_DrawCircle(BYVAL centerX AS WORD, BYVAL centerY AS WORD, BYVAL radius AS WORD, BYVAL color AS BYTE)
+SUB ModeX_DrawCircle(BYVAL centerX AS WORD, BYVAL centerY AS WORD, BYVAL radius AS WORD, BYVAL colorVal AS BYTE)
     DIM X AS INTEGER, Y AS INTEGER, DecisionParam AS INTEGER
     
     X = 0
@@ -919,10 +908,10 @@ SUB ModeX_DrawCircle(BYVAL centerX AS WORD, BYVAL centerY AS WORD, BYVAL radius 
     DecisionParam = 1 - Radius
     
     ' Draw initial points
-    CALL ModeX_PutPixel(CenterX, CenterY + Radius, Color)
-    CALL ModeX_PutPixel(CenterX, CenterY - Radius, Color)
-    CALL ModeX_PutPixel(CenterX + Radius, CenterY, Color)
-    CALL ModeX_PutPixel(CenterX - Radius, CenterY, Color)
+    CALL ModeX_PutPixel(CenterX, CenterY + Radius, colorVal)
+    CALL ModeX_PutPixel(CenterX, CenterY - Radius, colorVal)
+    CALL ModeX_PutPixel(CenterX + Radius, CenterY, colorVal)
+    CALL ModeX_PutPixel(CenterX - Radius, CenterY, colorVal)
     
     ' Draw circle using midpoint algorithm
     DO WHILE X < Y
@@ -936,14 +925,14 @@ SUB ModeX_DrawCircle(BYVAL centerX AS WORD, BYVAL centerY AS WORD, BYVAL radius 
         END IF
         
         ' Draw 8 symmetric points
-        CALL ModeX_PutPixel(CenterX + X, CenterY + Y, Color)
-        CALL ModeX_PutPixel(CenterX - X, CenterY + Y, Color)
-        CALL ModeX_PutPixel(CenterX + X, CenterY - Y, Color)
-        CALL ModeX_PutPixel(CenterX - X, CenterY - Y, Color)
-        CALL ModeX_PutPixel(CenterX + Y, CenterY + X, Color)
-        CALL ModeX_PutPixel(CenterX - Y, CenterY + X, Color)
-        CALL ModeX_PutPixel(CenterX + Y, CenterY - X, Color)
-        CALL ModeX_PutPixel(CenterX - Y, CenterY - X, Color)
+        CALL ModeX_PutPixel(CenterX + X, CenterY + Y, colorVal)
+        CALL ModeX_PutPixel(CenterX - X, CenterY + Y, colorVal)
+        CALL ModeX_PutPixel(CenterX + X, CenterY - Y, colorVal)
+        CALL ModeX_PutPixel(CenterX - X, CenterY - Y, colorVal)
+        CALL ModeX_PutPixel(CenterX + Y, CenterY + X, colorVal)
+        CALL ModeX_PutPixel(CenterX - Y, CenterY + X, colorVal)
+        CALL ModeX_PutPixel(CenterX + Y, CenterY - X, colorVal)
+        CALL ModeX_PutPixel(CenterX - Y, CenterY - X, colorVal)
     LOOP
 END SUB
 
@@ -952,11 +941,11 @@ END SUB
 ' Parameters:
 '   CenterX, CenterY - Center coordinates (BYVAL)
 '   Radius - Circle radius (BYVAL)
-'   Color - Fill color (BYVAL)
+'   colorVal - Fill colorVal (BYVAL)
 ' Returns: Nothing
 ' Note: Uses horizontal line fills for efficiency
 ' =============================================================================
-SUB ModeX_FillCircle(BYVAL centerX AS WORD, BYVAL centerY AS WORD, BYVAL radius AS WORD, BYVAL color AS BYTE)
+SUB ModeX_FillCircle(BYVAL centerX AS WORD, BYVAL centerY AS WORD, BYVAL radius AS WORD, BYVAL colorVal AS BYTE)
     DIM X AS INTEGER, Y AS INTEGER, DecisionParam AS INTEGER
     DIM PrevY AS INTEGER
     
@@ -966,7 +955,7 @@ SUB ModeX_FillCircle(BYVAL centerX AS WORD, BYVAL centerY AS WORD, BYVAL radius 
     PrevY = Y
     
     ' Draw initial horizontal line
-    CALL ModeX_HLine(CenterX - Radius, CenterX + Radius, CenterY, Color)
+    CALL ModeX_HLine(CenterX - Radius, CenterX + Radius, CenterY, colorVal)
     
     ' Fill circle using horizontal lines
     DO WHILE X < Y
@@ -977,8 +966,8 @@ SUB ModeX_FillCircle(BYVAL centerX AS WORD, BYVAL centerY AS WORD, BYVAL radius 
         ELSE
             ' Y changed, draw horizontal lines for previous Y
             IF Y <> PrevY THEN
-                CALL ModeX_HLine(CenterX - X + 1, CenterX + X - 1, CenterY + PrevY, Color)
-                CALL ModeX_HLine(CenterX - X + 1, CenterX + X - 1, CenterY - PrevY, Color)
+                CALL ModeX_HLine(CenterX - X + 1, CenterX + X - 1, CenterY + PrevY, colorVal)
+                CALL ModeX_HLine(CenterX - X + 1, CenterX + X - 1, CenterY - PrevY, colorVal)
                 PrevY = Y
             END IF
             
@@ -987,14 +976,14 @@ SUB ModeX_FillCircle(BYVAL centerX AS WORD, BYVAL centerY AS WORD, BYVAL radius 
         END IF
         
         ' Draw horizontal lines for current positions
-        CALL ModeX_HLine(CenterX - Y, CenterX + Y, CenterY + X, Color)
-        CALL ModeX_HLine(CenterX - Y, CenterX + Y, CenterY - X, Color)
+        CALL ModeX_HLine(CenterX - Y, CenterX + Y, CenterY + X, colorVal)
+        CALL ModeX_HLine(CenterX - Y, CenterX + Y, CenterY - X, colorVal)
     LOOP
     
     ' Draw final lines if Y changed
     IF Y <> PrevY THEN
-        CALL ModeX_HLine(CenterX - X, CenterX + X, CenterY + Y, Color)
-        CALL ModeX_HLine(CenterX - X, CenterX + X, CenterY - Y, Color)
+        CALL ModeX_HLine(CenterX - X, CenterX + X, CenterY + Y, colorVal)
+        CALL ModeX_HLine(CenterX - X, CenterX + X, CenterY - Y, colorVal)
     END IF
 END SUB
 
@@ -1019,20 +1008,22 @@ SUB ModeX_CopyPage(BYVAL srcPage AS BYTE, BYVAL destPage AS BYTE)
         !MOV DX, &H3CE          ; Graphics Controller Address
         !MOV AL, 4              ; Read Map Select Register
         !OUT DX, AL
-        !INC DX                 ; Graphics Controller Data
+        !INC DX                 ; Graphics Controller dataBuf
         !MOV AL, PlaneNum
         !OUT DX, AL
         
         ' Set write plane
-        !MOV DX, &H3C4          ; Sequencer Address Register
+    !MOV DX, &H3C4          ; Sequencer Address Register
         !MOV AL, 2              ; Map Mask Register
         !OUT DX, AL
-        !INC DX                 ; Sequencer Data Register
+        !INC DX                 ; Sequencer dataBuf Register
         !MOV AL, 1
-        !SHL AL, PlaneNum       ; Create plane mask
+        !MOV CL, PlaneNum
+        !SHL AL, CL             ; Create plane mask
         !OUT DX, AL
         
         ' Copy this plane
+        mxPgSz = ModeXSystemContext.PageSize
         !PUSH ES
         !PUSH DS
         !MOV AX, &HA000
@@ -1040,8 +1031,9 @@ SUB ModeX_CopyPage(BYVAL srcPage AS BYTE, BYVAL destPage AS BYTE)
         !MOV DS, AX
         !MOV SI, SrcOffset
         !MOV DI, DestOffset
-        !MOV CX, ModeXSystemContext.PageSize
-        !SHR CX, 2              ; Divide by 4 for planes
+        !MOV CX, mxPgSz
+        !SHR CX, 1 ; Divide by 4 for planes
+        !SHR CX, 1
         !CLD
         
         ' 8086-compatible copy loop
@@ -1084,15 +1076,22 @@ SUB ModeX_SetVisiblePage(BYVAL pageNumber AS BYTE)
     !MOV DX, &H3D4          ; CRT Controller Address
     !MOV AL, &HC            ; Start Address High Register
     !OUT DX, AL
-    !INC DX                 ; CRT Controller Data
+    !INC DX                 ; CRT Controller dataBuf
     !MOV AX, PageOffset
-    !SHR AX, 8              ; High byte of offset
+    !SHR AX, 1 ; High byte of offset
+    !SHR AX, 1
+    !SHR AX, 1
+    !SHR AX, 1
+    !SHR AX, 1
+    !SHR AX, 1
+    !SHR AX, 1
+    !SHR AX, 1
     !OUT DX, AL
     
     !DEC DX                 ; Back to Address register
     !MOV AL, &HD            ; Start Address Low Register
     !OUT DX, AL
-    !INC DX                 ; CRT Controller Data
+    !INC DX                 ; CRT Controller dataBuf
     !MOV AX, PageOffset
     !AND AX, &HFF           ; Low byte of offset
     !OUT DX, AL
@@ -1170,19 +1169,19 @@ SUB ModeX_SetFallback(BYVAL XRes AS WORD, BYVAL YRes AS WORD, BYVAL Colors AS WO
     
     CALL ModeX_SetMode(BestModeXType)
     VESASystemContext.CurrentMode = %SVGA_MODEX
-    CALL InitDispatchTable  ' Update function pointers for Mode-X
+    CALL Svga_InitDispatchTable  ' Update function pointers for Mode-X
 END SUB
 
 ' =============================================================================
 ' Optimized block fill using all planes at once
 ' Parameters:
-'   X1, Y1 - Top-left corner (BYVAL)
-'   X2, Y2 - Bottom-right corner (BYVAL) 
-'   Color - Fill color (BYVAL)
+'   X1, Y1 - Top-leftV corner (BYVAL)
+'   X2, Y2 - Bottom-rightV corner (BYVAL) 
+'   colorVal - Fill colorVal (BYVAL)
 ' Returns: Nothing
 ' Note: Extremely fast for large areas
 ' =============================================================================
-SUB ModeX_FastFill(BYVAL X1 AS WORD, BYVAL Y1 AS WORD, BYVAL X2 AS WORD, BYVAL Y2 AS WORD, BYVAL Color AS BYTE)
+SUB ModeX_FastFill(BYVAL X1 AS WORD, BYVAL Y1 AS WORD, BYVAL X2 AS WORD, BYVAL Y2 AS WORD, BYVAL colorVal AS BYTE)
     DIM StartByte AS WORD, EndByte AS WORD, ByteWidth AS WORD
     DIM CurrentY AS WORD, LineOffset AS WORD
     
@@ -1192,26 +1191,30 @@ SUB ModeX_FastFill(BYVAL X1 AS WORD, BYVAL Y1 AS WORD, BYVAL X2 AS WORD, BYVAL Y
     
     ' Ultra-fast division using bit shifts
     !MOV AX, X1
-    !SHR AX, 2              ; X1/4
+    !SHR AX, 1 ; X1/4
+    !SHR AX, 1
     !MOV StartByte, AX
     !MOV AX, X2
-    !SHR AX, 2              ; X2/4
+    !SHR AX, 1 ; X2/4
+    !SHR AX, 1
     !MOV EndByte, AX
     ByteWidth = EndByte - StartByte + 1
     
     ' Enable all planes for writing
+    mxPlane = ShiftL(1, StartPlane)
     !MOV DX, &H3C4          ; Sequencer Address Register
     !MOV AL, 2              ; Map Mask Register
     !OUT DX, AL
-    !INC DX                 ; Sequencer Data Register
+    !INC DX                 ; Sequencer dataBuf Register
     !MOV AL, &HF            ; All planes enabled
     !OUT DX, AL
     
     ' Fill the area
+    mxLogW = ModeXSystemContext.LogicalWidth
     !PUSH ES
     !MOV AX, &HA000
     !MOV ES, AX
-    !MOV AL, Color
+    !MOV AL, colorVal
     
     FOR CurrentY = Y1 TO Y2
         LineOffset = CurrentY * ModeXSystemContext.LogicalWidth + StartByte

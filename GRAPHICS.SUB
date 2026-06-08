@@ -7,10 +7,10 @@
 ' =============================================================================
 ' Draw a filled rectangle with border
 ' Parameters:
-'   X1, Y1 - Top-left corner coordinates (BYVAL)
-'   X2, Y2 - Bottom-right corner coordinates (BYVAL)
-'   BorderColor - Border color (BYVAL)
-'   FillColor - Fill color (BYVAL)
+'   X1, Y1 - Top-leftV corner coordinates (BYVAL)
+'   X2, Y2 - Bottom-rightV corner coordinates (BYVAL)
+'   BorderColor - Border colorVal (BYVAL)
+'   FillColor - Fill colorVal (BYVAL)
 ' Returns: Nothing
 ' =============================================================================
 SUB Graphics_Bar (BYVAL x1 AS WORD, BYVAL y1 AS WORD, BYVAL x2 AS WORD, BYVAL y2 AS WORD, BYVAL borderColor AS BYTE, BYVAL fillColor AS BYTE)
@@ -29,8 +29,8 @@ SUB Graphics_Bar (BYVAL x1 AS WORD, BYVAL y1 AS WORD, BYVAL x2 AS WORD, BYVAL y2
         ' Draw the border using optimized Mode-X horizontal/vertical line drawing
         CALL ModeX_HLine(x1, x2, y1, borderColor)  ' Top
         CALL ModeX_HLine(x1, x2, y2, borderColor)  ' Bottom
-        CALL ModeX_VLine(y1, y2, x1, borderColor)  ' Left
-        CALL ModeX_VLine(y1, y2, x2, borderColor)  ' Right
+        CALL ModeX_VLine(y1, y2, x1, borderColor)  ' leftV
+        CALL ModeX_VLine(y1, y2, x2, borderColor)  ' rightV
 		exit sub
 	end if
 
@@ -41,19 +41,19 @@ SUB Graphics_Bar (BYVAL x1 AS WORD, BYVAL y1 AS WORD, BYVAL x2 AS WORD, BYVAL y2
     
     ' Draw the border
     CALL Svga_LineDraw(x1, y1, x2, y1, borderColor)  ' Top
-    CALL Svga_LineDraw(x1, y1, x1, y2, borderColor)  ' Left
+    CALL Svga_LineDraw(x1, y1, x1, y2, borderColor)  ' leftV
     CALL Svga_LineDraw(x2, y2, x1, y2, borderColor)  ' Bottom
-    CALL Svga_LineDraw(x2, y2, x2, y1, borderColor)  ' Right
+    CALL Svga_LineDraw(x2, y2, x2, y1, borderColor)  ' rightV
 END SUB
 
 ' =============================================================================
 ' Draw a 3D-style bar with depth effect
 ' Parameters:
-'   X1, Y1 - Top-left corner coordinates (BYVAL)
-'   X2, Y2 - Bottom-right corner coordinates (BYVAL)
+'   X1, Y1 - Top-leftV corner coordinates (BYVAL)
+'   X2, Y2 - Bottom-rightV corner coordinates (BYVAL)
 '   Depth - 3D depth offset (BYVAL)
-'   BorderColor - Border and 3D edge color (BYVAL)
-'   FillColor - Fill color (BYVAL, 0 = no fill)
+'   BorderColor - Border and 3D edge colorVal (BYVAL)
+'   FillColor - Fill colorVal (BYVAL, 0 = no fill)
 ' Returns: Nothing
 ' =============================================================================
 SUB Graphics_Bar3d (BYVAL x1 AS WORD, BYVAL y1 AS WORD, BYVAL x2 AS WORD, BYVAL y2 AS WORD, BYVAL depth AS WORD, BYVAL borderColor AS BYTE, BYVAL fillColor AS BYTE)
@@ -64,7 +64,7 @@ SUB Graphics_Bar3d (BYVAL x1 AS WORD, BYVAL y1 AS WORD, BYVAL x2 AS WORD, BYVAL 
     IF X2 < X1 THEN SWAP X1, X2
     
     IF VESASystemContext.CurrentMode = %SVGA_MODEX THEN
-        ' Fill the main face if fill color specified
+        ' Fill the main face if fill colorVal specified
         IF FillColor > 0 THEN
             FOR ScanLine = Y1 TO Y2
                 CALL ModeX_HLine(X1, X2, ScanLine, FillColor)
@@ -74,41 +74,41 @@ SUB Graphics_Bar3d (BYVAL x1 AS WORD, BYVAL y1 AS WORD, BYVAL x2 AS WORD, BYVAL 
         ' Draw main rectangle border
         CALL ModeX_HLine(X1, X2, Y1, BorderColor)  ' Top
         CALL ModeX_HLine(X1, X2, Y2, BorderColor)  ' Bottom
-        CALL ModeX_VLine(Y1, Y2, X1, BorderColor)  ' Left
-        CALL ModeX_VLine(Y1, Y2, X2, BorderColor)  ' Right
+        CALL ModeX_VLine(Y1, Y2, X1, BorderColor)  ' leftV
+        CALL ModeX_VLine(Y1, Y2, X2, BorderColor)  ' rightV
     ELSE
-        ' Fill the main face if fill color specified
+        ' Fill the main face if fill colorVal specified
         IF FillColor > 0 THEN
             FOR ScanLine = Y1 TO Y2
-                CALL LINEDRAW(X1, ScanLine, X2, ScanLine, FillColor)
+                CALL Svga_LineDraw(X1, ScanLine, X2, ScanLine, FillColor)
             NEXT ScanLine
         END IF
         
         ' Draw main rectangle border
-        CALL LINEDRAW(X1, Y1, X2, Y1, BorderColor)  ' Top
-        CALL LINEDRAW(X1, Y1, X1, Y2, BorderColor)  ' Left
-        CALL LINEDRAW(X2, Y2, X1, Y2, BorderColor)  ' Bottom
-        CALL LINEDRAW(X2, Y2, X2, Y1, BorderColor)  ' Right
+        CALL Svga_LineDraw(X1, Y1, X2, Y1, BorderColor)  ' Top
+        CALL Svga_LineDraw(X1, Y1, X1, Y2, BorderColor)  ' leftV
+        CALL Svga_LineDraw(X2, Y2, X1, Y2, BorderColor)  ' Bottom
+        CALL Svga_LineDraw(X2, Y2, X2, Y1, BorderColor)  ' rightV
         
         ' Draw 3D depth lines
-        CALL LINEDRAW(X1, Y1, X1 + Depth, Y1 - Depth, BorderColor)        ' Top-left to back
-        CALL LINEDRAW(X2, Y1, X2 + Depth, Y1 - Depth, BorderColor)        ' Top-right to back
-        CALL LINEDRAW(X1 + Depth, Y1 - Depth, X2 + Depth, Y1 - Depth, BorderColor)  ' Back top edge
-        CALL LINEDRAW(X2, Y2, X2 + Depth, Y2 - Depth, BorderColor)        ' Bottom-right to back
-        CALL LINEDRAW(X2 + Depth, Y1 - Depth, X2 + Depth, Y2 - Depth, BorderColor)  ' Back right edge
+        CALL Svga_LineDraw(X1, Y1, X1 + Depth, Y1 - Depth, BorderColor)        ' Top-leftV to back
+        CALL Svga_LineDraw(X2, Y1, X2 + Depth, Y1 - Depth, BorderColor)        ' Top-rightV to back
+        CALL Svga_LineDraw(X1 + Depth, Y1 - Depth, X2 + Depth, Y1 - Depth, BorderColor)  ' Back top edge
+        CALL Svga_LineDraw(X2, Y2, X2 + Depth, Y2 - Depth, BorderColor)        ' Bottom-rightV to back
+        CALL Svga_LineDraw(X2 + Depth, Y1 - Depth, X2 + Depth, Y2 - Depth, BorderColor)  ' Back rightV edge
     END IF
 END SUB
 
 ' =============================================================================
-' Draw a filled box (wrapper for BAR with same border and fill color)
+' Draw a filled box (wrapper for BAR with same border and fill colorVal)
 ' Parameters:
-'   X1, Y1 - Top-left corner coordinates (BYVAL)
-'   X2, Y2 - Bottom-right corner coordinates (BYVAL)
-'   Color - Color for both border and fill (BYVAL)
+'   X1, Y1 - Top-leftV corner coordinates (BYVAL)
+'   X2, Y2 - Bottom-rightV corner coordinates (BYVAL)
+'   colorVal - colorVal for both border and fill (BYVAL)
 ' Returns: Nothing
 ' =============================================================================
-SUB Graphics_Box (BYVAL x1 AS WORD, BYVAL y1 AS WORD, BYVAL x2 AS WORD, BYVAL y2 AS WORD, BYVAL color AS BYTE)
-    CALL BAR(X1, Y1, X2, Y2, Color, Color)
+SUB Graphics_Box (BYVAL x1 AS WORD, BYVAL y1 AS WORD, BYVAL x2 AS WORD, BYVAL y2 AS WORD, BYVAL colorVal AS BYTE)
+    CALL Graphics_Bar(X1, Y1, X2, Y2, colorVal, colorVal)
 END SUB
 
 ' =============================================================================
@@ -118,11 +118,11 @@ END SUB
 '   RadiusX, RadiusY - X and Y radius (BYVAL)
 '   StartAngle - Starting angle in degrees (BYVAL)
 '   EndAngle - Ending angle in degrees (BYVAL)
-'   Color - Drawing color (BYVAL)
+'   colorVal - Drawing colorVal (BYVAL)
 '   FillMode - 0=outline, 1=filled (BYVAL)
 ' Returns: Nothing
 ' =============================================================================
-SUB Graphics_CircleDraw (BYVAL centerX AS WORD, BYVAL centerY AS WORD, BYVAL radiusX AS WORD, BYVAL radiusY AS WORD, BYVAL startAngle AS SINGLE, BYVAL endAngle AS SINGLE, BYVAL color AS BYTE, BYVAL fillMode AS BYTE)
+SUB Graphics_CircleDraw (BYVAL centerX AS WORD, BYVAL centerY AS WORD, BYVAL radiusX AS WORD, BYVAL radiusY AS WORD, BYVAL startAngle AS SINGLE, BYVAL endAngle AS SINGLE, BYVAL colorVal AS BYTE, BYVAL fillMode AS BYTE)
     DIM PI AS SINGLE, StepSize AS SINGLE, Angle AS SINGLE
     DIM X AS WORD, Y AS WORD, OldX AS WORD, OldY AS WORD
     DIM FillY AS WORD, FillStartX AS WORD, FillEndX AS WORD
@@ -150,7 +150,7 @@ SUB Graphics_CircleDraw (BYVAL centerX AS WORD, BYVAL centerY AS WORD, BYVAL rad
             OldY = Y
             X = INT(CenterX + RadiusX * COS(Angle * PI / 180))
             Y = INT(CenterY + RadiusY * SIN(Angle * PI / 180))
-            CALL LINEDRAW(OldX, OldY, X, Y, Color)
+            CALL Svga_LineDraw(OldX, OldY, X, Y, colorVal)
         NEXT Angle
     ELSE
         ' Draw filled circle by drawing horizontal lines
@@ -164,7 +164,7 @@ SUB Graphics_CircleDraw (BYVAL centerX AS WORD, BYVAL centerY AS WORD, BYVAL rad
                     XOffset = SQR(1 - YOffset * YOffset) * RadiusX
                     FillStartX = CenterX - INT(XOffset)
                     FillEndX = CenterX + INT(XOffset)
-                    CALL LINEDRAW(FillStartX, FillY, FillEndX, FillY, Color)
+                    CALL Svga_LineDraw(FillStartX, FillY, FillEndX, FillY, colorVal)
                 END IF
             END IF
         NEXT FillY
@@ -174,20 +174,20 @@ END SUB
 ' =============================================================================
 ' Draw a rectangle outline
 ' Parameters:
-'   X1, Y1 - Top-left corner coordinates (BYVAL)
-'   X2, Y2 - Bottom-right corner coordinates (BYVAL)
-'   Color - Border color (BYVAL)
+'   X1, Y1 - Top-leftV corner coordinates (BYVAL)
+'   X2, Y2 - Bottom-rightV corner coordinates (BYVAL)
+'   colorVal - Border colorVal (BYVAL)
 ' Returns: Nothing
 ' =============================================================================
-SUB Graphics_Frame (BYVAL x1 AS WORD, BYVAL y1 AS WORD, BYVAL x2 AS WORD, BYVAL y2 AS WORD, BYVAL color AS BYTE)
+SUB Graphics_Frame (BYVAL x1 AS WORD, BYVAL y1 AS WORD, BYVAL x2 AS WORD, BYVAL y2 AS WORD, BYVAL colorVal AS BYTE)
     ' Ensure coordinates are properly ordered
     IF Y2 < Y1 THEN SWAP Y1, Y2
     IF X2 < X1 THEN SWAP X1, X2
     
     ' Draw the four sides
-    CALL LINEDRAW(X1, Y1, X2, Y1, Color)  ' Top
-    CALL LINEDRAW(X1, Y1, X1, Y2, Color)  ' Left
-    CALL LINEDRAW(X2, Y2, X1, Y2, Color)  ' Bottom
-    CALL LINEDRAW(X2, Y2, X2, Y1, Color)  ' Right
+    CALL Svga_LineDraw(X1, Y1, X2, Y1, colorVal)  ' Top
+    CALL Svga_LineDraw(X1, Y1, X1, Y2, colorVal)  ' leftV
+    CALL Svga_LineDraw(X2, Y2, X1, Y2, colorVal)  ' Bottom
+    CALL Svga_LineDraw(X2, Y2, X2, Y1, colorVal)  ' rightV
 END SUB
 

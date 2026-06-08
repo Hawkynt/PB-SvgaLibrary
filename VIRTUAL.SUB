@@ -46,7 +46,7 @@ END FUNCTION
 ' =============================================================================
 ' Set virtual window/viewport for coordinate mapping
 ' Parameters:
-'   MaxX - Virtual screen width (BYVAL)
+'   MaxX - Virtual screen widthVal (BYVAL)
 '   MaxY - Virtual screen height (BYVAL)
 ' Returns: Nothing
 ' Note: Maps virtual coordinates to physical screen coordinates
@@ -72,8 +72,8 @@ END SUB
 ' =============================================================================
 ' Set clipping viewport for drawing operations
 ' Parameters:
-'   X1, Y1 - Top-left corner of viewport (BYVAL)
-'   X2, Y2 - Bottom-right corner of viewport (BYVAL)
+'   X1, Y1 - Top-leftV corner of viewport (BYVAL)
+'   X2, Y2 - Bottom-rightV corner of viewport (BYVAL)
 ' Returns: Nothing
 ' Note: All subsequent drawing operations will be clipped to this region
 ' =============================================================================
@@ -99,7 +99,7 @@ END SUB
 ' Parameters:
 '   VirtualX, VirtualY - Virtual coordinates (BYVAL)
 '   PhysicalX, PhysicalY - Output physical coordinates (BYREF)
-' Returns: Nothing (coordinates returned via BYREF parameters)
+' Returns: Nothing (coordinates returned via parameters)
 ' Note: Applies scaling and offset transformations
 ' =============================================================================
 SUB Virtual_ToPhysical(BYVAL virtualX AS WORD, BYVAL virtualY AS WORD, physicalX AS WORD, physicalY AS WORD)
@@ -144,7 +144,7 @@ END FUNCTION
 ' Parameters:
 '   PhysicalX, PhysicalY - Physical coordinates (BYVAL)
 '   VirtualX, VirtualY - Output virtual coordinates (BYREF)
-' Returns: Nothing (coordinates returned via BYREF parameters)
+' Returns: Nothing (coordinates returned via parameters)
 ' Note: Reverse transformation for mouse/input coordinate mapping
 ' =============================================================================
 SUB Virtual_ToVirtual(BYVAL physicalX AS WORD, BYVAL physicalY AS WORD, virtualX AS WORD, virtualY AS WORD)
@@ -166,7 +166,7 @@ END SUB
 ' Get current virtual screen dimensions
 ' Parameters:
 '   VirtualWidth, VirtualHeight - Output dimensions (BYREF)
-' Returns: Nothing (dimensions returned via BYREF parameters)
+' Returns: Nothing (dimensions returned via parameters)
 ' =============================================================================
 SUB Virtual_GetDimensions(VirtualWidth AS WORD, VirtualHeight AS WORD)
     VirtualWidth = ScaleSystemContext.XScaleMax
@@ -177,7 +177,7 @@ END SUB
 ' Get current viewport dimensions
 ' Parameters:
 '   X1, Y1, X2, Y2 - Output viewport bounds (BYREF)
-' Returns: Nothing (bounds returned via BYREF parameters)
+' Returns: Nothing (bounds returned via parameters)
 ' =============================================================================
 SUB Virtual_GetViewport(X1 AS WORD, Y1 AS WORD, X2 AS WORD, Y2 AS WORD)
     X1 = WindowSystemContext.X1
@@ -220,7 +220,7 @@ END SUB
 ' Get current virtual coordinate offset
 ' Parameters:
 '   XOffset, YOffset - Output offset values (BYREF)
-' Returns: Nothing (offsets returned via BYREF parameters)
+' Returns: Nothing (offsets returned via parameters)
 ' =============================================================================
 SUB Virtual_GetOffset(XOffset AS INTEGER, YOffset AS INTEGER)
     XOffset = VESASystemContext.XDecrease

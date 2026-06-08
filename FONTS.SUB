@@ -21,8 +21,8 @@ SUB Fonts_InitFont (BYVAL fontFile AS STRING, BYVAL displayMode AS BYTE)
     DIM Byte1 AS STRING, Byte2 AS STRING, Byte3 AS STRING, Byte4 AS STRING
     DIM Byte5 AS STRING, Byte6 AS STRING, Byte7 AS STRING, Byte8 AS STRING
     
-    ' Clear previous font data
-    FontSystemContext.Data = ""
+    ' Clear previous font dataBuf
+    FontDataStore = ""
     
     ' Display loading information based on mode
     IF displayMode = 1 THEN
@@ -62,8 +62,8 @@ SUB Fonts_InitFont (BYVAL fontFile AS STRING, BYVAL displayMode AS BYTE)
             Byte7 = MID$(InputLine, Pos6 + 1, Pos7 - Pos6 - 1)
             Byte8 = RIGHT$(InputLine, Pos8 - Pos7)
             
-            ' Convert to binary and append to font data
-            FontSystemContext.Data = FontSystemContext.Data + CHR$(VAL(Byte1)) + CHR$(VAL(Byte2)) + CHR$(VAL(Byte3)) + CHR$(VAL(Byte4)) + CHR$(VAL(Byte5)) + CHR$(VAL(Byte6)) + CHR$(VAL(Byte7)) + CHR$(VAL(Byte8))
+            ' Convert to binary and append to font dataBuf
+            FontDataStore = FontDataStore + CHR$(VAL(Byte1)) + CHR$(VAL(Byte2)) + CHR$(VAL(Byte3)) + CHR$(VAL(Byte4)) + CHR$(VAL(Byte5)) + CHR$(VAL(Byte6)) + CHR$(VAL(Byte7)) + CHR$(VAL(Byte8))
             
             ' Show progress in verbose mode
             IF displayMode = 1 THEN
@@ -88,15 +88,15 @@ SUB Fonts_InitFont (BYVAL fontFile AS STRING, BYVAL displayMode AS BYTE)
     ' Set standard 8x8 character dimensions
     FontSystemContext.CharWidth = 8
     FontSystemContext.CharHeight = 8
-    FontSystemContext.LoadPath = fontFile
+    FontLoadPathStore = fontFile
 END SUB
 
 ' =============================================================================
 ' Print text using loaded bitmap font to VGA screen
 ' Parameters:
 '   X, Y - Text position coordinates (BYVAL)
-'   ForeColor - Text color (BYVAL)
-'   BackColor - Background color (BYVAL)
+'   ForeColor - Text colorVal (BYVAL)
+'   BackColor - Background colorVal (BYVAL)
 '   Text - Text string to display (BYREF)
 '   Flags - Display flags: 1=scale coordinates, 2=clear background, 4=use text coordinates (BYVAL)
 ' Returns: Nothing
@@ -121,8 +121,8 @@ SUB Fonts_VgaPrint (BYVAL x AS WORD, BYVAL y AS WORD, BYVAL foreColor AS BYTE, B
     FOR CharIndex = 1 TO LEN(text)
         CharCode = ASC(MID$(text, CharIndex, 1))
         
-        ' Extract 8-byte character pattern from font data
-        CharData = MID$(FontSystemContext.Data, CharCode * 8 + 1, 8)
+        ' Extract 8-byte character pattern from font dataBuf
+        CharData = MID$(FontDataStore, CharCode * 8 + 1, 8)
         
         ' Draw each row of the character (8 rows)
         FOR RowIndex = 1 TO 8
@@ -163,8 +163,8 @@ END SUB
 ' Print text using loaded bitmap font to BMP buffer
 ' Parameters:
 '   X, Y - Text position coordinates (BYVAL)
-'   ForeColor - Text color (BYVAL)
-'   BackColor - Background color (BYVAL)
+'   ForeColor - Text colorVal (BYVAL)
+'   BackColor - Background colorVal (BYVAL)
 '   Text - Text string to display (BYREF)
 '   Flags - Display flags: 1=scale coordinates, 2=clear background, 4=use text coordinates (BYVAL)
 ' Returns: Nothing
@@ -189,8 +189,8 @@ SUB Fonts_BmpPrint (BYVAL x AS WORD, BYVAL y AS WORD, BYVAL foreColor AS BYTE, B
     FOR CharIndex = 1 TO LEN(text)
         CharCode = ASC(MID$(text, CharIndex, 1))
         
-        ' Extract 8-byte character pattern from font data
-        CharData = MID$(FontSystemContext.Data, CharCode * 8 + 1, 8)
+        ' Extract 8-byte character pattern from font dataBuf
+        CharData = MID$(FontDataStore, CharCode * 8 + 1, 8)
         
         ' Draw each row of the character (8 rows)
         FOR RowIndex = 1 TO 8
@@ -232,13 +232,13 @@ END SUB
 ' Parameters: None
 ' Returns: Nothing (information accessed via FontSystemContext)
 ' Note: Font dimensions available in FontSystemContext.CharWidth/CharHeight
-'       Font data available in FontSystemContext.Data
-'       Font file path available in FontSystemContext.LoadPath
+'       Font dataBuf available in FontDataStore
+'       Font file path available in FontLoadPathStore
 ' =============================================================================
 SUB Fonts_GetFontInfo()
     ' Font information is available through the global FontSystemContext:
-    ' FontSystemContext.CharWidth - Character width (typically 8)
+    ' FontSystemContext.CharWidth - Character widthVal (typically 8)
     ' FontSystemContext.CharHeight - Character height (typically 8) 
-    ' FontSystemContext.Data - Complete font bitmap data
-    ' FontSystemContext.LoadPath - Path to loaded font file
+    ' FontDataStore - Complete font bitmap dataBuf
+    ' FontLoadPathStore - Path to loaded font file
 END SUB

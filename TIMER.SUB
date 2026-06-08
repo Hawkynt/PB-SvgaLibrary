@@ -1,3 +1,6 @@
+DIM zvOff AS SHARED INTEGER
+DIM zvSeg AS SHARED INTEGER
+DIM zfptr AS SHARED DWORD
 ' =============================================================================
 ' TIMER.SUB - High-Precision Timer System
 ' =============================================================================
@@ -11,7 +14,6 @@
 ' =============================================================================
 ' Timer system global variables
 ' =============================================================================
-DIM SHARED TimerSystemContext AS TimerContextType
 
 ' =============================================================================
 ' Initialize 10ms precision timer system
@@ -28,10 +30,9 @@ SUB Timer_Init
     TimerSystemContext.LastSystemTick = 0
     
     ' Get initial system timer value
-    !MOV AH, 0              ; Get system time
-    !INT &H1A               ; BIOS time services
-    !MOV WORD PTR TimerSystemContext.LastSystemTick, DX
-    !MOV WORD PTR TimerSystemContext.LastSystemTick+2, CX
+    DEF SEG = &H40
+    TimerSystemContext.LastSystemTick = CVL(CHR$(PEEK(&H6C)) + CHR$(PEEK(&H6D)) + CHR$(PEEK(&H6E)) + CHR$(PEEK(&H6F)))
+    DEF SEG
 END SUB
 
 ' =============================================================================
@@ -45,14 +46,13 @@ FUNCTION Timer_GetTimerTick AS LONG
     DIM TickDifference AS LONG
     
     IF TimerSystemContext.IsInitialized = 0 THEN
-        CALL INITTIMER
+        CALL Timer_Init
     END IF
     
     ' Get current system timer
-    !MOV AH, 0              ; Get system time
-    !INT &H1A               ; BIOS time services  
-    !MOV WORD PTR CurrentSysTick, DX
-    !MOV WORD PTR CurrentSysTick+2, CX
+    DEF SEG = &H40
+    CurrentSysTick = CVL(CHR$(PEEK(&H6C)) + CHR$(PEEK(&H6D)) + CHR$(PEEK(&H6E)) + CHR$(PEEK(&H6F)))
+    DEF SEG
     
     ' Calculate difference (handles midnight rollover)
     TickDifference = CurrentSysTick - TimerSystemContext.LastSystemTick
@@ -65,7 +65,7 @@ FUNCTION Timer_GetTimerTick AS LONG
     TimerSystemContext.TickCount = TimerSystemContext.TickCount + (TickDifference * 549) \ 100
     TimerSystemContext.LastSystemTick = CurrentSysTick
     
-    GETTIMERTICK = TimerSystemContext.TickCount
+    Timer_GetTimerTick = TimerSystemContext.TickCount
 END FUNCTION
 
 ' =============================================================================
@@ -80,22 +80,22 @@ SUB Timer_WaitTicks(BYVAL tickCount AS WORD)
     
     IF TickCount = 0 THEN EXIT SUB
     
-    StartTick = GETTIMERTICK
+    StartTick = Timer_GetTimerTick
     DO
-        CurrentTick = GETTIMERTICK
+        CurrentTick = Timer_GetTimerTick
     LOOP WHILE (CurrentTick - StartTick) < TickCount
 END SUB
 
 ' =============================================================================
-' Set animation timer delay
+' Set animation timer DlyUnits
 ' Parameters:
-'   FrameDelay - Delay in 10ms units (BYVAL)
+'   FrameDelay - DlyUnits in 10ms units (BYVAL)
 ' Returns: Nothing
 ' Note: Sets up non-blocking animation timer
 ' =============================================================================
 SUB Timer_SetAnimTimer(BYVAL frameDelay AS WORD)
     TimerSystemContext.AnimDelay = FrameDelay
-    TimerSystemContext.AnimTimer = GETTIMERTICK + FrameDelay
+    TimerSystemContext.AnimTimer = Timer_GetTimerTick + FrameDelay
 END SUB
 
 ' =============================================================================
@@ -108,29 +108,29 @@ FUNCTION Timer_AnimTimerReady AS BYTE
     DIM CurrentTick AS LONG
     
     IF TimerSystemContext.AnimDelay = 0 THEN
-        ANIMTIMERREADY = 0
+        Timer_AnimTimerReady = 0
         EXIT FUNCTION
     END IF
     
-    CurrentTick = GETTIMERTICK
+    CurrentTick = Timer_GetTimerTick
     IF CurrentTick >= TimerSystemContext.AnimTimer THEN
         ' Reset timer for next frame
         TimerSystemContext.AnimTimer = CurrentTick + TimerSystemContext.AnimDelay
-        ANIMTIMERREADY = 1
+        Timer_AnimTimerReady = 1
     ELSE
-        ANIMTIMERREADY = 0
+        Timer_AnimTimerReady = 0
     END IF
 END FUNCTION
 
 ' =============================================================================
-' High-resolution delay function
+' High-resolution DlyUnits function
 ' Parameters:
-'   Count - Number of 10ms periods to delay (BYVAL)
+'   Count - Number of 10ms periods to DlyUnits (BYVAL)
 ' Returns: Nothing
 ' Note: More accurate than BASIC SLEEP
 ' =============================================================================
 SUB Timer_Delay10Ms(BYVAL count AS WORD)
-    CALL WAITTICKS(Count)
+    CALL Timer_WaitTicks(Count)
 END SUB
 
 ' =============================================================================
@@ -139,7 +139,7 @@ END SUB
 ' Returns: Elapsed time in 10ms ticks (LONG)
 ' =============================================================================
 FUNCTION Timer_GetElapsedTime AS LONG
-    GETELAPSEDTIME = GETTIMERTICK
+    Timer_GetElapsedTime = Timer_GetTimerTick
 END FUNCTION
 
 ' =============================================================================
@@ -153,10 +153,9 @@ SUB Timer_Reset
     TimerSystemContext.AnimTimer = 0
     
     ' Get current system timer
-    !MOV AH, 0              ; Get system time
-    !INT &H1A               ; BIOS time services
-    !MOV WORD PTR TimerSystemContext.LastSystemTick, DX
-    !MOV WORD PTR TimerSystemContext.LastSystemTick+2, CX
+    DEF SEG = &H40
+    TimerSystemContext.LastSystemTick = CVL(CHR$(PEEK(&H6C)) + CHR$(PEEK(&H6D)) + CHR$(PEEK(&H6E)) + CHR$(PEEK(&H6F)))
+    DEF SEG
 END SUB
 
 ' =============================================================================
@@ -167,13 +166,13 @@ END SUB
 ' =============================================================================
 SUB Timer_Cleanup
     ' Disable interrupt timer if installed
-    CALL OFFTIMER
-    CALL RESTORETIMER
+    CALL Timer_OffTimer
+    CALL Timer_Restore
     
     ' Cleanup all named timers
     DIM I AS BYTE
     FOR I = 0 TO 7
-        CALL DESTROYTIMER(I)
+        CALL Timer_Destroy(I)
     NEXT I
     
     ' Reset context
@@ -192,15 +191,15 @@ END SUB
 ' Create a named timer
 ' Parameters:
 '   TimerName - Timer identifier (BYVAL)
-'   DelayTicks - Delay in 10ms units (BYVAL)
+'   DelayTicks - DlyUnits in 10ms units (BYVAL)
 ' Returns: Nothing
 ' Note: Supports up to 8 named timers
 ' =============================================================================
 SUB Timer_Create(BYVAL timerName AS BYTE, BYVAL delayTicks AS WORD)
     IF TimerName >= 8 THEN EXIT SUB
     
-    TimerSystemContext.NamedTimers(TimerName).Delay = DelayTicks
-    TimerSystemContext.NamedTimers(TimerName).NextTick = GETTIMERTICK + DelayTicks
+    TimerSystemContext.NamedTimers(TimerName).DlyUnits = DelayTicks
+    TimerSystemContext.NamedTimers(TimerName).NextTick = Timer_GetTimerTick + DelayTicks
     TimerSystemContext.NamedTimers(TimerName).Active = 1
 END SUB
 
@@ -214,22 +213,22 @@ FUNCTION Timer_IsTimerReady(BYVAL timerName AS BYTE) AS BYTE
     DIM CurrentTick AS LONG
     
     IF TimerName >= 8 THEN
-        ISTIMERREADY = 0
+        Timer_IsTimerReady = 0
         EXIT FUNCTION
     END IF
     
     IF TimerSystemContext.NamedTimers(TimerName).Active = 0 THEN
-        ISTIMERREADY = 0
+        Timer_IsTimerReady = 0
         EXIT FUNCTION
     END IF
     
-    CurrentTick = GETTIMERTICK
+    CurrentTick = Timer_GetTimerTick
     IF CurrentTick >= TimerSystemContext.NamedTimers(TimerName).NextTick THEN
         ' Reset timer for next interval
-        TimerSystemContext.NamedTimers(TimerName).NextTick = CurrentTick + TimerSystemContext.NamedTimers(TimerName).Delay
-        ISTIMERREADY = 1
+        TimerSystemContext.NamedTimers(TimerName).NextTick = CurrentTick + TimerSystemContext.NamedTimers(TimerName).DlyUnits
+        Timer_IsTimerReady = 1
     ELSE
-        ISTIMERREADY = 0
+        Timer_IsTimerReady = 0
     END IF
 END FUNCTION
 
@@ -243,7 +242,7 @@ SUB Timer_Destroy(BYVAL timerName AS BYTE)
     IF TimerName >= 8 THEN EXIT SUB
     
     TimerSystemContext.NamedTimers(TimerName).Active = 0
-    TimerSystemContext.NamedTimers(TimerName).Delay = 0
+    TimerSystemContext.NamedTimers(TimerName).DlyUnits = 0
     TimerSystemContext.NamedTimers(TimerName).NextTick = 0
 END SUB
 
@@ -251,7 +250,7 @@ END SUB
 ' ON TIMER Interrupt-Driven System
 ' =============================================================================
 
-DIM SHARED TimerInterrupt AS TimerInterruptType
+DIM TimerInterrupt AS SHARED TimerInterruptType
 
 ' =============================================================================
 ' Install timer interrupt handler (ON TIMER equivalent)
@@ -265,7 +264,7 @@ FUNCTION Timer_OnTimer(BYVAL intervalMs AS WORD, BYVAL handlerRoutine AS DWORD) 
     DIM InterruptMask AS BYTE
     
     ' Remove existing timer if installed
-    IF TimerInterrupt.IsInstalled THEN CALL OFFTIMER
+    IF TimerInterrupt.IsInstalled THEN CALL Timer_OffTimer
     
     ' Convert milliseconds to system timer ticks
     ' System timer runs at 18.2 Hz (54.945ms per tick)
@@ -279,24 +278,27 @@ FUNCTION Timer_OnTimer(BYVAL intervalMs AS WORD, BYVAL handlerRoutine AS DWORD) 
     !PUSH ES
     !MOV AX, &H3508             ; Get interrupt vector service
     !INT &H21                   ; DOS interrupt
-    !MOV WORD PTR TimerInterrupt.OldVector, BX      ; Offset
-    !MOV WORD PTR TimerInterrupt.OldVector+2, ES    ; Segment
+    !MOV zvOff, BX
+    !MOV zvSeg, ES
     !POP ES
+    TimerInterrupt.OldVector = CVL(MKI$(zvOff) + MKI$(zvSeg))
     
     ' Set our timer interrupt handler
-    TimerInterrupt.HandlerAddress = CODEPTR(TimerInterruptHandler)
+    TimerInterrupt.HandlerAddress = CODEPTR(Timer_InterruptHandler)
     
+    zvOff = CVI(LEFT$(MKL$(TimerInterrupt.HandlerAddress), 2))
+    zvSeg = CVI(RIGHT$(MKL$(TimerInterrupt.HandlerAddress), 2))
     !CLI                        ; Disable interrupts
     !PUSH DS
     !MOV AX, &H2508             ; Set interrupt vector service
-    !MOV DX, WORD PTR TimerInterrupt.HandlerAddress     ; Offset
-    !MOV DS, WORD PTR TimerInterrupt.HandlerAddress+2   ; Segment
+    !MOV DX, zvOff
+    !MOV DS, zvSeg
     !INT &H21                   ; DOS interrupt
     !POP DS
     !STI                        ; Re-enable interrupts
     
     TimerInterrupt.IsInstalled = 1
-    ONTIMER = 1
+    Timer_OnTimer = 1
 END FUNCTION
 
 ' =============================================================================
@@ -308,11 +310,13 @@ SUB Timer_OffTimer
     IF TimerInterrupt.IsInstalled = 0 THEN EXIT SUB
     
     ' Restore original interrupt vector
+    zvOff = CVI(LEFT$(MKL$(TimerInterrupt.OldVector), 2))
+    zvSeg = CVI(RIGHT$(MKL$(TimerInterrupt.OldVector), 2))
     !CLI                        ; Disable interrupts
     !PUSH DS
     !MOV AX, &H2508             ; Set interrupt vector service
-    !MOV DX, WORD PTR TimerInterrupt.OldVector      ; Original offset
-    !MOV DS, WORD PTR TimerInterrupt.OldVector+2    ; Original segment
+    !MOV DX, zvOff
+    !MOV DS, zvSeg
     !INT &H21                   ; DOS interrupt
     !POP DS
     !STI                        ; Re-enable interrupts
@@ -330,7 +334,6 @@ END SUB
 ' Note: This is called by the system timer interrupt
 ' =============================================================================
 SUB Timer_InterruptHandler
-    SHARED TimerTickCounter AS WORD STATIC
     
     ' Increment our tick counter
     TimerTickCounter = TimerTickCounter + 1
@@ -341,22 +344,36 @@ SUB Timer_InterruptHandler
         
         ' Call user routine if specified
         IF TimerInterrupt.UserRoutine <> 0 THEN
-            !PUSHAD                 ; Save all registers (386+ instruction)
+            !PUSH AX
+            !PUSH BX
+            !PUSH CX
+            !PUSH DX
+            !PUSH SI
+            !PUSH DI
+            !PUSH BP
             !PUSH DS
             !PUSH ES
             
             ' Call user routine
-            !CALL DWORD PTR TimerInterrupt.UserRoutine
+            zfptr = TimerInterrupt.UserRoutine
+            !CALL DWORD PTR zfptr
             
             !POP ES
             !POP DS
-            !POPAD                  ; Restore all registers
+            !POP BP
+            !POP DI
+            !POP SI
+            !POP DX
+            !POP CX
+            !POP BX
+            !POP AX
         END IF
     END IF
     
     ' Chain to original timer interrupt
     !PUSHF                      ; Push flags to simulate INT call
-    !CALL DWORD PTR TimerInterrupt.OldVector
+    zfptr = TimerInterrupt.OldVector
+    !CALL DWORD PTR zfptr
 END SUB
 
 ' =============================================================================
@@ -366,7 +383,6 @@ END SUB
 ' Note: Uses 8086 instructions only (no PUSHAD/POPAD)
 ' =============================================================================
 SUB Timer_InterruptHandler8086
-    SHARED TimerTickCounter AS WORD STATIC
     
     ' Save registers manually (8086 compatible)
     !PUSH AX
@@ -387,7 +403,8 @@ SUB Timer_InterruptHandler8086
         
         ' Call user routine if specified
         IF TimerInterrupt.UserRoutine <> 0 THEN
-            !CALL DWORD PTR TimerInterrupt.UserRoutine
+            zfptr = TimerInterrupt.UserRoutine
+            !CALL DWORD PTR zfptr
         END IF
     END IF
     
@@ -403,7 +420,8 @@ SUB Timer_InterruptHandler8086
     
     ' Chain to original timer interrupt
     !PUSHF                      ; Push flags to simulate INT call
-    !CALL DWORD PTR TimerInterrupt.OldVector
+    zfptr = TimerInterrupt.OldVector
+    !CALL DWORD PTR zfptr
 END SUB
 
 ' =============================================================================
@@ -418,7 +436,7 @@ FUNCTION Timer_HrTimer(BYVAL frequencyHz AS WORD, BYVAL handlerRoutine AS DWORD)
     DIM CounterValue AS WORD
     
     ' Remove existing timer
-    IF TimerInterrupt.IsInstalled THEN CALL OFFTIMER
+    IF TimerInterrupt.IsInstalled THEN CALL Timer_OffTimer
     
     ' Calculate PIT counter value (1,193,180 Hz / desired frequency)
     CounterValue = 1193180 \ FrequencyHz
@@ -442,23 +460,26 @@ FUNCTION Timer_HrTimer(BYVAL frequencyHz AS WORD, BYVAL handlerRoutine AS DWORD)
     !PUSH ES
     !MOV AX, &H3508             ; Get interrupt vector
     !INT &H21
-    !MOV WORD PTR TimerInterrupt.OldVector, BX
-    !MOV WORD PTR TimerInterrupt.OldVector+2, ES
+    !MOV zvOff, BX
+    !MOV zvSeg, ES
     !POP ES
+    TimerInterrupt.OldVector = CVL(MKI$(zvOff) + MKI$(zvSeg))
     
-    TimerInterrupt.HandlerAddress = CODEPTR(TimerInterruptHandler8086)
+    TimerInterrupt.HandlerAddress = CODEPTR(Timer_InterruptHandler8086)
     
+    zvOff = CVI(LEFT$(MKL$(TimerInterrupt.HandlerAddress), 2))
+    zvSeg = CVI(RIGHT$(MKL$(TimerInterrupt.HandlerAddress), 2))
     !CLI
     !PUSH DS
     !MOV AX, &H2508             ; Set interrupt vector
-    !MOV DX, WORD PTR TimerInterrupt.HandlerAddress
-    !MOV DS, WORD PTR TimerInterrupt.HandlerAddress+2
+    !MOV DX, zvOff
+    !MOV DS, zvSeg
     !INT &H21
     !POP DS
     !STI
     
     TimerInterrupt.IsInstalled = 1
-    HRTIMER = 1
+    Timer_HrTimer = 1
 END FUNCTION
 
 ' =============================================================================
@@ -469,7 +490,7 @@ END FUNCTION
 ' =============================================================================
 SUB Timer_Restore
     ' Remove our interrupt handler
-    CALL OFFTIMER
+    CALL Timer_OffTimer
     
     ' Restore default PIT frequency (18.2 Hz)
     !MOV AL, &H36               ; Channel 0, LSB/MSB, square wave, binary
@@ -490,7 +511,7 @@ END SUB
 ' Returns: True if installed (BYTE)
 ' =============================================================================
 FUNCTION Timer_IsTimerInstalled AS BYTE
-    ISTIMERINSTALLED = TimerInterrupt.IsInstalled
+    Timer_IsTimerInstalled = TimerInterrupt.IsInstalled
 END FUNCTION
 
 ' =============================================================================
@@ -500,10 +521,10 @@ END FUNCTION
 ' =============================================================================
 FUNCTION Timer_GetTimerFrequency AS WORD
     IF TimerInterrupt.IsInstalled = 0 THEN
-        GETTIMERFREQUENCY = 0
+        Timer_GetTimerFrequency = 0
     ELSE
         ' Calculate frequency from interval ticks
-        GETTIMERFREQUENCY = 1820 \ TimerInterrupt.IntervalTicks  ' 18.2 * 100
+        Timer_GetTimerFrequency = 1820 \ TimerInterrupt.IntervalTicks  ' 18.2 * 100
     END IF
 END FUNCTION
 

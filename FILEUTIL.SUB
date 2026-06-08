@@ -5,8 +5,6 @@
 ' Centralizes error handling and reduces code duplication
 ' =============================================================================
 
-#IF NOT DEFINED(%FILEUTIL_INCLUDED)
-%FILEUTIL_INCLUDED = 1
 
 ' =============================================================================
 ' Open a binary file with error handling
@@ -59,7 +57,7 @@ END SUB
 FUNCTION FileUtil_ReadWord(BYVAL fileHandle AS INTEGER, value AS WORD) AS BYTE
     DIM byteData AS STRING
     
-    ON ERROR GOTO ReadError
+    ON ERROR GOTO ReadError1
     GET$ fileHandle, 2, byteData
     
     IF LEN(byteData) <> 2 THEN
@@ -71,7 +69,7 @@ FUNCTION FileUtil_ReadWord(BYVAL fileHandle AS INTEGER, value AS WORD) AS BYTE
     FileUtil_ReadWord = 1
     EXIT FUNCTION
     
-ReadError:
+ReadError1:
     FileUtil_ReadWord = 0
 END FUNCTION
 
@@ -85,7 +83,7 @@ END FUNCTION
 FUNCTION FileUtil_ReadDWord(BYVAL fileHandle AS INTEGER, value AS LONG) AS BYTE
     DIM byteData AS STRING
     
-    ON ERROR GOTO ReadError
+    ON ERROR GOTO ReadError2
     GET$ fileHandle, 4, byteData
     
     IF LEN(byteData) <> 4 THEN
@@ -97,7 +95,7 @@ FUNCTION FileUtil_ReadDWord(BYVAL fileHandle AS INTEGER, value AS LONG) AS BYTE
     FileUtil_ReadDWord = 1
     EXIT FUNCTION
     
-ReadError:
+ReadError2:
     FileUtil_ReadDWord = 0
 END FUNCTION
 
@@ -106,14 +104,14 @@ END FUNCTION
 ' Parameters:
 '   fileHandle - File handle (BYVAL)
 '   numBytes - Number of bytes to read (BYVAL)
-'   data - Output data string (BYREF)
+'   dataBuf - Output dataBuf string (BYREF)
 ' Returns: 1 if successful, 0 if failed
 ' =============================================================================
-FUNCTION FileUtil_ReadBytes(BYVAL fileHandle AS INTEGER, BYVAL numBytes AS WORD, data AS STRING) AS BYTE
-    ON ERROR GOTO ReadError
-    GET$ fileHandle, numBytes, data
+FUNCTION FileUtil_ReadBytes(BYVAL fileHandle AS INTEGER, BYVAL numBytes AS WORD, dataBuf AS STRING) AS BYTE
+    ON ERROR GOTO ReadError3
+    GET$ fileHandle, numBytes, dataBuf
     
-    IF LEN(data) <> numBytes THEN
+    IF LEN(dataBuf) <> numBytes THEN
         FileUtil_ReadBytes = 0
         EXIT FUNCTION
     END IF
@@ -121,7 +119,7 @@ FUNCTION FileUtil_ReadBytes(BYVAL fileHandle AS INTEGER, BYVAL numBytes AS WORD,
     FileUtil_ReadBytes = 1
     EXIT FUNCTION
     
-ReadError:
+ReadError3:
     FileUtil_ReadBytes = 0
 END FUNCTION
 
@@ -185,10 +183,10 @@ CanReadError:
 END FUNCTION
 
 ' =============================================================================
-' Load VGA palette from RGB triplets
+' Load VGA paletteV from RGB triplets
 ' Parameters:
-'   paletteData - String containing RGB data (BYVAL)
-'   startIndex - Starting palette index (BYVAL)
+'   paletteData - String containing RGB dataBuf (BYVAL)
+'   startIndex - Starting paletteV index (BYVAL)
 '   numColors - Number of colors to set (BYVAL)
 '   scaleDown - If 1, scale 8-bit values to 6-bit (BYVAL)
 ' Returns: Nothing
@@ -222,10 +220,10 @@ SUB FileUtil_LoadPalette(BYVAL paletteData AS STRING, BYVAL startIndex AS BYTE, 
 END SUB
 
 ' =============================================================================
-' Load VGA palette from BGRA quadruplets (BMP format)
+' Load VGA paletteV from BGRA quadruplets (BMP format)
 ' Parameters:
-'   paletteData - String containing BGRA data (BYVAL)
-'   startIndex - Starting palette index (BYVAL)
+'   paletteData - String containing BGRA dataBuf (BYVAL)
+'   startIndex - Starting paletteV index (BYVAL)
 '   numColors - Number of colors to set (BYVAL)
 ' Returns: Nothing
 ' =============================================================================
@@ -306,5 +304,4 @@ FUNCTION FileUtil_Skip(BYVAL fileHandle AS INTEGER, BYVAL numBytes AS WORD) AS B
 SkipError:
     FileUtil_Skip = 0
 END FUNCTION
-
-#ENDIF  ' FILEUTIL_INCLUDED
+

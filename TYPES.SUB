@@ -13,7 +13,7 @@
 TYPE SVGAScreen
     XRes AS WORD                ' Current X resolution
     YRes AS WORD                ' Current Y resolution
-    ColorDepth AS WORD          ' Color depth (bits per pixel)
+    ColorDepth AS WORD          ' colorVal depth (bits per pixel)
     BytesPerLine AS WORD        ' Bytes per scanline
     MemorySize AS WORD          ' Video memory size
     WindowNumber AS BYTE        ' Current VESA window
@@ -25,10 +25,10 @@ TYPE VESAContext
     XRes AS WORD                ' VESA X resolution
     YRes AS WORD                ' VESA Y resolution
     Offset AS LONG              ' VESA memory offset
-    Window AS WORD              ' VESA window
+    VWnd AS WORD              ' VESA window
     XDecrease AS INTEGER        ' X coordinate adjustment
     YDecrease AS INTEGER        ' Y coordinate adjustment
-    TransparentColor AS WORD    ' Transparent color index
+    TransparentColor AS WORD    ' Transparent colorVal index
     OneLoadOnly AS BYTE         ' Load-once flag
     BMPMode AS INTEGER          ' BMP display mode
     ModeXType AS BYTE           ' Mode-X variant (0-7)
@@ -39,7 +39,7 @@ END TYPE
 TYPE ModeXContext
     XRes AS WORD                ' Mode-X X resolution
     YRes AS WORD                ' Mode-X Y resolution
-    LogicalWidth AS WORD        ' Logical scanline width
+    LogicalWidth AS WORD        ' Logical scanline widthVal
     PageSize AS WORD            ' Page size in bytes
     ActivePage AS BYTE          ' Current active page
     VisiblePage AS BYTE         ' Current visible page
@@ -57,10 +57,8 @@ END TYPE
 
 ' Font System
 TYPE FontContext
-    Data AS STRING              ' Font bitmap data
-    CharWidth AS WORD           ' Character width
+    CharWidth AS WORD           ' Character widthVal
     CharHeight AS WORD          ' Character height
-    LoadPath AS STRING          ' Font file path
 END TYPE
 
 ' Bitmap/Image Context
@@ -69,11 +67,11 @@ TYPE ImageContext
     Y1 AS WORD                  ' Image boundary Y1
     X2 AS WORD                  ' Image boundary X2
     Y2 AS WORD                  ' Image boundary Y2
-    Offset AS LONG              ' Image data offset
+    Offset AS LONG              ' Image dataBuf offset
     Handle AS INTEGER           ' File handle
-    XScreen AS WORD             ' Image screen width
+    XScreen AS WORD             ' Image screen widthVal
     YScreen AS WORD             ' Image screen height
-    ColorDepth AS WORD          ' Image color depth
+    ColorDepth AS WORD          ' Image colorVal depth
     BitsPerPixel AS WORD        ' Bits per pixel
     VGATransformX AS SINGLE     ' VGA transform X
     VGATransformY AS SINGLE     ' VGA transform Y
@@ -124,7 +122,7 @@ END TYPE
 ' Timer System for Animations
 TYPE NamedTimerType
     Active AS BYTE              ' Timer active flag
-    Delay AS WORD               ' Delay in 10ms units
+    DlyUnits AS WORD               ' DlyUnits in 10ms units
     NextTick AS LONG            ' Next trigger tick
 END TYPE
 
@@ -132,7 +130,7 @@ TYPE TimerContextType
     IsInitialized AS BYTE       ' Timer system initialized
     TickCount AS LONG           ' Current tick count (10ms units)
     AnimTimer AS LONG           ' Animation timer
-    AnimDelay AS WORD           ' Animation delay
+    AnimDelay AS WORD           ' Animation DlyUnits
     LastSystemTick AS LONG      ' Last system timer value
     NamedTimers(8) AS NamedTimerType  ' Named timers (0-7)
 END TYPE
@@ -154,30 +152,27 @@ TYPE CursorContextType
     CurrentY AS WORD            ' Current cursor Y position
     HotspotX AS WORD            ' Cursor hotspot X offset
     HotspotY AS WORD            ' Cursor hotspot Y offset
-    Width AS WORD               ' Cursor width
+    Wide AS WORD               ' Cursor widthVal
     Height AS WORD              ' Cursor height
     HasBackground AS BYTE       ' Background saved flag
-    CursorData AS STRING        ' Cursor image data
-    MaskData AS STRING          ' Cursor transparency mask
-    BackgroundData AS STRING    ' Saved background data
 END TYPE
 
 ' Icon/Cursor File Structures
 TYPE IconHeaderType
     Reserved AS WORD            ' Reserved (must be 0)
-    Type AS WORD               ' 1 = ICO, 2 = CUR
+    Kind AS WORD               ' 1 = ICO, 2 = CUR
     Count AS WORD              ' Number of images
 END TYPE
 
 TYPE IconDirEntryType
-    Width AS BYTE              ' Image width
+    Wide AS BYTE              ' Image widthVal
     Height AS BYTE             ' Image height
     ColorCount AS BYTE         ' Number of colors
     Reserved AS BYTE           ' Reserved
-    Planes AS WORD             ' Color planes (hotspot X for CUR)
+    Planes AS WORD             ' colorVal planes (hotspot X for CUR)
     BitCount AS WORD           ' Bits per pixel (hotspot Y for CUR)
-    BytesInRes AS LONG         ' Image data size
-    ImageOffset AS LONG        ' Offset to image data
+    BytesInRes AS LONG         ' Image dataBuf size
+    ImageOffset AS LONG        ' Offset to image dataBuf
 END TYPE
 
 ' Global library state - single instance of each context
@@ -193,20 +188,34 @@ DIM WindowSystemContext AS SHARED WindowContext
 DIM SVGADispatch AS SHARED DispatchTable
 DIM TimerSystemContext AS SHARED TimerContextType
 DIM CursorSystemContext AS SHARED CursorContextType
+' --- relocated dynamic members (PB 3.5: UDTs cannot hold dynamic strings) ---
+DIM FontDataStore AS SHARED STRING
+DIM FontLoadPathStore AS SHARED STRING
+DIM CursorDataStore AS SHARED STRING
+DIM CursorMaskStore AS SHARED STRING
+DIM CursorBgStore AS SHARED STRING
 
 ' Animation management arrays (separate from types due to PowerBASIC limitations)
-DIM SHARED AnimationStates(8) AS BYTE         ' Animation states
-DIM SHARED AnimationTimerIDs(8) AS BYTE       ' Associated timer IDs  
-DIM SHARED AnimationAutoCleanup(8) AS BYTE    ' Auto cleanup flags
+DIM AnimationStates(8) AS SHARED BYTE         ' Animation states
+DIM AnimationTimerIDs(8) AS SHARED BYTE       ' Associated timer IDs
+DIM AnimationAutoCleanup(8) AS SHARED BYTE    ' Auto cleanup flags
 
 ' Image format support arrays
-DIM SHARED GIFGlobalPalettes(8, 767) AS BYTE      ' GIF global palettes (8 contexts, 256*3 colors)
-DIM SHARED TIFFColorMaps(8, 767) AS WORD          ' TIFF color maps (8 contexts, 256*3 words)
-DIM SHARED TGAColorMaps(8, 767) AS BYTE           ' TGA color maps (8 contexts, 256*3 bytes)
+DIM GIFGlobalPalettes(8, 767) AS SHARED BYTE      ' GIF global palettes (8 contexts, 256*3 colors)
+DIM TIFFColorMaps(8, 767) AS SHARED WORD          ' TIFF colorVal maps (8 contexts, 256*3 words)
+DIM TGAColorMaps(8, 767) AS SHARED BYTE           ' TGA colorVal maps (8 contexts, 256*3 bytes)
 
 ' Icon library arrays
-DIM SHARED ICOLIBIconGroupIDs(4, 15) AS WORD      ' Icon group IDs (4 libs, 16 groups max)
-DIM SHARED ICOLIBIconGroupNames(4, 15) AS STRING  ' Icon group names
+DIM ICOLIBIconGroupIDs(4, 15) AS SHARED WORD      ' Icon group IDs (4 libs, 16 groups max)
+DIM ICOLIBIconGroupNames(4, 15) AS SHARED STRING  ' Icon group names
+
+' --- persistent (was SHARED..STATIC) module globals ---
+DIM TimerTickCounter AS SHARED WORD
+DIM originalX AS SHARED INTEGER
+DIM originalY AS SHARED INTEGER
+DIM shakeActive AS SHARED BYTE
+DIM shakeFramesLeft AS SHARED WORD
+DIM shakeIntensity AS SHARED WORD
 
 ' Initialize default values
 SUB Types_InitializeSvgaContexts
