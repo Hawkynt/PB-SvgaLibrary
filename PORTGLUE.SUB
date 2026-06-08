@@ -1,0 +1,54 @@
+' =============================================================================
+' PORTGLUE.SUB - Implementations supplied during the PowerBASIC 3.5 port
+' =============================================================================
+' These routines were referenced by the library but never defined in the
+' original sources. They are implemented here with the behaviour implied by
+' their call sites so the library links into a working unit/.PBL.
+' =============================================================================
+
+' Plot a single bitmap pixel through the active dispatch path.
+SUB DrawBmp_PutBmpPixel(BYVAL X AS WORD, BYVAL Y AS WORD, BYVAL colorVal AS BYTE)
+    CALL Svga_PutPixel(X, Y, colorVal)
+END SUB
+
+' Draw one decoded scanline (8-bit palette indices, one byte per pixel) at X,Y.
+' Higher colour depths are approximated by using the leading byte of each pixel.
+SUB BMP_DrawScanline(scanData AS STRING, BYVAL X AS WORD, BYVAL Y AS WORD, BYVAL widthVal AS WORD, BYVAL depth AS BYTE)
+    DIM bytesPerPixel AS BYTE
+    DIM px AS WORD
+    DIM srcOffset AS WORD
+    DIM colorIndex AS BYTE
+
+    bytesPerPixel = depth \ 8
+    IF bytesPerPixel = 0 THEN bytesPerPixel = 1
+
+    FOR px = 0 TO widthVal - 1
+        srcOffset = px * bytesPerPixel + 1
+        IF srcOffset <= LEN(scanData) THEN
+            colorIndex = ASC(MID$(scanData, srcOffset, 1))
+            CALL Svga_PutPixel(X + px, Y, colorIndex)
+        END IF
+    NEXT px
+END SUB
+
+' Optional on-screen "loading" indicator. The original library only ever toggled
+' it on (0) / off (1); there is no canonical visual, so this is a safe no-op.
+SUB Loading(BYVAL mode AS INTEGER)
+END SUB
+
+' Return the display to the standard 80x25 colour text mode (BIOS mode 03h).
+SUB Vga_CloseVga
+    !MOV AX, &H0003
+    !INT &H10
+END SUB
+
+' Integer shift-left helper (PB 3.5 has no SHL/SHR expression operators).
+FUNCTION ShiftL(BYVAL v AS LONG, BYVAL n AS INTEGER) AS LONG
+    DIM r AS LONG
+    r = v
+    WHILE n > 0
+        r = r * 2
+        n = n - 1
+    WEND
+    ShiftL = r
+END FUNCTION
