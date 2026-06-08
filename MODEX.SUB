@@ -54,7 +54,8 @@ SUB ModeX_SetMode(BYVAL modeXType AS BYTE)
     ' Disable chain-4 mode and enable planar mode
     
     ' Set Sequencer registers for planar mode
-    mxPlane = ShiftL(1, StartPlane)
+    mxPlane = 1
+    SHIFT LEFT mxPlane, StartPlane
     !MOV DX, &H3C4          ; Sequencer Address Register
     !MOV AL, 4              ; Memory Mode Register
     !OUT DX, AL
@@ -169,7 +170,8 @@ SUB ModeX_PutPixel(BYVAL X AS WORD, BYVAL Y AS WORD, BYVAL colorVal AS BYTE)
     BitMask = PlaneMaskTable(PlaneNumber)
     
     ' Set plane select register
-    mxPlane = ShiftL(1, StartPlane)
+    mxPlane = 1
+    SHIFT LEFT mxPlane, StartPlane
     !MOV DX, &H3C4          ; Sequencer Address Register
     !MOV AL, 2              ; Map Mask Register
     !OUT DX, AL
@@ -259,7 +261,8 @@ SUB ModeX_HLine(BYVAL X1 AS WORD, BYVAL X2 AS WORD, BYVAL Y AS WORD, BYVAL color
     ByteOffset = Y * ModeXSystemContext.LogicalWidth
     
     ' Set up VGA for block write
-    mxPlane = ShiftL(1, StartPlane)
+    mxPlane = 1
+    SHIFT LEFT mxPlane, StartPlane
     !MOV DX, &H3C4          ; Sequencer Address Register
     !MOV AL, 2              ; Map Mask Register
     !OUT DX, AL
@@ -270,7 +273,9 @@ SUB ModeX_HLine(BYVAL X1 AS WORD, BYVAL X2 AS WORD, BYVAL Y AS WORD, BYVAL color
         PlaneMask = 0
         DIM TempPlane AS BYTE
         FOR TempPlane = StartPlane TO EndPlane
-            PlaneMask = PlaneMask OR ShiftL(1, TempPlane)
+            mxPlane = 1
+            SHIFT LEFT mxPlane, TempPlane
+            PlaneMask = PlaneMask OR mxPlane
         NEXT TempPlane
         
         !MOV AL, PlaneMask
@@ -289,7 +294,8 @@ SUB ModeX_HLine(BYVAL X1 AS WORD, BYVAL X2 AS WORD, BYVAL Y AS WORD, BYVAL color
         
         ' First partial byte
         IF StartPlane > 0 THEN
-            PlaneMask = ShiftL(&HF, StartPlane)
+            PlaneMask = &HF
+            SHIFT LEFT PlaneMask, StartPlane
             !MOV AL, PlaneMask
             !OUT DX, AL
             
@@ -357,7 +363,9 @@ SUB ModeX_HLine(BYVAL X1 AS WORD, BYVAL X2 AS WORD, BYVAL Y AS WORD, BYVAL color
         
         ' Last partial byte
         IF EndPlane < 3 THEN
-            PlaneMask = ShiftL(1, EndPlane + 1) - 1
+            PlaneMask = 1
+            SHIFT LEFT PlaneMask, EndPlane + 1
+            PlaneMask = PlaneMask - 1
             !MOV AL, PlaneMask
             !OUT DX, AL
             
@@ -397,7 +405,8 @@ SUB ModeX_VLine(BYVAL Y1 AS WORD, BYVAL Y2 AS WORD, BYVAL X AS WORD, BYVAL color
     !MOV ByteOffset, AX
     
     ' Set up VGA for block write
-    mxPlane = ShiftL(1, StartPlane)
+    mxPlane = 1
+    SHIFT LEFT mxPlane, StartPlane
     !MOV DX, &H3C4          ; Sequencer Address Register
     !MOV AL, 2              ; Map Mask Register
     !OUT DX, AL
@@ -435,7 +444,8 @@ SUB ModeX_ClearScreen(BYVAL colorVal AS BYTE)
     ColorWord = (colorVal * 256) + colorVal      ' AABBH pattern
     
     ' Enable all planes for writing
-    mxPlane = ShiftL(1, StartPlane)
+    mxPlane = 1
+    SHIFT LEFT mxPlane, StartPlane
     !MOV DX, &H3C4          ; Sequencer Address Register
     !MOV AL, 2              ; Map Mask Register
     !OUT DX, AL
@@ -813,7 +823,8 @@ SUB ModeX_LineDraw(BYVAL X1 AS WORD, BYVAL Y1 AS WORD, BYVAL X2 AS WORD, BYVAL Y
         BitMask = PlaneMaskTable(PlaneNumber)
         
         ' Set plane select register
-        mxPlane = ShiftL(1, StartPlane)
+        mxPlane = 1
+        SHIFT LEFT mxPlane, StartPlane
     !MOV DX, &H3C4          ; Sequencer Address Register
         !MOV AL, 2              ; Map Mask Register
         !OUT DX, AL
@@ -1201,7 +1212,8 @@ SUB ModeX_FastFill(BYVAL X1 AS WORD, BYVAL Y1 AS WORD, BYVAL X2 AS WORD, BYVAL Y
     ByteWidth = EndByte - StartByte + 1
     
     ' Enable all planes for writing
-    mxPlane = ShiftL(1, StartPlane)
+    mxPlane = 1
+    SHIFT LEFT mxPlane, StartPlane
     !MOV DX, &H3C4          ; Sequencer Address Register
     !MOV AL, 2              ; Map Mask Register
     !OUT DX, AL

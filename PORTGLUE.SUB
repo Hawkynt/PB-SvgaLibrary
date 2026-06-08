@@ -42,13 +42,3 @@ SUB Vga_CloseVga
     !INT &H10
 END SUB
 
-' Integer shift-left helper (PB 3.5 has no SHL/SHR expression operators).
-FUNCTION ShiftL(BYVAL v AS LONG, BYVAL n AS INTEGER) AS LONG
-    DIM r AS LONG
-    r = v
-    WHILE n > 0
-        r = r * 2
-        n = n - 1
-    WEND
-    ShiftL = r
-END FUNCTION
