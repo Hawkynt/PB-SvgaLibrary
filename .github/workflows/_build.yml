@@ -1,0 +1,103 @@
+name: Build artifacts
+
+# Reusable build: compile-checks the library with the real PowerBASIC 3.5
+# compiler under DOSBox and, when it compiles cleanly, uploads the
+# directly-usable source-include library (zip of the .SUB modules) as an
+# artifact. Called by ci.yml (advisory), nightly.yml and release.yml.
+#
+# advisory=true  -> a missing toolchain or a library that does not yet compile
+#                   leaves the job GREEN and simply produces no artifact (CI;
+#                   the structural check is the required gate).
+# advisory=false -> either of those FAILS the job, so no broken bundle ships.
+on:
+  workflow_call:
+    inputs:
+      version:
+        required: false
+        type: string
+        default: 'dev'
+      advisory:
+        required: false
+        type: boolean
+        default: false
+    outputs:
+      artifact-name:
+        description: "Name of the uploaded artifact containing the library bundle"
+        value: ${{ jobs.build.outputs.artifact-name }}
+      built:
+        description: "true if the library compiled and was bundled"
+        value: ${{ jobs.build.outputs.built }}
+
+# Force JavaScript-based actions to run on Node 24 instead of the deprecated Node 20 ahead of
+# the 2026-06-16 hard cutover, until we bump each action to a Node-24-native major version.
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      artifact-name: svga-library-${{ inputs.version }}
+      built: ${{ steps.compile.outcome == 'success' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Obtain PowerBASIC toolchain
+        id: tc
+        continue-on-error: true
+        env:
+          PB_TOOLCHAIN_KEY: ${{ secrets.PB_TOOLCHAIN_KEY }}
+        run: |
+          mkdir -p pb
+          if [ -f tools/pb-toolchain.tar.gz ]; then
+            tar xzf tools/pb-toolchain.tar.gz -C pb
+          elif [ -f tools/pb-toolchain.tar.enc ] && [ -n "$PB_TOOLCHAIN_KEY" ]; then
+            openssl enc -d -aes-256-cbc -pbkdf2 -in tools/pb-toolchain.tar.enc -pass env:PB_TOOLCHAIN_KEY | tar xz -C pb
+          else
+            echo "::notice::PowerBASIC toolchain unavailable."; exit 1
+          fi
+
+      - name: Require toolchain (non-advisory builds)
+        if: ${{ inputs.advisory != true && steps.tc.outcome == 'failure' }}
+        run: echo "::error::PowerBASIC toolchain required - commit tools/pb-toolchain.tar.enc and set PB_TOOLCHAIN_KEY."; exit 1
+
+      - name: Install DOSBox
+        if: steps.tc.outcome == 'success'
+        run: sudo apt-get update && sudo apt-get install -y dosbox
+
+      - name: Compile-check the library under DOSBox
+        id: compile
+        if: steps.tc.outcome == 'success'
+        continue-on-error: true
+        run: |
+          mkdir -p build && cp *.SUB build/ && cp pb/* build/
+          printf '$INCLUDE "SVGA.SUB"\r\n' > build/SVGALIB.BAS
+          {
+            echo "[autoexec]"; echo "mount c \"$(pwd)/build\""; echo "c:"
+            echo "PBC.EXE -CU -G386 -FNPX SVGALIB.BAS > PBCOUT.TXT"
+            echo "EXIT"
+          } > build/dosbox.conf
+          SDL_VIDEODRIVER=dummy timeout 400 dosbox -conf build/dosbox.conf -exit >/dev/null 2>&1 || true
+          out=$(find build -iname pbcout.txt | head -1)
+          echo "=== PBC output ==="; cat "$out" 2>/dev/null || true
+          if [ -z "$out" ] || grep -qiE "Error [0-9]+:" "$out"; then
+            echo "::error::library did not compile under PowerBASIC 3.5 - see output above."; exit 1
+          fi
+
+      - name: Require successful compile (non-advisory builds)
+        if: ${{ inputs.advisory != true && steps.tc.outcome == 'success' && steps.compile.outcome == 'failure' }}
+        run: echo "::error::library failed to compile."; exit 1
+
+      - name: Bundle the source-include library
+        if: steps.compile.outcome == 'success'
+        run: |
+          mkdir -p dist
+          zip -j dist/svga-library.zip *.SUB README.md LICENSE
+          ls -l dist
+
+      - uses: actions/upload-artifact@v4
+        if: steps.compile.outcome == 'success'
+        with:
+          name: svga-library-${{ inputs.version }}
+          path: dist/svga-library.zip
+          if-no-files-found: error

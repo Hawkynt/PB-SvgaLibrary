@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_call: {}
+
+# The required gate is a structural syntax check (balanced
+# SUB/FUNCTION/TYPE/SELECT/DO/FOR/WHILE/block-IF) - the PowerBASIC 3.5 compiler
+# is DOS-only and proprietary, so it can't run on a stock hosted runner. The
+# ADVISORY 'compile' (reusable _build.yml) and 'test' jobs do the real build /
+# unit tests under DOSBox once the encrypted toolchain is provided; they never
+# block a merge.
+# Force JavaScript-based actions to run on Node 24 instead of the deprecated
+# Node 20 ahead of the 2026-06-16 hard cutover.
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Structural syntax check (all BASIC sources)
+        run: node .github/workflows/scripts/check-basic.mjs .
+
+  # Advisory: real compilation under DOSBox via the reusable build workflow.
+  # Fails-soft without the toolchain (or while the library is still being ported
+  # to PB 3.5), so it never blocks the merge (the structural check is the
+  # required gate). Enable the real build by committing tools/pb-toolchain.tar.enc
+  # and adding the PB_TOOLCHAIN_KEY secret.
+  compile:
+    name: compile (advisory)
+    needs: check
+    uses: ./.github/workflows/_build.yml
+    with:
+      advisory: true
+    secrets: inherit
+
+  # Advisory: run the PowerBASIC unit tests (tests/*.bas) under DOSBox and fail
+  # if any logs FAILED. Self-skips without the toolchain / when there are no
+  # tests yet, so never blocks a merge.
+  test:
+    name: PowerBASIC unit tests
+    needs: check
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run PB unit tests under DOSBox
+        env:
+          PB_TOOLCHAIN_KEY: ${{ secrets.PB_TOOLCHAIN_KEY }}
+        run: bash scripts/run-pb-tests.sh

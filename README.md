@@ -1,7 +1,7 @@
 # PB-SvgaLibrary
 
 [![License](https://img.shields.io/github/license/Hawkynt/PB-SvgaLibrary)](https://github.com/Hawkynt/PB-SvgaLibrary/blob/main/LICENSE)
-[![Language](https://img.shields.io/github/languages/top/Hawkynt/PB-SvgaLibrary?color=8957D5)](https://github.com/Hawkynt/PB-SvgaLibrary)
+[![Language](https://img.shields.io/badge/language-PowerBASIC%2FDOS-8957D5)](https://github.com/Hawkynt/PB-SvgaLibrary)
 
 [![CI](https://github.com/Hawkynt/PB-SvgaLibrary/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Hawkynt/PB-SvgaLibrary/actions/workflows/ci.yml)
 ![Last Commit](https://img.shields.io/github/last-commit/Hawkynt/PB-SvgaLibrary?branch=main)
@@ -12,6 +12,10 @@
 [![Issues](https://img.shields.io/github/issues/Hawkynt/PB-SvgaLibrary)](https://github.com/Hawkynt/PB-SvgaLibrary/issues)
 ![Code Size](https://img.shields.io/github/languages/code-size/Hawkynt/PB-SvgaLibrary?color=4CAF50)
 ![Repo Size](https://img.shields.io/github/repo-size/Hawkynt/PB-SvgaLibrary?color=FF9800)
+
+[![Release](https://img.shields.io/github/v/release/Hawkynt/PB-SvgaLibrary)](https://github.com/Hawkynt/PB-SvgaLibrary/releases/latest)
+[![Nightly](https://img.shields.io/github/v/release/Hawkynt/PB-SvgaLibrary?include_prereleases&sort=date&filter=nightly*&label=nightly&color=FF9800)](https://github.com/Hawkynt/PB-SvgaLibrary/releases)
+[![Downloads](https://img.shields.io/github/downloads/Hawkynt/PB-SvgaLibrary/total)](https://github.com/Hawkynt/PB-SvgaLibrary/releases)
 
 > High-performance Power BASIC 3.5 library for VESA graphics with micro-optimized assembly routines
 
