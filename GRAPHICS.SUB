@@ -29,8 +29,8 @@ SUB Graphics_Bar (BYVAL x1 AS WORD, BYVAL y1 AS WORD, BYVAL x2 AS WORD, BYVAL y2
         ' Draw the border using optimized Mode-X horizontal/vertical line drawing
         CALL ModeX_HLine(x1, x2, y1, borderColor)  ' Top
         CALL ModeX_HLine(x1, x2, y2, borderColor)  ' Bottom
-        CALL ModeX_VLine(y1, y2, x1, borderColor)  ' leftV
-        CALL ModeX_VLine(y1, y2, x2, borderColor)  ' rightV
+        CALL ModeX_VLine(x1, y1, y2, borderColor)  ' leftV
+        CALL ModeX_VLine(x2, y1, y2, borderColor)  ' rightV
 		exit sub
 	end if
 
@@ -74,8 +74,8 @@ SUB Graphics_Bar3d (BYVAL x1 AS WORD, BYVAL y1 AS WORD, BYVAL x2 AS WORD, BYVAL 
         ' Draw main rectangle border
         CALL ModeX_HLine(X1, X2, Y1, BorderColor)  ' Top
         CALL ModeX_HLine(X1, X2, Y2, BorderColor)  ' Bottom
-        CALL ModeX_VLine(Y1, Y2, X1, BorderColor)  ' leftV
-        CALL ModeX_VLine(Y1, Y2, X2, BorderColor)  ' rightV
+        CALL ModeX_VLine(X1, Y1, Y2, BorderColor)  ' leftV
+        CALL ModeX_VLine(X2, Y1, Y2, BorderColor)  ' rightV
     ELSE
         ' Fill the main face if fill colorVal specified
         IF FillColor > 0 THEN

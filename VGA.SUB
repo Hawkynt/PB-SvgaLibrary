@@ -17,7 +17,9 @@
 ' Returns: Nothing
 ' Note: Optimized for Mode 13h 320x200x256 linear memory layout
 ' =============================================================================
-SUB Vga_PutPixel(BYVAL x AS WORD, BYVAL y AS WORD, BYVAL colorVal AS BYTE)
+SUB Vga_PutPixel(x_a AS WORD, y_a AS WORD, colorVal_a AS BYTE)
+    DIM x AS WORD, y AS WORD, colorVal AS BYTE
+    x = x_a : y = y_a : colorVal = colorVal_a
     ' Ultra-fast assembly optimized pixel write for Mode 13h
     !PUSH ES
 
@@ -64,7 +66,9 @@ END SUB
 '   X, Y - Pixel coordinates (BYVAL)
 ' Returns: Pixel colorVal value
 ' =============================================================================
-FUNCTION Vga_GetPixel(BYVAL x AS WORD, BYVAL y AS WORD) AS BYTE
+SUB Vga_GetPixel(x_a AS WORD, y_a AS WORD, resultVal AS BYTE)
+    DIM x AS WORD, y AS WORD
+    x = x_a : y = y_a
     ' Ultra-fast assembly optimized pixel read for Mode 13h
     DIM PixelValue AS BYTE
         
@@ -101,8 +105,8 @@ FUNCTION Vga_GetPixel(BYVAL x AS WORD, BYVAL y AS WORD) AS BYTE
 
     !POP ES
     
-    Vga_GetPixel = PixelValue
-END FUNCTION
+    resultVal = PixelValue
+END SUB
 
 ' =============================================================================
 ' Draw horizontal line in VGA mode (highly optimized)
@@ -113,7 +117,9 @@ END FUNCTION
 ' Returns: Nothing
 ' Note: Uses fast assembly for maximum speed
 ' =============================================================================
-SUB Vga_HLine(BYVAL x1 AS WORD, BYVAL x2 AS WORD, BYVAL y AS WORD, BYVAL colorVal AS BYTE)
+SUB Vga_HLine(x1_a AS WORD, x2_a AS WORD, y_a AS WORD, colorVal_a AS BYTE)
+    DIM x1 AS WORD, x2 AS WORD, y AS WORD, colorVal AS BYTE
+    x1 = x1_a : x2 = x2_a : y = y_a : colorVal = colorVal_a
     DIM StartOffset AS WORD, LineLength AS WORD
     DIM ColorWord AS WORD, ColorDWord AS LONG
     
@@ -173,7 +179,9 @@ END SUB
 ' Returns: Nothing
 ' Note: Uses direct memory calculation with no per-pixel overhead
 ' =============================================================================
-SUB Vga_VLine(BYVAL x AS WORD, BYVAL y1 AS WORD, BYVAL y2 AS WORD, BYVAL colorVal AS BYTE)
+SUB Vga_VLine(x_a AS WORD, y1_a AS WORD, y2_a AS WORD, colorVal_a AS BYTE)
+    DIM x AS WORD, y1 AS WORD, y2 AS WORD, colorVal AS BYTE
+    x = x_a : y1 = y1_a : y2 = y2_a : colorVal = colorVal_a
     DIM StartOffset AS WORD, LineLength AS WORD
     
     ' Ensure Y1 <= Y2
@@ -209,7 +217,9 @@ END SUB
 ' Returns: Nothing
 ' Note: Uses optimized routines for horizontal/vertical lines
 ' =============================================================================
-SUB Vga_LineDraw(BYVAL x1 AS WORD, BYVAL y1 AS WORD, BYVAL x2 AS WORD, BYVAL y2 AS WORD, BYVAL colorVal AS BYTE)
+SUB Vga_LineDraw(x1_a AS WORD, y1_a AS WORD, x2_a AS WORD, y2_a AS WORD, colorVal_a AS BYTE)
+    DIM x1 AS WORD, y1 AS WORD, x2 AS WORD, y2 AS WORD, colorVal AS BYTE
+    x1 = x1_a : y1 = y1_a : x2 = x2_a : y2 = y2_a : colorVal = colorVal_a
     ' Check for horizontal line
     IF y1 = y2 THEN
         CALL Vga_HLine(x1, x2, y1, colorVal)
@@ -272,7 +282,9 @@ END SUB
 ' Returns: Nothing
 ' Note: Uses optimized horizontal line fills
 ' =============================================================================
-SUB Vga_FillRect(BYVAL x1 AS WORD, BYVAL y1 AS WORD, BYVAL x2 AS WORD, BYVAL y2 AS WORD, BYVAL colorVal AS BYTE)
+SUB Vga_FillRect(x1_a AS WORD, y1_a AS WORD, x2_a AS WORD, y2_a AS WORD, colorVal_a AS BYTE)
+    DIM x1 AS WORD, y1 AS WORD, x2 AS WORD, y2 AS WORD, colorVal AS BYTE
+    x1 = x1_a : y1 = y1_a : x2 = x2_a : y2 = y2_a : colorVal = colorVal_a
     DIM ScanLine AS WORD
     
     ' Ensure coordinates are ordered
@@ -293,7 +305,9 @@ END SUB
 '   colorVal - Border colorVal (BYVAL)
 ' Returns: Nothing
 ' =============================================================================
-SUB Vga_DrawRect(BYVAL x1 AS WORD, BYVAL y1 AS WORD, BYVAL x2 AS WORD, BYVAL y2 AS WORD, BYVAL colorVal AS BYTE)
+SUB Vga_DrawRect(x1_a AS WORD, y1_a AS WORD, x2_a AS WORD, y2_a AS WORD, colorVal_a AS BYTE)
+    DIM x1 AS WORD, y1 AS WORD, x2 AS WORD, y2 AS WORD, colorVal AS BYTE
+    x1 = x1_a : y1 = y1_a : x2 = x2_a : y2 = y2_a : colorVal = colorVal_a
     ' Ensure coordinates are ordered
     IF x1 > x2 THEN SWAP x1, x2
     IF y1 > y2 THEN SWAP y1, y2
@@ -314,7 +328,9 @@ END SUB
 ' Returns: Nothing
 ' Note: Standard midpoint circle algorithm
 ' =============================================================================
-SUB Vga_DrawCircle(BYVAL centerX AS WORD, BYVAL centerY AS WORD, BYVAL radius AS WORD, BYVAL colorVal AS BYTE)
+SUB Vga_DrawCircle(centerX_a AS WORD, centerY_a AS WORD, radius_a AS WORD, colorVal_a AS BYTE)
+    DIM centerX AS WORD, centerY AS WORD, radius AS WORD, colorVal AS BYTE
+    centerX = centerX_a : centerY = centerY_a : radius = radius_a : colorVal = colorVal_a
     DIM X AS INTEGER, Y AS INTEGER, DecisionParam AS INTEGER
     
     X = 0
@@ -359,7 +375,9 @@ END SUB
 ' Returns: Nothing
 ' Note: Uses horizontal line fills for efficiency
 ' =============================================================================
-SUB Vga_FillCircle(BYVAL centerX AS WORD, BYVAL centerY AS WORD, BYVAL radius AS WORD, BYVAL colorVal AS BYTE)
+SUB Vga_FillCircle(centerX_a AS WORD, centerY_a AS WORD, radius_a AS WORD, colorVal_a AS BYTE)
+    DIM centerX AS WORD, centerY AS WORD, radius AS WORD, colorVal AS BYTE
+    centerX = centerX_a : centerY = centerY_a : radius = radius_a : colorVal = colorVal_a
     DIM X AS INTEGER, Y AS INTEGER, DecisionParam AS INTEGER
     DIM PrevY AS INTEGER
     
@@ -408,7 +426,9 @@ END SUB
 ' Returns: Nothing
 ' Note: Extremely fast for Mode 13h using assembly
 ' =============================================================================
-SUB Vga_ClearScreen(BYVAL colorVal AS BYTE)
+SUB Vga_ClearScreen(colorVal_a AS BYTE)
+    DIM colorVal AS BYTE
+    colorVal = colorVal_a
     ' Use ultra-optimized ClearVideoMemory for maximum speed
     ' This function uses unrolled loops with 16 STOSW operations per iteration
     ' eliminating loop overhead for fastest possible A000h segment clear
@@ -424,7 +444,9 @@ END SUB
 ' Returns: Nothing
 ' Note: Optimized for Mode 13h with overlap handling
 ' =============================================================================
-SUB Vga_CopyBlock(BYVAL srcX AS WORD, BYVAL srcY AS WORD, BYVAL destX AS WORD, BYVAL destY AS WORD, BYVAL widthVal AS WORD, BYVAL height AS WORD)
+SUB Vga_CopyBlock(srcX_a AS WORD, srcY_a AS WORD, destX_a AS WORD, destY_a AS WORD, widthVal_a AS WORD, height_a AS WORD)
+    DIM srcX AS WORD, srcY AS WORD, destX AS WORD, destY AS WORD, widthVal AS WORD, height AS WORD
+    srcX = srcX_a : srcY = srcY_a : destX = destX_a : destY = destY_a : widthVal = widthVal_a : height = height_a
     DIM CurrentY AS WORD, SrcOffset AS WORD, DestOffset AS WORD
     DIM CopyDirection AS INTEGER
     

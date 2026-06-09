@@ -1,0 +1,209 @@
+' =============================================================================
+' MODE16.SUB - 800x600 in 16 colours (VGA tweaked mode 6Ah, bit-planed)
+' =============================================================================
+' Classic VGA 4-bit-plane mode: 1 bit per pixel per plane, 800/8 = 100 bytes per
+' scanline, 100*600 = 60000 bytes => fits one 64k segment (no bank switching).
+' Pixels are written with VGA write mode 2 + the bit-mask register, which fans
+' the colour out across the four planes for the masked bits in a single store.
+' Wired into SVGADispatch like every other mode (plane=bit, byte=x\8).
+' =============================================================================
+
+' Set write mode 2 once (colour in low nibble distributes across planes per mask)
+SUB Mode16_BeginWrites
+    !MOV DX, &H3CE
+    !MOV AL, 5
+    !OUT DX, AL
+    !INC DX
+    !MOV AL, 2
+    !OUT DX, AL
+END SUB
+
+' Apply colour to the masked bits of one byte (read loads the latches, the store
+' writes through write mode 2). Assumes write mode 2 is already selected.
+SUB Mode16_WriteByte(BYVAL offs_a AS WORD, BYVAL mask_a AS BYTE, BYVAL col_a AS BYTE)
+    DIM offs AS WORD, mask AS BYTE, col AS BYTE
+    offs = offs_a : mask = mask_a : col = col_a
+    !MOV DX, &H3CE
+    !MOV AL, 8
+    !OUT DX, AL
+    !INC DX
+    !MOV AL, mask
+    !OUT DX, AL
+    !MOV AX, &HA000
+    !MOV ES, AX
+    !MOV BX, offs
+    !MOV AL, ES:[BX]       ; load latches
+    !MOV AL, col
+    !MOV ES:[BX], AL       ; write through write mode 2
+END SUB
+
+SUB Mode16_PutPixel(x_a AS WORD, y_a AS WORD, c_a AS BYTE)
+    DIM x AS WORD, y AS WORD, c AS BYTE, offs AS WORD, bm AS BYTE, bitn AS INTEGER
+    x = x_a : y = y_a : c = c_a
+    offs = y * SVGAScreenContext.BytesPerLine + (x \ 8)
+    bitn = 7 - (x AND 7)
+    bm = 1
+    SHIFT LEFT bm, bitn
+    CALL Mode16_BeginWrites
+    CALL Mode16_WriteByte(offs, bm, c)
+END SUB
+
+SUB Mode16_GetPixel(x_a AS WORD, y_a AS WORD, resultVal AS BYTE)
+    DIM x AS WORD, y AS WORD, offs AS WORD, bm AS BYTE, bitn AS INTEGER
+    DIM pl AS INTEGER, res AS BYTE, bval AS BYTE, msk AS BYTE
+    x = x_a : y = y_a
+    offs = y * SVGAScreenContext.BytesPerLine + (x \ 8)
+    bitn = 7 - (x AND 7)
+    bm = 1
+    SHIFT LEFT bm, bitn
+    res = 0
+    FOR pl = 0 TO 3
+        !MOV DX, &H3CE
+        !MOV AL, 4             ; read map select
+        !OUT DX, AL
+        !INC DX
+        !MOV AL, pl
+        !OUT DX, AL
+        !MOV AX, &HA000
+        !MOV ES, AX
+        !MOV BX, offs
+        !MOV AL, ES:[BX]
+        !MOV bval, AL
+        IF (bval AND bm) <> 0 THEN
+            msk = 1
+            SHIFT LEFT msk, pl
+            res = res OR msk
+        END IF
+    NEXT pl
+    resultVal = res
+END SUB
+
+SUB Mode16_HLine(x1_a AS WORD, x2_a AS WORD, y_a AS WORD, c_a AS BYTE)
+    DIM x1 AS WORD, x2 AS WORD, y AS WORD, c AS BYTE
+    DIM rowOff AS WORD, b0 AS WORD, b1 AS WORD, sMask AS INTEGER, eMask AS INTEGER
+    DIM tmp AS INTEGER, sc AS INTEGER, ec AS INTEGER, midStart AS WORD, midCount AS WORD
+    x1 = x1_a : x2 = x2_a : y = y_a : c = c_a
+    IF x1 > x2 THEN SWAP x1, x2
+    rowOff = y * SVGAScreenContext.BytesPerLine
+    b0 = x1 \ 8 : b1 = x2 \ 8
+    ' start-byte mask: pixels x1..byte-end => low (8-(x1 AND 7)) bits
+    sc = 8 - (x1 AND 7) : tmp = 1 : SHIFT LEFT tmp, sc : sMask = tmp - 1
+    ' end-byte mask: pixels byte-start..x2 => high (x2 AND 7)+1 bits
+    ec = 7 - (x2 AND 7) : tmp = 1 : SHIFT LEFT tmp, ec : eMask = 256 - tmp
+    CALL Mode16_BeginWrites
+    IF b0 = b1 THEN
+        CALL Mode16_WriteByte(rowOff + b0, (sMask AND eMask), c)
+    ELSE
+        CALL Mode16_WriteByte(rowOff + b0, sMask, c)
+        IF b1 - b0 > 1 THEN
+            ' middle full bytes: mask 0xFF, all bits from colour, no latch needed
+            !MOV DX, &H3CE
+            !MOV AL, 8
+            !OUT DX, AL
+            !INC DX
+            !MOV AL, &HFF
+            !OUT DX, AL
+            midStart = rowOff + b0 + 1
+            midCount = b1 - b0 - 1
+            !MOV AX, &HA000
+            !MOV ES, AX
+            !MOV DI, midStart
+            !MOV CX, midCount
+            !MOV AL, c
+            !CLD
+            !REP STOSB
+        END IF
+        CALL Mode16_WriteByte(rowOff + b1, eMask, c)
+    END IF
+END SUB
+
+SUB Mode16_VLine(x_a AS WORD, y1_a AS WORD, y2_a AS WORD, c_a AS BYTE)
+    DIM x AS WORD, y1 AS WORD, y2 AS WORD, c AS BYTE
+    DIM bm AS BYTE, bitn AS INTEGER, stride AS WORD, offs AS WORD, yy AS WORD
+    x = x_a : y1 = y1_a : y2 = y2_a : c = c_a
+    IF y1 > y2 THEN SWAP y1, y2
+    bitn = 7 - (x AND 7)
+    bm = 1
+    SHIFT LEFT bm, bitn
+    stride = SVGAScreenContext.BytesPerLine
+    offs = y1 * stride + (x \ 8)
+    CALL Mode16_BeginWrites
+    FOR yy = y1 TO y2
+        CALL Mode16_WriteByte(offs, bm, c)
+        offs = offs + stride
+    NEXT yy
+END SUB
+
+SUB Mode16_FillRect(x1_a AS WORD, y1_a AS WORD, x2_a AS WORD, y2_a AS WORD, c_a AS BYTE)
+    DIM x1 AS WORD, y1 AS WORD, x2 AS WORD, y2 AS WORD, c AS BYTE, yy AS WORD
+    x1 = x1_a : y1 = y1_a : x2 = x2_a : y2 = y2_a : c = c_a
+    IF y1 > y2 THEN SWAP y1, y2
+    FOR yy = y1 TO y2
+        CALL Mode16_HLine(x1, x2, yy, c)
+    NEXT yy
+END SUB
+
+SUB Mode16_DrawRect(x1_a AS WORD, y1_a AS WORD, x2_a AS WORD, y2_a AS WORD, c_a AS BYTE)
+    DIM x1 AS WORD, y1 AS WORD, x2 AS WORD, y2 AS WORD, c AS BYTE
+    x1 = x1_a : y1 = y1_a : x2 = x2_a : y2 = y2_a : c = c_a
+    IF x1 > x2 THEN SWAP x1, x2
+    IF y1 > y2 THEN SWAP y1, y2
+    CALL Mode16_HLine(x1, x2, y1, c)
+    CALL Mode16_HLine(x1, x2, y2, c)
+    CALL Mode16_VLine(x1, y1, y2, c)
+    CALL Mode16_VLine(x2, y1, y2, c)
+END SUB
+
+SUB Mode16_LineDraw(x1_a AS WORD, y1_a AS WORD, x2_a AS WORD, y2_a AS WORD, c_a AS BYTE)
+    DIM x1 AS INTEGER, y1 AS INTEGER, x2 AS INTEGER, y2 AS INTEGER, c AS BYTE
+    DIM dx AS INTEGER, dy AS INTEGER, sx AS INTEGER, sy AS INTEGER, lerr AS INTEGER, e2 AS INTEGER
+    DIM cx AS WORD, cy AS WORD
+    x1 = x1_a : y1 = y1_a : x2 = x2_a : y2 = y2_a : c = c_a
+    dx = ABS(x2 - x1) : dy = ABS(y2 - y1)
+    IF x1 < x2 THEN sx = 1 ELSE sx = -1
+    IF y1 < y2 THEN sy = 1 ELSE sy = -1
+    lerr = dx - dy
+    DO
+        cx = x1 : cy = y1
+        CALL Mode16_PutPixel(cx, cy, c)
+        IF x1 = x2 AND y1 = y2 THEN EXIT DO
+        e2 = lerr + lerr
+        IF e2 > -dy THEN lerr = lerr - dy : x1 = x1 + sx
+        IF e2 < dx THEN lerr = lerr + dx : y1 = y1 + sy
+    LOOP
+END SUB
+
+SUB Mode16_ClearScreen(c_a AS BYTE)
+    DIM c AS BYTE, cnt AS WORD
+    c = c_a
+    CALL Mode16_BeginWrites
+    ' mask 0xFF, fill the whole 60000-byte page with the colour
+    !MOV DX, &H3CE
+    !MOV AL, 8
+    !OUT DX, AL
+    !INC DX
+    !MOV AL, &HFF
+    !OUT DX, AL
+    !MOV AX, &HA000
+    !MOV ES, AX
+    !XOR DI, DI
+    !MOV CX, 60000
+    !MOV AL, c
+    !CLD
+    !REP STOSB
+END SUB
+
+SUB Mode16_SetMode
+    ' Native VGA/SuperVGA tweaked mode 6Ah = 800x600x16, 4 bit-planes (AH=0 set
+    ' mode, AL=6Ah). This is the direct BIOS mode set, NOT a VESA VBE call - VBE
+    ' 800x600x16 (mode 0x102) is reached through the VESA code path instead.
+    !MOV AX, &H006A
+    !INT &H10
+    SVGAScreenContext.XRes = 800
+    SVGAScreenContext.YRes = 600
+    SVGAScreenContext.ColorDepth = 4
+    SVGAScreenContext.BytesPerLine = 100
+    VESASystemContext.CurrentMode = %SVGA_VGA16
+    CALL Svga_InitDispatchTable
+    CALL Mode16_ClearScreen(0)
+END SUB

@@ -8,6 +8,10 @@
 %SVGA_MODE13 = 0                ' VGA Mode 13h (320x200x256)
 %SVGA_MODEX = 1                 ' Mode-X variants
 %SVGA_VESA = 2                  ' VESA modes
+%SVGA_MODEY = 3                 ' Mode-Y (320x200 unchained, 4 pages)
+%SVGA_MODEZ = 4                 ' Mode-Z (320x400 unchained, 2 pages)
+%SVGA_VGA16 = 5                 ' 800x600 16-colour VGA bit-planed (mode 0x102)
+%SVGA_TEXTGFX = 6              ' text-mode half-block framebuffer (80x50/100/120 px)
 
 ' Screen and Display Context
 TYPE SVGAScreen
@@ -186,6 +190,9 @@ DIM AnimationSystemContext AS SHARED AnimationContext
 DIM ScaleSystemContext AS SHARED ScaleContext
 DIM WindowSystemContext AS SHARED WindowContext
 DIM SVGADispatch AS SHARED DispatchTable
+' Set to 1 by the dispatch dummies when a primitive is used before a mode
+' provides it - lets the hot paths call through the table with no NULL check.
+DIM gSvgaNoMode AS SHARED INTEGER
 DIM TimerSystemContext AS SHARED TimerContextType
 DIM CursorSystemContext AS SHARED CursorContextType
 ' --- relocated dynamic members (PB 3.5: UDTs cannot hold dynamic strings) ---

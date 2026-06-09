@@ -1,0 +1,145 @@
+' =============================================================================
+' MODETEXT.SUB - "fake graphics" framebuffer built on text mode
+' =============================================================================
+' Each text cell shows the CP437 upper-half-block glyph (0xDF): the top half is
+' painted in the attribute's foreground nibble, the bottom half in the
+' background nibble. So one 80-column text row encodes TWO pixel rows, giving a
+' chunky 16-colour framebuffer with no graphics mode at all:
+'     80x25 text -> 80x50 px,  80x50 -> 80x100 px,  80x60 -> 80x120 px.
+' Blink is disabled at set-up so all 16 background colours are usable. Pixels
+' live in text VRAM at B800: cell = (row*80+col)*2, char byte + attribute byte.
+' Wired into SVGADispatch like every other mode.
+' =============================================================================
+DIM gTextRows AS SHARED WORD       ' text rows (25/50/60); pixel height = rows*2
+
+SUB ModeText_PutPixel(x_a AS WORD, y_a AS WORD, c_a AS BYTE)
+    DIM x AS WORD, y AS WORD, c AS BYTE, cellOff AS WORD, attr AS BYTE, row AS WORD
+    x = x_a : y = y_a : c = c_a
+    row = y \ 2
+    cellOff = (row * SVGAScreenContext.XRes + x) * 2
+    DEF SEG = &HB800
+    POKE cellOff, &HDF                       ' upper-half-block glyph
+    attr = PEEK(cellOff + 1)
+    IF (y AND 1) = 0 THEN
+        attr = (attr AND &HF0) OR (c AND &H0F)             ' top half -> foreground
+    ELSE
+        attr = (attr AND &H0F) OR ((c AND &H0F) * 16)      ' bottom half -> background
+    END IF
+    POKE cellOff + 1, attr
+    DEF SEG
+END SUB
+
+SUB ModeText_GetPixel(x_a AS WORD, y_a AS WORD, resultVal AS BYTE)
+    DIM x AS WORD, y AS WORD, cellOff AS WORD, attr AS BYTE, row AS WORD
+    x = x_a : y = y_a
+    row = y \ 2
+    cellOff = (row * SVGAScreenContext.XRes + x) * 2
+    DEF SEG = &HB800
+    attr = PEEK(cellOff + 1)
+    DEF SEG
+    IF (y AND 1) = 0 THEN
+        resultVal = attr AND &H0F
+    ELSE
+        resultVal = (attr AND &HF0) \ 16
+    END IF
+END SUB
+
+SUB ModeText_HLine(x1_a AS WORD, x2_a AS WORD, y_a AS WORD, c_a AS BYTE)
+    DIM x1 AS WORD, x2 AS WORD, y AS WORD, c AS BYTE, xx AS WORD
+    x1 = x1_a : x2 = x2_a : y = y_a : c = c_a
+    IF x1 > x2 THEN SWAP x1, x2
+    FOR xx = x1 TO x2
+        CALL ModeText_PutPixel(xx, y, c)
+    NEXT xx
+END SUB
+
+SUB ModeText_VLine(x_a AS WORD, y1_a AS WORD, y2_a AS WORD, c_a AS BYTE)
+    DIM x AS WORD, y1 AS WORD, y2 AS WORD, c AS BYTE, yy AS WORD
+    x = x_a : y1 = y1_a : y2 = y2_a : c = c_a
+    IF y1 > y2 THEN SWAP y1, y2
+    FOR yy = y1 TO y2
+        CALL ModeText_PutPixel(x, yy, c)
+    NEXT yy
+END SUB
+
+SUB ModeText_FillRect(x1_a AS WORD, y1_a AS WORD, x2_a AS WORD, y2_a AS WORD, c_a AS BYTE)
+    DIM x1 AS WORD, y1 AS WORD, x2 AS WORD, y2 AS WORD, c AS BYTE, yy AS WORD
+    x1 = x1_a : y1 = y1_a : x2 = x2_a : y2 = y2_a : c = c_a
+    IF y1 > y2 THEN SWAP y1, y2
+    FOR yy = y1 TO y2
+        CALL ModeText_HLine(x1, x2, yy, c)
+    NEXT yy
+END SUB
+
+SUB ModeText_DrawRect(x1_a AS WORD, y1_a AS WORD, x2_a AS WORD, y2_a AS WORD, c_a AS BYTE)
+    DIM x1 AS WORD, y1 AS WORD, x2 AS WORD, y2 AS WORD, c AS BYTE
+    x1 = x1_a : y1 = y1_a : x2 = x2_a : y2 = y2_a : c = c_a
+    IF x1 > x2 THEN SWAP x1, x2
+    IF y1 > y2 THEN SWAP y1, y2
+    CALL ModeText_HLine(x1, x2, y1, c)
+    CALL ModeText_HLine(x1, x2, y2, c)
+    CALL ModeText_VLine(x1, y1, y2, c)
+    CALL ModeText_VLine(x2, y1, y2, c)
+END SUB
+
+SUB ModeText_LineDraw(x1_a AS WORD, y1_a AS WORD, x2_a AS WORD, y2_a AS WORD, c_a AS BYTE)
+    DIM x1 AS INTEGER, y1 AS INTEGER, x2 AS INTEGER, y2 AS INTEGER, c AS BYTE
+    DIM dx AS INTEGER, dy AS INTEGER, sx AS INTEGER, sy AS INTEGER, lerr AS INTEGER, e2 AS INTEGER
+    DIM cx AS WORD, cy AS WORD
+    x1 = x1_a : y1 = y1_a : x2 = x2_a : y2 = y2_a : c = c_a
+    dx = ABS(x2 - x1) : dy = ABS(y2 - y1)
+    IF x1 < x2 THEN sx = 1 ELSE sx = -1
+    IF y1 < y2 THEN sy = 1 ELSE sy = -1
+    lerr = dx - dy
+    DO
+        cx = x1 : cy = y1
+        CALL ModeText_PutPixel(cx, cy, c)
+        IF x1 = x2 AND y1 = y2 THEN EXIT DO
+        e2 = lerr + lerr
+        IF e2 > -dy THEN lerr = lerr - dy : x1 = x1 + sx
+        IF e2 < dx THEN lerr = lerr + dx : y1 = y1 + sy
+    LOOP
+END SUB
+
+SUB ModeText_ClearScreen(c_a AS BYTE)
+    DIM c AS BYTE, attr AS BYTE, cellWord AS WORD, cells AS WORD
+    c = c_a
+    attr = (c AND &H0F) OR ((c AND &H0F) * 16)     ' same colour both halves
+    cellWord = attr
+    SHIFT LEFT cellWord, 8
+    cellWord = cellWord OR &HDF                     ' attr:char word
+    cells = SVGAScreenContext.XRes * gTextRows
+    !MOV AX, &HB800
+    !MOV ES, AX
+    !XOR DI, DI
+    !MOV CX, cells
+    !MOV AX, cellWord
+    !CLD
+    !REP STOSW
+END SUB
+
+SUB ModeText_SetMode(textRows_a AS WORD)
+    DIM textRows AS WORD
+    textRows = textRows_a
+    ' base 80x25 colour text
+    !MOV AX, &H0003
+    !INT &H10
+    ' 80x50 / 80x60 use the 8x8 ROM font
+    IF textRows >= 50 THEN
+        !MOV AX, &H1112
+        !XOR BX, BX
+        !INT &H10
+    END IF
+    ' disable blink so all 16 background colours are available
+    !MOV AX, &H1003
+    !XOR BX, BX
+    !INT &H10
+    gTextRows = textRows
+    SVGAScreenContext.XRes = 80
+    SVGAScreenContext.YRes = textRows * 2
+    SVGAScreenContext.ColorDepth = 4
+    SVGAScreenContext.BytesPerLine = 160
+    VESASystemContext.CurrentMode = %SVGA_TEXTGFX
+    CALL Svga_InitDispatchTable
+    CALL ModeText_ClearScreen(0)
+END SUB

@@ -1,0 +1,862 @@
+' =============================================================================
+' VESAOPT.SUB - width-specialized VESA 256-colour drawing families
+' =============================================================================
+' For 320/640/800/1024/1280 the scanline offset y*width is INLINED as shifts/adds
+' in every handler - no FUNCTION call (PowerBASIC cannot inline one). A scanline
+' crosses at most one 64k bank boundary, so HLine is straight-line code with one
+' branch: REP STOSB to the boundary, switch the bank once, REP STOSB the rest.
+' VLine fast-paths a single-bank column and otherwise fills whole per-bank runs
+' with a tight asm stride loop - no per-pixel bank check anywhere. The matching
+' family is wired by Svga_WireVesaOptimized at mode-set; other widths use VESA_*.
+' =============================================================================
+
+' ---------------------------------------------------------------------------
+' 320-wide VESA 256-colour family. y*320 is inlined as shifts/adds in every
+' handler (PowerBASIC cannot inline a FUNCTION). A horizontal run crosses at
+' most one 64k bank boundary, so HLine is branch-light straight-line code:
+' fill to the boundary, switch the bank once, fill the rest. VLine fast-paths
+' the common single-bank case and otherwise fills whole row-runs per bank.
+' ---------------------------------------------------------------------------
+SUB Vesa320_PutPixel(x_a AS WORD, y_a AS WORD, c_a AS BYTE)
+    DIM x AS WORD, y AS WORD, c AS BYTE, o AS LONG, t AS LONG, bank AS WORD, winOff AS WORD
+    x = x_a : y = y_a : c = c_a
+    t = y : SHIFT LEFT t, 8 : o = t
+    t = y : SHIFT LEFT t, 6 : o = o + t
+    o = o + x
+    bank = o \ 65536
+    IF bank <> VESASystemContext.VWnd THEN CALL Memory_SetVesaWindow(bank)
+    winOff = o AND &HFFFF
+    DEF SEG = &HA000 : POKE winOff, c : DEF SEG
+END SUB
+
+SUB Vesa320_GetPixel(x_a AS WORD, y_a AS WORD, resultVal AS BYTE)
+    DIM x AS WORD, y AS WORD, o AS LONG, t AS LONG, bank AS WORD, winOff AS WORD
+    x = x_a : y = y_a
+    t = y : SHIFT LEFT t, 8 : o = t
+    t = y : SHIFT LEFT t, 6 : o = o + t
+    o = o + x
+    bank = o \ 65536
+    IF bank <> VESASystemContext.VWnd THEN CALL Memory_SetVesaWindow(bank)
+    winOff = o AND &HFFFF
+    DEF SEG = &HA000 : resultVal = PEEK(winOff) : DEF SEG
+END SUB
+
+SUB Vesa320_HLine(x1_a AS WORD, x2_a AS WORD, y_a AS WORD, c_a AS BYTE)
+    DIM x1 AS WORD, x2 AS WORD, y AS WORD, c AS BYTE
+    DIM o AS LONG, t AS LONG, toEnd AS LONG, runLen AS WORD, bank AS WORD, winOff AS WORD, rest AS WORD
+    x1 = x1_a : x2 = x2_a : y = y_a : c = c_a
+    IF x1 > x2 THEN SWAP x1, x2
+    t = y : SHIFT LEFT t, 8 : o = t
+    t = y : SHIFT LEFT t, 6 : o = o + t
+    o = o + x1
+    runLen = x2 - x1 + 1
+    bank = o \ 65536
+    IF bank <> VESASystemContext.VWnd THEN CALL Memory_SetVesaWindow(bank)
+    winOff = o AND &HFFFF
+    toEnd = 65536 - winOff
+    IF toEnd >= runLen THEN
+        !PUSH ES
+        !PUSH DI
+        !MOV AX, &HA000
+        !MOV ES, AX
+        !MOV DI, winOff
+        !MOV CX, runLen
+        !MOV AL, c
+        !CLD
+        !REP STOSB
+        !POP DI
+        !POP ES
+    ELSE
+        rest = runLen - toEnd
+        !PUSH ES
+        !PUSH DI
+        !MOV AX, &HA000
+        !MOV ES, AX
+        !MOV DI, winOff
+        !MOV CX, toEnd
+        !MOV AL, c
+        !CLD
+        !REP STOSB
+        !POP DI
+        !POP ES
+        CALL Memory_SetVesaWindow(bank + 1)
+        !PUSH ES
+        !PUSH DI
+        !MOV AX, &HA000
+        !MOV ES, AX
+        !XOR DI, DI
+        !MOV CX, rest
+        !MOV AL, c
+        !CLD
+        !REP STOSB
+        !POP DI
+        !POP ES
+    END IF
+END SUB
+
+SUB Vesa320_VLine(x_a AS WORD, y1_a AS WORD, y2_a AS WORD, c_a AS BYTE)
+    DIM x AS WORD, y1 AS WORD, y2 AS WORD, c AS BYTE
+    DIM o AS LONG, t AS LONG, endO AS LONG, toEndRows AS LONG
+    DIM rowsLeft AS WORD, rowsThis AS WORD, bank AS WORD, winOff AS WORD
+    x = x_a : y1 = y1_a : y2 = y2_a : c = c_a
+    IF y1 > y2 THEN SWAP y1, y2
+    t = y1 : SHIFT LEFT t, 8 : o = t
+    t = y1 : SHIFT LEFT t, 6 : o = o + t
+    o = o + x
+    rowsLeft = y2 - y1 + 1
+    endO = o + (rowsLeft - 1) * 320&
+    IF (o \ 65536) = (endO \ 65536) THEN
+        ' whole column in one bank - no per-row checks
+        bank = o \ 65536
+        IF bank <> VESASystemContext.VWnd THEN CALL Memory_SetVesaWindow(bank)
+        winOff = o AND &HFFFF
+        !PUSH ES
+        !PUSH DI
+        !MOV AX, &HA000
+        !MOV ES, AX
+        !MOV DI, winOff
+        !MOV CX, rowsLeft
+        !MOV DX, 320
+        !MOV AL, c
+        Vesa320VLineFast:
+        !MOV ES:[DI], AL
+        !ADD DI, DX
+        !LOOP Vesa320VLineFast
+        !POP DI
+        !POP ES
+    ELSE
+        DO WHILE rowsLeft > 0
+            bank = o \ 65536
+            IF bank <> VESASystemContext.VWnd THEN CALL Memory_SetVesaWindow(bank)
+            winOff = o AND &HFFFF
+            toEndRows = (65536 - winOff) \ 320
+            IF toEndRows < 1 THEN toEndRows = 1
+            IF toEndRows > rowsLeft THEN rowsThis = rowsLeft ELSE rowsThis = toEndRows
+            !PUSH ES
+            !PUSH DI
+            !MOV AX, &HA000
+            !MOV ES, AX
+            !MOV DI, winOff
+            !MOV CX, rowsThis
+            !MOV DX, 320
+            !MOV AL, c
+            Vesa320VLineSeg:
+            !MOV ES:[DI], AL
+            !ADD DI, DX
+            !LOOP Vesa320VLineSeg
+            !POP DI
+            !POP ES
+            o = o + rowsThis * 320&
+            rowsLeft = rowsLeft - rowsThis
+        LOOP
+    END IF
+END SUB
+
+SUB Vesa320_FillRect(x1_a AS WORD, y1_a AS WORD, x2_a AS WORD, y2_a AS WORD, c_a AS BYTE)
+    DIM x1 AS WORD, y1 AS WORD, x2 AS WORD, y2 AS WORD, c AS BYTE, yy AS WORD
+    x1 = x1_a : y1 = y1_a : x2 = x2_a : y2 = y2_a : c = c_a
+    IF y1 > y2 THEN SWAP y1, y2
+    FOR yy = y1 TO y2
+        CALL Vesa320_HLine(x1, x2, yy, c)
+    NEXT yy
+END SUB
+
+SUB Vesa320_DrawRect(x1_a AS WORD, y1_a AS WORD, x2_a AS WORD, y2_a AS WORD, c_a AS BYTE)
+    DIM x1 AS WORD, y1 AS WORD, x2 AS WORD, y2 AS WORD, c AS BYTE
+    x1 = x1_a : y1 = y1_a : x2 = x2_a : y2 = y2_a : c = c_a
+    IF x1 > x2 THEN SWAP x1, x2
+    IF y1 > y2 THEN SWAP y1, y2
+    CALL Vesa320_HLine(x1, x2, y1, c)
+    CALL Vesa320_HLine(x1, x2, y2, c)
+    CALL Vesa320_VLine(x1, y1, y2, c)
+    CALL Vesa320_VLine(x2, y1, y2, c)
+END SUB
+
+' ---------------------------------------------------------------------------
+' 640-wide VESA 256-colour family. y*640 is inlined as shifts/adds in every
+' handler (PowerBASIC cannot inline a FUNCTION). A horizontal run crosses at
+' most one 64k bank boundary, so HLine is branch-light straight-line code:
+' fill to the boundary, switch the bank once, fill the rest. VLine fast-paths
+' the common single-bank case and otherwise fills whole row-runs per bank.
+' ---------------------------------------------------------------------------
+SUB Vesa640_PutPixel(x_a AS WORD, y_a AS WORD, c_a AS BYTE)
+    DIM x AS WORD, y AS WORD, c AS BYTE, o AS LONG, t AS LONG, bank AS WORD, winOff AS WORD
+    x = x_a : y = y_a : c = c_a
+    t = y : SHIFT LEFT t, 9 : o = t
+    t = y : SHIFT LEFT t, 7 : o = o + t
+    o = o + x
+    bank = o \ 65536
+    IF bank <> VESASystemContext.VWnd THEN CALL Memory_SetVesaWindow(bank)
+    winOff = o AND &HFFFF
+    DEF SEG = &HA000 : POKE winOff, c : DEF SEG
+END SUB
+
+SUB Vesa640_GetPixel(x_a AS WORD, y_a AS WORD, resultVal AS BYTE)
+    DIM x AS WORD, y AS WORD, o AS LONG, t AS LONG, bank AS WORD, winOff AS WORD
+    x = x_a : y = y_a
+    t = y : SHIFT LEFT t, 9 : o = t
+    t = y : SHIFT LEFT t, 7 : o = o + t
+    o = o + x
+    bank = o \ 65536
+    IF bank <> VESASystemContext.VWnd THEN CALL Memory_SetVesaWindow(bank)
+    winOff = o AND &HFFFF
+    DEF SEG = &HA000 : resultVal = PEEK(winOff) : DEF SEG
+END SUB
+
+SUB Vesa640_HLine(x1_a AS WORD, x2_a AS WORD, y_a AS WORD, c_a AS BYTE)
+    DIM x1 AS WORD, x2 AS WORD, y AS WORD, c AS BYTE
+    DIM o AS LONG, t AS LONG, toEnd AS LONG, runLen AS WORD, bank AS WORD, winOff AS WORD, rest AS WORD
+    x1 = x1_a : x2 = x2_a : y = y_a : c = c_a
+    IF x1 > x2 THEN SWAP x1, x2
+    t = y : SHIFT LEFT t, 9 : o = t
+    t = y : SHIFT LEFT t, 7 : o = o + t
+    o = o + x1
+    runLen = x2 - x1 + 1
+    bank = o \ 65536
+    IF bank <> VESASystemContext.VWnd THEN CALL Memory_SetVesaWindow(bank)
+    winOff = o AND &HFFFF
+    toEnd = 65536 - winOff
+    IF toEnd >= runLen THEN
+        !PUSH ES
+        !PUSH DI
+        !MOV AX, &HA000
+        !MOV ES, AX
+        !MOV DI, winOff
+        !MOV CX, runLen
+        !MOV AL, c
+        !CLD
+        !REP STOSB
+        !POP DI
+        !POP ES
+    ELSE
+        rest = runLen - toEnd
+        !PUSH ES
+        !PUSH DI
+        !MOV AX, &HA000
+        !MOV ES, AX
+        !MOV DI, winOff
+        !MOV CX, toEnd
+        !MOV AL, c
+        !CLD
+        !REP STOSB
+        !POP DI
+        !POP ES
+        CALL Memory_SetVesaWindow(bank + 1)
+        !PUSH ES
+        !PUSH DI
+        !MOV AX, &HA000
+        !MOV ES, AX
+        !XOR DI, DI
+        !MOV CX, rest
+        !MOV AL, c
+        !CLD
+        !REP STOSB
+        !POP DI
+        !POP ES
+    END IF
+END SUB
+
+SUB Vesa640_VLine(x_a AS WORD, y1_a AS WORD, y2_a AS WORD, c_a AS BYTE)
+    DIM x AS WORD, y1 AS WORD, y2 AS WORD, c AS BYTE
+    DIM o AS LONG, t AS LONG, endO AS LONG, toEndRows AS LONG
+    DIM rowsLeft AS WORD, rowsThis AS WORD, bank AS WORD, winOff AS WORD
+    x = x_a : y1 = y1_a : y2 = y2_a : c = c_a
+    IF y1 > y2 THEN SWAP y1, y2
+    t = y1 : SHIFT LEFT t, 9 : o = t
+    t = y1 : SHIFT LEFT t, 7 : o = o + t
+    o = o + x
+    rowsLeft = y2 - y1 + 1
+    endO = o + (rowsLeft - 1) * 640&
+    IF (o \ 65536) = (endO \ 65536) THEN
+        ' whole column in one bank - no per-row checks
+        bank = o \ 65536
+        IF bank <> VESASystemContext.VWnd THEN CALL Memory_SetVesaWindow(bank)
+        winOff = o AND &HFFFF
+        !PUSH ES
+        !PUSH DI
+        !MOV AX, &HA000
+        !MOV ES, AX
+        !MOV DI, winOff
+        !MOV CX, rowsLeft
+        !MOV DX, 640
+        !MOV AL, c
+        Vesa640VLineFast:
+        !MOV ES:[DI], AL
+        !ADD DI, DX
+        !LOOP Vesa640VLineFast
+        !POP DI
+        !POP ES
+    ELSE
+        DO WHILE rowsLeft > 0
+            bank = o \ 65536
+            IF bank <> VESASystemContext.VWnd THEN CALL Memory_SetVesaWindow(bank)
+            winOff = o AND &HFFFF
+            toEndRows = (65536 - winOff) \ 640
+            IF toEndRows < 1 THEN toEndRows = 1
+            IF toEndRows > rowsLeft THEN rowsThis = rowsLeft ELSE rowsThis = toEndRows
+            !PUSH ES
+            !PUSH DI
+            !MOV AX, &HA000
+            !MOV ES, AX
+            !MOV DI, winOff
+            !MOV CX, rowsThis
+            !MOV DX, 640
+            !MOV AL, c
+            Vesa640VLineSeg:
+            !MOV ES:[DI], AL
+            !ADD DI, DX
+            !LOOP Vesa640VLineSeg
+            !POP DI
+            !POP ES
+            o = o + rowsThis * 640&
+            rowsLeft = rowsLeft - rowsThis
+        LOOP
+    END IF
+END SUB
+
+SUB Vesa640_FillRect(x1_a AS WORD, y1_a AS WORD, x2_a AS WORD, y2_a AS WORD, c_a AS BYTE)
+    DIM x1 AS WORD, y1 AS WORD, x2 AS WORD, y2 AS WORD, c AS BYTE, yy AS WORD
+    x1 = x1_a : y1 = y1_a : x2 = x2_a : y2 = y2_a : c = c_a
+    IF y1 > y2 THEN SWAP y1, y2
+    FOR yy = y1 TO y2
+        CALL Vesa640_HLine(x1, x2, yy, c)
+    NEXT yy
+END SUB
+
+SUB Vesa640_DrawRect(x1_a AS WORD, y1_a AS WORD, x2_a AS WORD, y2_a AS WORD, c_a AS BYTE)
+    DIM x1 AS WORD, y1 AS WORD, x2 AS WORD, y2 AS WORD, c AS BYTE
+    x1 = x1_a : y1 = y1_a : x2 = x2_a : y2 = y2_a : c = c_a
+    IF x1 > x2 THEN SWAP x1, x2
+    IF y1 > y2 THEN SWAP y1, y2
+    CALL Vesa640_HLine(x1, x2, y1, c)
+    CALL Vesa640_HLine(x1, x2, y2, c)
+    CALL Vesa640_VLine(x1, y1, y2, c)
+    CALL Vesa640_VLine(x2, y1, y2, c)
+END SUB
+
+' ---------------------------------------------------------------------------
+' 800-wide VESA 256-colour family. y*800 is inlined as shifts/adds in every
+' handler (PowerBASIC cannot inline a FUNCTION). A horizontal run crosses at
+' most one 64k bank boundary, so HLine is branch-light straight-line code:
+' fill to the boundary, switch the bank once, fill the rest. VLine fast-paths
+' the common single-bank case and otherwise fills whole row-runs per bank.
+' ---------------------------------------------------------------------------
+SUB Vesa800_PutPixel(x_a AS WORD, y_a AS WORD, c_a AS BYTE)
+    DIM x AS WORD, y AS WORD, c AS BYTE, o AS LONG, t AS LONG, bank AS WORD, winOff AS WORD
+    x = x_a : y = y_a : c = c_a
+    t = y : SHIFT LEFT t, 9 : o = t
+    t = y : SHIFT LEFT t, 8 : o = o + t
+    t = y : SHIFT LEFT t, 5 : o = o + t
+    o = o + x
+    bank = o \ 65536
+    IF bank <> VESASystemContext.VWnd THEN CALL Memory_SetVesaWindow(bank)
+    winOff = o AND &HFFFF
+    DEF SEG = &HA000 : POKE winOff, c : DEF SEG
+END SUB
+
+SUB Vesa800_GetPixel(x_a AS WORD, y_a AS WORD, resultVal AS BYTE)
+    DIM x AS WORD, y AS WORD, o AS LONG, t AS LONG, bank AS WORD, winOff AS WORD
+    x = x_a : y = y_a
+    t = y : SHIFT LEFT t, 9 : o = t
+    t = y : SHIFT LEFT t, 8 : o = o + t
+    t = y : SHIFT LEFT t, 5 : o = o + t
+    o = o + x
+    bank = o \ 65536
+    IF bank <> VESASystemContext.VWnd THEN CALL Memory_SetVesaWindow(bank)
+    winOff = o AND &HFFFF
+    DEF SEG = &HA000 : resultVal = PEEK(winOff) : DEF SEG
+END SUB
+
+SUB Vesa800_HLine(x1_a AS WORD, x2_a AS WORD, y_a AS WORD, c_a AS BYTE)
+    DIM x1 AS WORD, x2 AS WORD, y AS WORD, c AS BYTE
+    DIM o AS LONG, t AS LONG, toEnd AS LONG, runLen AS WORD, bank AS WORD, winOff AS WORD, rest AS WORD
+    x1 = x1_a : x2 = x2_a : y = y_a : c = c_a
+    IF x1 > x2 THEN SWAP x1, x2
+    t = y : SHIFT LEFT t, 9 : o = t
+    t = y : SHIFT LEFT t, 8 : o = o + t
+    t = y : SHIFT LEFT t, 5 : o = o + t
+    o = o + x1
+    runLen = x2 - x1 + 1
+    bank = o \ 65536
+    IF bank <> VESASystemContext.VWnd THEN CALL Memory_SetVesaWindow(bank)
+    winOff = o AND &HFFFF
+    toEnd = 65536 - winOff
+    IF toEnd >= runLen THEN
+        !PUSH ES
+        !PUSH DI
+        !MOV AX, &HA000
+        !MOV ES, AX
+        !MOV DI, winOff
+        !MOV CX, runLen
+        !MOV AL, c
+        !CLD
+        !REP STOSB
+        !POP DI
+        !POP ES
+    ELSE
+        rest = runLen - toEnd
+        !PUSH ES
+        !PUSH DI
+        !MOV AX, &HA000
+        !MOV ES, AX
+        !MOV DI, winOff
+        !MOV CX, toEnd
+        !MOV AL, c
+        !CLD
+        !REP STOSB
+        !POP DI
+        !POP ES
+        CALL Memory_SetVesaWindow(bank + 1)
+        !PUSH ES
+        !PUSH DI
+        !MOV AX, &HA000
+        !MOV ES, AX
+        !XOR DI, DI
+        !MOV CX, rest
+        !MOV AL, c
+        !CLD
+        !REP STOSB
+        !POP DI
+        !POP ES
+    END IF
+END SUB
+
+SUB Vesa800_VLine(x_a AS WORD, y1_a AS WORD, y2_a AS WORD, c_a AS BYTE)
+    DIM x AS WORD, y1 AS WORD, y2 AS WORD, c AS BYTE
+    DIM o AS LONG, t AS LONG, endO AS LONG, toEndRows AS LONG
+    DIM rowsLeft AS WORD, rowsThis AS WORD, bank AS WORD, winOff AS WORD
+    x = x_a : y1 = y1_a : y2 = y2_a : c = c_a
+    IF y1 > y2 THEN SWAP y1, y2
+    t = y1 : SHIFT LEFT t, 9 : o = t
+    t = y1 : SHIFT LEFT t, 8 : o = o + t
+    t = y1 : SHIFT LEFT t, 5 : o = o + t
+    o = o + x
+    rowsLeft = y2 - y1 + 1
+    endO = o + (rowsLeft - 1) * 800&
+    IF (o \ 65536) = (endO \ 65536) THEN
+        ' whole column in one bank - no per-row checks
+        bank = o \ 65536
+        IF bank <> VESASystemContext.VWnd THEN CALL Memory_SetVesaWindow(bank)
+        winOff = o AND &HFFFF
+        !PUSH ES
+        !PUSH DI
+        !MOV AX, &HA000
+        !MOV ES, AX
+        !MOV DI, winOff
+        !MOV CX, rowsLeft
+        !MOV DX, 800
+        !MOV AL, c
+        Vesa800VLineFast:
+        !MOV ES:[DI], AL
+        !ADD DI, DX
+        !LOOP Vesa800VLineFast
+        !POP DI
+        !POP ES
+    ELSE
+        DO WHILE rowsLeft > 0
+            bank = o \ 65536
+            IF bank <> VESASystemContext.VWnd THEN CALL Memory_SetVesaWindow(bank)
+            winOff = o AND &HFFFF
+            toEndRows = (65536 - winOff) \ 800
+            IF toEndRows < 1 THEN toEndRows = 1
+            IF toEndRows > rowsLeft THEN rowsThis = rowsLeft ELSE rowsThis = toEndRows
+            !PUSH ES
+            !PUSH DI
+            !MOV AX, &HA000
+            !MOV ES, AX
+            !MOV DI, winOff
+            !MOV CX, rowsThis
+            !MOV DX, 800
+            !MOV AL, c
+            Vesa800VLineSeg:
+            !MOV ES:[DI], AL
+            !ADD DI, DX
+            !LOOP Vesa800VLineSeg
+            !POP DI
+            !POP ES
+            o = o + rowsThis * 800&
+            rowsLeft = rowsLeft - rowsThis
+        LOOP
+    END IF
+END SUB
+
+SUB Vesa800_FillRect(x1_a AS WORD, y1_a AS WORD, x2_a AS WORD, y2_a AS WORD, c_a AS BYTE)
+    DIM x1 AS WORD, y1 AS WORD, x2 AS WORD, y2 AS WORD, c AS BYTE, yy AS WORD
+    x1 = x1_a : y1 = y1_a : x2 = x2_a : y2 = y2_a : c = c_a
+    IF y1 > y2 THEN SWAP y1, y2
+    FOR yy = y1 TO y2
+        CALL Vesa800_HLine(x1, x2, yy, c)
+    NEXT yy
+END SUB
+
+SUB Vesa800_DrawRect(x1_a AS WORD, y1_a AS WORD, x2_a AS WORD, y2_a AS WORD, c_a AS BYTE)
+    DIM x1 AS WORD, y1 AS WORD, x2 AS WORD, y2 AS WORD, c AS BYTE
+    x1 = x1_a : y1 = y1_a : x2 = x2_a : y2 = y2_a : c = c_a
+    IF x1 > x2 THEN SWAP x1, x2
+    IF y1 > y2 THEN SWAP y1, y2
+    CALL Vesa800_HLine(x1, x2, y1, c)
+    CALL Vesa800_HLine(x1, x2, y2, c)
+    CALL Vesa800_VLine(x1, y1, y2, c)
+    CALL Vesa800_VLine(x2, y1, y2, c)
+END SUB
+
+' ---------------------------------------------------------------------------
+' 1024-wide VESA 256-colour family. y*1024 is inlined as shifts/adds in every
+' handler (PowerBASIC cannot inline a FUNCTION). A horizontal run crosses at
+' most one 64k bank boundary, so HLine is branch-light straight-line code:
+' fill to the boundary, switch the bank once, fill the rest. VLine fast-paths
+' the common single-bank case and otherwise fills whole row-runs per bank.
+' ---------------------------------------------------------------------------
+SUB Vesa1024_PutPixel(x_a AS WORD, y_a AS WORD, c_a AS BYTE)
+    DIM x AS WORD, y AS WORD, c AS BYTE, o AS LONG, t AS LONG, bank AS WORD, winOff AS WORD
+    x = x_a : y = y_a : c = c_a
+    t = y : SHIFT LEFT t, 10 : o = t
+    o = o + x
+    bank = o \ 65536
+    IF bank <> VESASystemContext.VWnd THEN CALL Memory_SetVesaWindow(bank)
+    winOff = o AND &HFFFF
+    DEF SEG = &HA000 : POKE winOff, c : DEF SEG
+END SUB
+
+SUB Vesa1024_GetPixel(x_a AS WORD, y_a AS WORD, resultVal AS BYTE)
+    DIM x AS WORD, y AS WORD, o AS LONG, t AS LONG, bank AS WORD, winOff AS WORD
+    x = x_a : y = y_a
+    t = y : SHIFT LEFT t, 10 : o = t
+    o = o + x
+    bank = o \ 65536
+    IF bank <> VESASystemContext.VWnd THEN CALL Memory_SetVesaWindow(bank)
+    winOff = o AND &HFFFF
+    DEF SEG = &HA000 : resultVal = PEEK(winOff) : DEF SEG
+END SUB
+
+SUB Vesa1024_HLine(x1_a AS WORD, x2_a AS WORD, y_a AS WORD, c_a AS BYTE)
+    DIM x1 AS WORD, x2 AS WORD, y AS WORD, c AS BYTE
+    DIM o AS LONG, t AS LONG, toEnd AS LONG, runLen AS WORD, bank AS WORD, winOff AS WORD, rest AS WORD
+    x1 = x1_a : x2 = x2_a : y = y_a : c = c_a
+    IF x1 > x2 THEN SWAP x1, x2
+    t = y : SHIFT LEFT t, 10 : o = t
+    o = o + x1
+    runLen = x2 - x1 + 1
+    bank = o \ 65536
+    IF bank <> VESASystemContext.VWnd THEN CALL Memory_SetVesaWindow(bank)
+    winOff = o AND &HFFFF
+    toEnd = 65536 - winOff
+    IF toEnd >= runLen THEN
+        !PUSH ES
+        !PUSH DI
+        !MOV AX, &HA000
+        !MOV ES, AX
+        !MOV DI, winOff
+        !MOV CX, runLen
+        !MOV AL, c
+        !CLD
+        !REP STOSB
+        !POP DI
+        !POP ES
+    ELSE
+        rest = runLen - toEnd
+        !PUSH ES
+        !PUSH DI
+        !MOV AX, &HA000
+        !MOV ES, AX
+        !MOV DI, winOff
+        !MOV CX, toEnd
+        !MOV AL, c
+        !CLD
+        !REP STOSB
+        !POP DI
+        !POP ES
+        CALL Memory_SetVesaWindow(bank + 1)
+        !PUSH ES
+        !PUSH DI
+        !MOV AX, &HA000
+        !MOV ES, AX
+        !XOR DI, DI
+        !MOV CX, rest
+        !MOV AL, c
+        !CLD
+        !REP STOSB
+        !POP DI
+        !POP ES
+    END IF
+END SUB
+
+SUB Vesa1024_VLine(x_a AS WORD, y1_a AS WORD, y2_a AS WORD, c_a AS BYTE)
+    DIM x AS WORD, y1 AS WORD, y2 AS WORD, c AS BYTE
+    DIM o AS LONG, t AS LONG, endO AS LONG, toEndRows AS LONG
+    DIM rowsLeft AS WORD, rowsThis AS WORD, bank AS WORD, winOff AS WORD
+    x = x_a : y1 = y1_a : y2 = y2_a : c = c_a
+    IF y1 > y2 THEN SWAP y1, y2
+    t = y1 : SHIFT LEFT t, 10 : o = t
+    o = o + x
+    rowsLeft = y2 - y1 + 1
+    endO = o + (rowsLeft - 1) * 1024&
+    IF (o \ 65536) = (endO \ 65536) THEN
+        ' whole column in one bank - no per-row checks
+        bank = o \ 65536
+        IF bank <> VESASystemContext.VWnd THEN CALL Memory_SetVesaWindow(bank)
+        winOff = o AND &HFFFF
+        !PUSH ES
+        !PUSH DI
+        !MOV AX, &HA000
+        !MOV ES, AX
+        !MOV DI, winOff
+        !MOV CX, rowsLeft
+        !MOV DX, 1024
+        !MOV AL, c
+        Vesa1024VLineFast:
+        !MOV ES:[DI], AL
+        !ADD DI, DX
+        !LOOP Vesa1024VLineFast
+        !POP DI
+        !POP ES
+    ELSE
+        DO WHILE rowsLeft > 0
+            bank = o \ 65536
+            IF bank <> VESASystemContext.VWnd THEN CALL Memory_SetVesaWindow(bank)
+            winOff = o AND &HFFFF
+            toEndRows = (65536 - winOff) \ 1024
+            IF toEndRows < 1 THEN toEndRows = 1
+            IF toEndRows > rowsLeft THEN rowsThis = rowsLeft ELSE rowsThis = toEndRows
+            !PUSH ES
+            !PUSH DI
+            !MOV AX, &HA000
+            !MOV ES, AX
+            !MOV DI, winOff
+            !MOV CX, rowsThis
+            !MOV DX, 1024
+            !MOV AL, c
+            Vesa1024VLineSeg:
+            !MOV ES:[DI], AL
+            !ADD DI, DX
+            !LOOP Vesa1024VLineSeg
+            !POP DI
+            !POP ES
+            o = o + rowsThis * 1024&
+            rowsLeft = rowsLeft - rowsThis
+        LOOP
+    END IF
+END SUB
+
+SUB Vesa1024_FillRect(x1_a AS WORD, y1_a AS WORD, x2_a AS WORD, y2_a AS WORD, c_a AS BYTE)
+    DIM x1 AS WORD, y1 AS WORD, x2 AS WORD, y2 AS WORD, c AS BYTE, yy AS WORD
+    x1 = x1_a : y1 = y1_a : x2 = x2_a : y2 = y2_a : c = c_a
+    IF y1 > y2 THEN SWAP y1, y2
+    FOR yy = y1 TO y2
+        CALL Vesa1024_HLine(x1, x2, yy, c)
+    NEXT yy
+END SUB
+
+SUB Vesa1024_DrawRect(x1_a AS WORD, y1_a AS WORD, x2_a AS WORD, y2_a AS WORD, c_a AS BYTE)
+    DIM x1 AS WORD, y1 AS WORD, x2 AS WORD, y2 AS WORD, c AS BYTE
+    x1 = x1_a : y1 = y1_a : x2 = x2_a : y2 = y2_a : c = c_a
+    IF x1 > x2 THEN SWAP x1, x2
+    IF y1 > y2 THEN SWAP y1, y2
+    CALL Vesa1024_HLine(x1, x2, y1, c)
+    CALL Vesa1024_HLine(x1, x2, y2, c)
+    CALL Vesa1024_VLine(x1, y1, y2, c)
+    CALL Vesa1024_VLine(x2, y1, y2, c)
+END SUB
+
+' ---------------------------------------------------------------------------
+' 1280-wide VESA 256-colour family. y*1280 is inlined as shifts/adds in every
+' handler (PowerBASIC cannot inline a FUNCTION). A horizontal run crosses at
+' most one 64k bank boundary, so HLine is branch-light straight-line code:
+' fill to the boundary, switch the bank once, fill the rest. VLine fast-paths
+' the common single-bank case and otherwise fills whole row-runs per bank.
+' ---------------------------------------------------------------------------
+SUB Vesa1280_PutPixel(x_a AS WORD, y_a AS WORD, c_a AS BYTE)
+    DIM x AS WORD, y AS WORD, c AS BYTE, o AS LONG, t AS LONG, bank AS WORD, winOff AS WORD
+    x = x_a : y = y_a : c = c_a
+    t = y : SHIFT LEFT t, 10 : o = t
+    t = y : SHIFT LEFT t, 8 : o = o + t
+    o = o + x
+    bank = o \ 65536
+    IF bank <> VESASystemContext.VWnd THEN CALL Memory_SetVesaWindow(bank)
+    winOff = o AND &HFFFF
+    DEF SEG = &HA000 : POKE winOff, c : DEF SEG
+END SUB
+
+SUB Vesa1280_GetPixel(x_a AS WORD, y_a AS WORD, resultVal AS BYTE)
+    DIM x AS WORD, y AS WORD, o AS LONG, t AS LONG, bank AS WORD, winOff AS WORD
+    x = x_a : y = y_a
+    t = y : SHIFT LEFT t, 10 : o = t
+    t = y : SHIFT LEFT t, 8 : o = o + t
+    o = o + x
+    bank = o \ 65536
+    IF bank <> VESASystemContext.VWnd THEN CALL Memory_SetVesaWindow(bank)
+    winOff = o AND &HFFFF
+    DEF SEG = &HA000 : resultVal = PEEK(winOff) : DEF SEG
+END SUB
+
+SUB Vesa1280_HLine(x1_a AS WORD, x2_a AS WORD, y_a AS WORD, c_a AS BYTE)
+    DIM x1 AS WORD, x2 AS WORD, y AS WORD, c AS BYTE
+    DIM o AS LONG, t AS LONG, toEnd AS LONG, runLen AS WORD, bank AS WORD, winOff AS WORD, rest AS WORD
+    x1 = x1_a : x2 = x2_a : y = y_a : c = c_a
+    IF x1 > x2 THEN SWAP x1, x2
+    t = y : SHIFT LEFT t, 10 : o = t
+    t = y : SHIFT LEFT t, 8 : o = o + t
+    o = o + x1
+    runLen = x2 - x1 + 1
+    bank = o \ 65536
+    IF bank <> VESASystemContext.VWnd THEN CALL Memory_SetVesaWindow(bank)
+    winOff = o AND &HFFFF
+    toEnd = 65536 - winOff
+    IF toEnd >= runLen THEN
+        !PUSH ES
+        !PUSH DI
+        !MOV AX, &HA000
+        !MOV ES, AX
+        !MOV DI, winOff
+        !MOV CX, runLen
+        !MOV AL, c
+        !CLD
+        !REP STOSB
+        !POP DI
+        !POP ES
+    ELSE
+        rest = runLen - toEnd
+        !PUSH ES
+        !PUSH DI
+        !MOV AX, &HA000
+        !MOV ES, AX
+        !MOV DI, winOff
+        !MOV CX, toEnd
+        !MOV AL, c
+        !CLD
+        !REP STOSB
+        !POP DI
+        !POP ES
+        CALL Memory_SetVesaWindow(bank + 1)
+        !PUSH ES
+        !PUSH DI
+        !MOV AX, &HA000
+        !MOV ES, AX
+        !XOR DI, DI
+        !MOV CX, rest
+        !MOV AL, c
+        !CLD
+        !REP STOSB
+        !POP DI
+        !POP ES
+    END IF
+END SUB
+
+SUB Vesa1280_VLine(x_a AS WORD, y1_a AS WORD, y2_a AS WORD, c_a AS BYTE)
+    DIM x AS WORD, y1 AS WORD, y2 AS WORD, c AS BYTE
+    DIM o AS LONG, t AS LONG, endO AS LONG, toEndRows AS LONG
+    DIM rowsLeft AS WORD, rowsThis AS WORD, bank AS WORD, winOff AS WORD
+    x = x_a : y1 = y1_a : y2 = y2_a : c = c_a
+    IF y1 > y2 THEN SWAP y1, y2
+    t = y1 : SHIFT LEFT t, 10 : o = t
+    t = y1 : SHIFT LEFT t, 8 : o = o + t
+    o = o + x
+    rowsLeft = y2 - y1 + 1
+    endO = o + (rowsLeft - 1) * 1280&
+    IF (o \ 65536) = (endO \ 65536) THEN
+        ' whole column in one bank - no per-row checks
+        bank = o \ 65536
+        IF bank <> VESASystemContext.VWnd THEN CALL Memory_SetVesaWindow(bank)
+        winOff = o AND &HFFFF
+        !PUSH ES
+        !PUSH DI
+        !MOV AX, &HA000
+        !MOV ES, AX
+        !MOV DI, winOff
+        !MOV CX, rowsLeft
+        !MOV DX, 1280
+        !MOV AL, c
+        Vesa1280VLineFast:
+        !MOV ES:[DI], AL
+        !ADD DI, DX
+        !LOOP Vesa1280VLineFast
+        !POP DI
+        !POP ES
+    ELSE
+        DO WHILE rowsLeft > 0
+            bank = o \ 65536
+            IF bank <> VESASystemContext.VWnd THEN CALL Memory_SetVesaWindow(bank)
+            winOff = o AND &HFFFF
+            toEndRows = (65536 - winOff) \ 1280
+            IF toEndRows < 1 THEN toEndRows = 1
+            IF toEndRows > rowsLeft THEN rowsThis = rowsLeft ELSE rowsThis = toEndRows
+            !PUSH ES
+            !PUSH DI
+            !MOV AX, &HA000
+            !MOV ES, AX
+            !MOV DI, winOff
+            !MOV CX, rowsThis
+            !MOV DX, 1280
+            !MOV AL, c
+            Vesa1280VLineSeg:
+            !MOV ES:[DI], AL
+            !ADD DI, DX
+            !LOOP Vesa1280VLineSeg
+            !POP DI
+            !POP ES
+            o = o + rowsThis * 1280&
+            rowsLeft = rowsLeft - rowsThis
+        LOOP
+    END IF
+END SUB
+
+SUB Vesa1280_FillRect(x1_a AS WORD, y1_a AS WORD, x2_a AS WORD, y2_a AS WORD, c_a AS BYTE)
+    DIM x1 AS WORD, y1 AS WORD, x2 AS WORD, y2 AS WORD, c AS BYTE, yy AS WORD
+    x1 = x1_a : y1 = y1_a : x2 = x2_a : y2 = y2_a : c = c_a
+    IF y1 > y2 THEN SWAP y1, y2
+    FOR yy = y1 TO y2
+        CALL Vesa1280_HLine(x1, x2, yy, c)
+    NEXT yy
+END SUB
+
+SUB Vesa1280_DrawRect(x1_a AS WORD, y1_a AS WORD, x2_a AS WORD, y2_a AS WORD, c_a AS BYTE)
+    DIM x1 AS WORD, y1 AS WORD, x2 AS WORD, y2 AS WORD, c AS BYTE
+    x1 = x1_a : y1 = y1_a : x2 = x2_a : y2 = y2_a : c = c_a
+    IF x1 > x2 THEN SWAP x1, x2
+    IF y1 > y2 THEN SWAP y1, y2
+    CALL Vesa1280_HLine(x1, x2, y1, c)
+    CALL Vesa1280_HLine(x1, x2, y2, c)
+    CALL Vesa1280_VLine(x1, y1, y2, c)
+    CALL Vesa1280_VLine(x2, y1, y2, c)
+END SUB
+
+' wire the matching width family into SVGADispatch (from the VESA case)
+SUB Svga_WireVesaOptimized
+    SELECT CASE SVGAScreenContext.XRes
+        CASE 320
+            SVGADispatch.PutPixel = CODEPTR32(Vesa320_PutPixel)
+            SVGADispatch.GetPixel = CODEPTR32(Vesa320_GetPixel)
+            SVGADispatch.HLine = CODEPTR32(Vesa320_HLine)
+            SVGADispatch.VLine = CODEPTR32(Vesa320_VLine)
+            SVGADispatch.FillRect = CODEPTR32(Vesa320_FillRect)
+            SVGADispatch.DrawRect = CODEPTR32(Vesa320_DrawRect)
+        CASE 640
+            SVGADispatch.PutPixel = CODEPTR32(Vesa640_PutPixel)
+            SVGADispatch.GetPixel = CODEPTR32(Vesa640_GetPixel)
+            SVGADispatch.HLine = CODEPTR32(Vesa640_HLine)
+            SVGADispatch.VLine = CODEPTR32(Vesa640_VLine)
+            SVGADispatch.FillRect = CODEPTR32(Vesa640_FillRect)
+            SVGADispatch.DrawRect = CODEPTR32(Vesa640_DrawRect)
+        CASE 800
+            SVGADispatch.PutPixel = CODEPTR32(Vesa800_PutPixel)
+            SVGADispatch.GetPixel = CODEPTR32(Vesa800_GetPixel)
+            SVGADispatch.HLine = CODEPTR32(Vesa800_HLine)
+            SVGADispatch.VLine = CODEPTR32(Vesa800_VLine)
+            SVGADispatch.FillRect = CODEPTR32(Vesa800_FillRect)
+            SVGADispatch.DrawRect = CODEPTR32(Vesa800_DrawRect)
+        CASE 1024
+            SVGADispatch.PutPixel = CODEPTR32(Vesa1024_PutPixel)
+            SVGADispatch.GetPixel = CODEPTR32(Vesa1024_GetPixel)
+            SVGADispatch.HLine = CODEPTR32(Vesa1024_HLine)
+            SVGADispatch.VLine = CODEPTR32(Vesa1024_VLine)
+            SVGADispatch.FillRect = CODEPTR32(Vesa1024_FillRect)
+            SVGADispatch.DrawRect = CODEPTR32(Vesa1024_DrawRect)
+        CASE 1280
+            SVGADispatch.PutPixel = CODEPTR32(Vesa1280_PutPixel)
+            SVGADispatch.GetPixel = CODEPTR32(Vesa1280_GetPixel)
+            SVGADispatch.HLine = CODEPTR32(Vesa1280_HLine)
+            SVGADispatch.VLine = CODEPTR32(Vesa1280_VLine)
+            SVGADispatch.FillRect = CODEPTR32(Vesa1280_FillRect)
+            SVGADispatch.DrawRect = CODEPTR32(Vesa1280_DrawRect)
+    END SELECT
+END SUB

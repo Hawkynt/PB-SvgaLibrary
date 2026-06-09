@@ -15,7 +15,12 @@ $INCLUDE "FILEUTIL.SUB"   ' Shared file I/O utility functions
 $INCLUDE "TIMER.SUB"      ' High-precision timer system
 $INCLUDE "VGA.SUB"        ' Standard VGA graphics functions
 $INCLUDE "MODEX.SUB"      ' Mode-X graphics functions
+$INCLUDE "MODEY.SUB"      ' Mode-Y (320x200 unchained planar)
+$INCLUDE "MODEZ.SUB"      ' Mode-Z (320x400 unchained planar)
 $INCLUDE "VESA.SUB"       ' VESA graphics mode management
+$INCLUDE "VESAOPT.SUB"    ' width-specialized VESA fast paths
+$INCLUDE "MODE16.SUB"     ' 800x600 16-colour bit-planed mode
+$INCLUDE "MODETEXT.SUB"   ' text-mode half-block framebuffer
 $INCLUDE "VIRTUAL.SUB"    ' Virtual coordinate system management
 $INCLUDE "GRAPHICS.SUB"   ' Core drawing primitives
 $INCLUDE "MEMORY.SUB"     ' EMS & Memory management
@@ -93,47 +98,110 @@ END SUB
 ' Returns: Nothing
 ' Note: Must be called after mode is set to update function pointers
 ' =============================================================================
+' =============================================================================
+' Dispatch dummies - every SVGADispatch slot points at one of these until a
+' mode supplies a real handler, so the Svga_* wrappers CALL DWORD through the
+' table unconditionally (no per-call NULL check / conditional jump in the hot
+' loops). A dummy just records that the op was unavailable in the active mode.
+' =============================================================================
+SUB Svga_DispUnset1(c AS BYTE)
+    gSvgaNoMode = 1
+END SUB
+SUB Svga_DispUnset3(a AS WORD, b AS WORD, c AS BYTE)
+    gSvgaNoMode = 1
+    c = 0                      ' keep GetPixel-style results defined
+END SUB
+SUB Svga_DispUnset4(a AS WORD, b AS WORD, c AS WORD, d AS BYTE)
+    gSvgaNoMode = 1
+END SUB
+SUB Svga_DispUnset5(a AS WORD, b AS WORD, c AS WORD, d AS WORD, e AS BYTE)
+    gSvgaNoMode = 1
+END SUB
+SUB Svga_DispUnset6(a AS WORD, b AS WORD, c AS WORD, d AS WORD, e AS WORD, f AS WORD)
+    gSvgaNoMode = 1
+END SUB
+
+SUB Svga_SetDispatchDefaults
+    SVGADispatch.PutPixel = CODEPTR32(Svga_DispUnset3)
+    SVGADispatch.GetPixel = CODEPTR32(Svga_DispUnset3)
+    SVGADispatch.HLine = CODEPTR32(Svga_DispUnset4)
+    SVGADispatch.VLine = CODEPTR32(Svga_DispUnset4)
+    SVGADispatch.LineDraw = CODEPTR32(Svga_DispUnset5)
+    SVGADispatch.FillRect = CODEPTR32(Svga_DispUnset5)
+    SVGADispatch.DrawRect = CODEPTR32(Svga_DispUnset5)
+    SVGADispatch.DrawCircle = CODEPTR32(Svga_DispUnset4)
+    SVGADispatch.FillCircle = CODEPTR32(Svga_DispUnset4)
+    SVGADispatch.ClearScreen = CODEPTR32(Svga_DispUnset1)
+    SVGADispatch.CopyBlock = CODEPTR32(Svga_DispUnset6)
+END SUB
+
 SUB Svga_InitDispatchTable
+    CALL Svga_SetDispatchDefaults    ' no slot stays NULL
     SELECT CASE VESASystemContext.CurrentMode
-        CASE %SVGA_MODEX
-            SVGADispatch.PutPixel = CODEPTR(ModeX_PutPixel)
-            SVGADispatch.GetPixel = CODEPTR(ModeX_GetPixel)
-            SVGADispatch.HLine = CODEPTR(ModeX_HLine)
-            SVGADispatch.VLine = CODEPTR(ModeX_VLine)
-            SVGADispatch.LineDraw = CODEPTR(ModeX_LineDraw)
-            SVGADispatch.FillRect = CODEPTR(ModeX_FillRect)
-            SVGADispatch.DrawRect = CODEPTR(ModeX_DrawRect)
-            SVGADispatch.DrawCircle = CODEPTR(ModeX_DrawCircle)
-            SVGADispatch.FillCircle = CODEPTR(ModeX_FillCircle)
-            SVGADispatch.ClearScreen = CODEPTR(ModeX_ClearScreen)
-            SVGADispatch.CopyBlock = CODEPTR(ModeX_CopyBlock)
+        CASE %SVGA_MODEX, %SVGA_MODEY, %SVGA_MODEZ
+            SVGADispatch.PutPixel = CODEPTR32(ModeX_PutPixel)
+            SVGADispatch.GetPixel = CODEPTR32(ModeX_GetPixel)
+            SVGADispatch.HLine = CODEPTR32(ModeX_HLine)
+            SVGADispatch.VLine = CODEPTR32(ModeX_VLine)
+            SVGADispatch.LineDraw = CODEPTR32(ModeX_LineDraw)
+            SVGADispatch.FillRect = CODEPTR32(ModeX_FillRect)
+            SVGADispatch.DrawRect = CODEPTR32(ModeX_DrawRect)
+            SVGADispatch.DrawCircle = CODEPTR32(ModeX_DrawCircle)
+            SVGADispatch.FillCircle = CODEPTR32(ModeX_FillCircle)
+            SVGADispatch.ClearScreen = CODEPTR32(ModeX_ClearScreen)
+            SVGADispatch.CopyBlock = CODEPTR32(ModeX_CopyBlock)
             
         CASE %SVGA_VESA
-            SVGADispatch.PutPixel = CODEPTR(Vesa_PutPixel)
-            SVGADispatch.GetPixel = CODEPTR(Vesa_GetPixel)
-            SVGADispatch.HLine = CODEPTR(Vesa_HLine)
-            SVGADispatch.VLine = CODEPTR(Vesa_VLine)
-            SVGADispatch.LineDraw = CODEPTR(Vesa_LineDraw)
-            SVGADispatch.FillRect = CODEPTR(Vesa_FillRect)
-            SVGADispatch.DrawRect = CODEPTR(Vesa_DrawRect)
+            SVGADispatch.PutPixel = CODEPTR32(Vesa_PutPixel)
+            SVGADispatch.GetPixel = CODEPTR32(Vesa_GetPixel)
+            SVGADispatch.HLine = CODEPTR32(Vesa_HLine)
+            SVGADispatch.VLine = CODEPTR32(Vesa_VLine)
+            SVGADispatch.LineDraw = CODEPTR32(Vesa_LineDraw)
+            SVGADispatch.FillRect = CODEPTR32(Vesa_FillRect)
+            SVGADispatch.DrawRect = CODEPTR32(Vesa_DrawRect)
             ' VESA doesn't have optimized circle functions - use NULL pointers
-            SVGADispatch.DrawCircle = 0
-            SVGADispatch.FillCircle = 0
-            SVGADispatch.ClearScreen = CODEPTR(Vesa_ClearScreen)
-            SVGADispatch.CopyBlock = CODEPTR(Vesa_CopyBlock)
+            SVGADispatch.DrawCircle = CODEPTR32(Svga_DrawCircleGeneric)
+            SVGADispatch.FillCircle = CODEPTR32(Svga_FillCircleGeneric)
+            SVGADispatch.ClearScreen = CODEPTR32(Vesa_ClearScreen)
+            SVGADispatch.CopyBlock = CODEPTR32(Vesa_CopyBlock)
+            CALL Svga_WireVesaOptimized    ' width-specialized fast paths
             
+        CASE %SVGA_VGA16
+            SVGADispatch.PutPixel = CODEPTR32(Mode16_PutPixel)
+            SVGADispatch.GetPixel = CODEPTR32(Mode16_GetPixel)
+            SVGADispatch.HLine = CODEPTR32(Mode16_HLine)
+            SVGADispatch.VLine = CODEPTR32(Mode16_VLine)
+            SVGADispatch.LineDraw = CODEPTR32(Mode16_LineDraw)
+            SVGADispatch.FillRect = CODEPTR32(Mode16_FillRect)
+            SVGADispatch.DrawRect = CODEPTR32(Mode16_DrawRect)
+            SVGADispatch.DrawCircle = CODEPTR32(Svga_DrawCircleGeneric)
+            SVGADispatch.FillCircle = CODEPTR32(Svga_FillCircleGeneric)
+            SVGADispatch.ClearScreen = CODEPTR32(Mode16_ClearScreen)
+
+        CASE %SVGA_TEXTGFX
+            SVGADispatch.PutPixel = CODEPTR32(ModeText_PutPixel)
+            SVGADispatch.GetPixel = CODEPTR32(ModeText_GetPixel)
+            SVGADispatch.HLine = CODEPTR32(ModeText_HLine)
+            SVGADispatch.VLine = CODEPTR32(ModeText_VLine)
+            SVGADispatch.LineDraw = CODEPTR32(ModeText_LineDraw)
+            SVGADispatch.FillRect = CODEPTR32(ModeText_FillRect)
+            SVGADispatch.DrawRect = CODEPTR32(ModeText_DrawRect)
+            SVGADispatch.DrawCircle = CODEPTR32(Svga_DrawCircleGeneric)
+            SVGADispatch.FillCircle = CODEPTR32(Svga_FillCircleGeneric)
+            SVGADispatch.ClearScreen = CODEPTR32(ModeText_ClearScreen)
+
         CASE ELSE
-            SVGADispatch.PutPixel = CODEPTR(Vga_PutPixel)
-            SVGADispatch.GetPixel = CODEPTR(Vga_GetPixel)
-            SVGADispatch.HLine = CODEPTR(Vga_HLine)
-            SVGADispatch.VLine = CODEPTR(Vga_VLine)
-            SVGADispatch.LineDraw = CODEPTR(Vga_LineDraw)
-            SVGADispatch.FillRect = CODEPTR(Vga_FillRect)
-            SVGADispatch.DrawRect = CODEPTR(Vga_DrawRect)
-            SVGADispatch.DrawCircle = CODEPTR(Vga_DrawCircle)
-            SVGADispatch.FillCircle = CODEPTR(Vga_FillCircle)
-            SVGADispatch.ClearScreen = CODEPTR(Vga_ClearScreen)
-            SVGADispatch.CopyBlock = CODEPTR(Vga_CopyBlock)
+            SVGADispatch.PutPixel = CODEPTR32(Vga_PutPixel)
+            SVGADispatch.GetPixel = CODEPTR32(Vga_GetPixel)
+            SVGADispatch.HLine = CODEPTR32(Vga_HLine)
+            SVGADispatch.VLine = CODEPTR32(Vga_VLine)
+            SVGADispatch.LineDraw = CODEPTR32(Vga_LineDraw)
+            SVGADispatch.FillRect = CODEPTR32(Vga_FillRect)
+            SVGADispatch.DrawRect = CODEPTR32(Vga_DrawRect)
+            SVGADispatch.DrawCircle = CODEPTR32(Vga_DrawCircle)
+            SVGADispatch.FillCircle = CODEPTR32(Vga_FillCircle)
+            SVGADispatch.ClearScreen = CODEPTR32(Vga_ClearScreen)
+            SVGADispatch.CopyBlock = CODEPTR32(Vga_CopyBlock)
     END SELECT
 END SUB
 
@@ -159,16 +227,9 @@ SUB Svga_PutPixel(BYVAL x AS WORD, BYVAL y AS WORD, BYVAL colorVal AS BYTE)
     IF Virtual_IsVisible(x, y) = 0 THEN EXIT SUB
     
     ' Use function pointer for ultra-fast dispatch
-    IF SVGADispatch.PutPixel <> 0 THEN
-        SELECT CASE VESASystemContext.CurrentMode
-            CASE %SVGA_MODEX
-            CALL ModeX_PutPixel(PhysicalX, PhysicalY, colorVal)
-            CASE %SVGA_VESA
-            CALL Vesa_PutPixel(PhysicalX, PhysicalY, colorVal)
-            CASE ELSE
-            CALL Vga_PutPixel(PhysicalX, PhysicalY, colorVal)
-        END SELECT
-    END IF
+    DIM fpDispatch AS DWORD
+    fpDispatch = SVGADispatch.PutPixel
+    CALL DWORD fpDispatch BDECL (PhysicalX, PhysicalY, colorVal)
 END SUB
 
 ' =============================================================================
@@ -190,18 +251,11 @@ FUNCTION Svga_GetPixel (BYVAL x AS WORD, BYVAL y AS WORD) AS BYTE
     END IF
     
     ' Use function pointer for ultra-fast dispatch
-    IF SVGADispatch.GetPixel <> 0 THEN
-        SELECT CASE VESASystemContext.CurrentMode
-            CASE %SVGA_MODEX
-            Svga_GetPixel = ModeX_GetPixel(PhysicalX, PhysicalY)
-            CASE %SVGA_VESA
-            Svga_GetPixel = Vesa_GetPixel(PhysicalX, PhysicalY)
-            CASE ELSE
-            Svga_GetPixel = Vga_GetPixel(PhysicalX, PhysicalY)
-        END SELECT
-    ELSE
-        Svga_GetPixel = 0
-    END IF
+    DIM fpDispatch AS DWORD, resultByte AS BYTE
+    resultByte = 0
+    fpDispatch = SVGADispatch.GetPixel
+    CALL DWORD fpDispatch BDECL (PhysicalX, PhysicalY, resultByte)
+    Svga_GetPixel = resultByte
 END FUNCTION
 
 ' =============================================================================
@@ -224,16 +278,10 @@ SUB Svga_LineDraw(BYVAL x1 AS WORD, BYVAL y1 AS WORD, BYVAL x2 AS WORD, BYVAL y2
     IF Virtual_IsVisible(x1, y1) = 0 AND Virtual_IsVisible(x2, y2) = 0 THEN EXIT SUB
     
     ' Use function pointer for ultra-fast dispatch
-    IF SVGADispatch.LineDraw <> 0 THEN
-        SELECT CASE VESASystemContext.CurrentMode
-            CASE %SVGA_MODEX
-            CALL ModeX_LineDraw(PhysicalX1, PhysicalY1, PhysicalX2, PhysicalY2, colorVal)
-            CASE %SVGA_VESA
-            CALL Vesa_LineDraw(PhysicalX1, PhysicalY1, PhysicalX2, PhysicalY2, colorVal)
-            CASE ELSE
-            CALL Vga_LineDraw(PhysicalX1, PhysicalY1, PhysicalX2, PhysicalY2, colorVal)
-        END SELECT
-    END IF
+    DIM fpDispatch AS DWORD, colByte AS BYTE
+    colByte = colorVal
+    fpDispatch = SVGADispatch.LineDraw
+    CALL DWORD fpDispatch BDECL (PhysicalX1, PhysicalY1, PhysicalX2, PhysicalY2, colByte)
 END SUB
 
 ' =============================================================================
@@ -245,16 +293,9 @@ END SUB
 ' =============================================================================
 SUB Svga_ClearScreen(BYVAL colorVal AS BYTE)
     ' Use function pointer for ultra-fast dispatch
-    IF SVGADispatch.ClearScreen <> 0 THEN
-        SELECT CASE VESASystemContext.CurrentMode
-            CASE %SVGA_MODEX
-            CALL ModeX_ClearScreen(colorVal)
-            CASE %SVGA_VESA
-            CALL Vesa_ClearScreen(colorVal)
-            CASE ELSE
-            CALL Vga_ClearScreen(colorVal)
-        END SELECT
-    END IF
+    DIM fpDispatch AS DWORD
+    fpDispatch = SVGADispatch.ClearScreen
+    CALL DWORD fpDispatch BDECL (colorVal)
 END SUB
 
 ' =============================================================================
@@ -415,16 +456,9 @@ SUB Svga_HLine(BYVAL x1 AS WORD, BYVAL x2 AS WORD, BYVAL y AS WORD, BYVAL colorV
     IF Virtual_IsVisible(x1, y) = 0 AND Virtual_IsVisible(x2, y) = 0 THEN EXIT SUB
     
     ' Use function pointer for ultra-fast dispatch
-    IF SVGADispatch.HLine <> 0 THEN
-        SELECT CASE VESASystemContext.CurrentMode
-            CASE %SVGA_MODEX
-            CALL ModeX_HLine(PhysicalX1, PhysicalX2, PhysicalY, colorVal)
-            CASE %SVGA_VESA
-            CALL Vesa_HLine(PhysicalX1, PhysicalX2, PhysicalY, colorVal)
-            CASE ELSE
-            CALL Vga_HLine(PhysicalX1, PhysicalX2, PhysicalY, colorVal)
-        END SELECT
-    END IF
+    DIM fpDispatch AS DWORD
+    fpDispatch = SVGADispatch.HLine
+    CALL DWORD fpDispatch BDECL (PhysicalX1, PhysicalX2, PhysicalY, colorVal)
 END SUB
 
 ' =============================================================================
@@ -437,17 +471,9 @@ END SUB
 ' =============================================================================
 SUB Svga_VLine(BYVAL x AS WORD, BYVAL y1 AS WORD, BYVAL y2 AS WORD, BYVAL colorVal AS BYTE)
     ' Use function pointer for ultra-fast dispatch
-    IF SVGADispatch.VLine <> 0 THEN
-        ' Note: ModeX_VLine has different parameter order (Y1, Y2, X, colorVal)
-        SELECT CASE VESASystemContext.CurrentMode
-            CASE %SVGA_MODEX
-                CALL ModeX_VLine(y1, y2, x, colorVal)
-            CASE %SVGA_VESA
-                CALL Vesa_VLine(x, y1, y2, colorVal)
-            CASE ELSE
-                CALL Vga_VLine(x, y1, y2, colorVal)
-        END SELECT
-    END IF
+    DIM fpDispatch AS DWORD
+    fpDispatch = SVGADispatch.VLine
+    CALL DWORD fpDispatch BDECL (x, y1, y2, colorVal)
 END SUB
 
 ' =============================================================================
@@ -460,16 +486,9 @@ END SUB
 ' =============================================================================
 SUB Svga_FillRect(BYVAL x1 AS WORD, BYVAL y1 AS WORD, BYVAL x2 AS WORD, BYVAL y2 AS WORD, BYVAL colorVal AS BYTE)
     ' Use function pointer for ultra-fast dispatch
-    IF SVGADispatch.FillRect <> 0 THEN
-        SELECT CASE VESASystemContext.CurrentMode
-            CASE %SVGA_MODEX
-            CALL ModeX_FillRect(x1, y1, x2, y2, colorVal)
-            CASE %SVGA_VESA
-            CALL Vesa_FillRect(x1, y1, x2, y2, colorVal)
-            CASE ELSE
-            CALL Vga_FillRect(x1, y1, x2, y2, colorVal)
-        END SELECT
-    END IF
+    DIM fpDispatch AS DWORD
+    fpDispatch = SVGADispatch.FillRect
+    CALL DWORD fpDispatch BDECL (x1, y1, x2, y2, colorVal)
 END SUB
 
 ' =============================================================================
@@ -482,16 +501,9 @@ END SUB
 ' =============================================================================
 SUB Svga_DrawRect(BYVAL x1 AS WORD, BYVAL y1 AS WORD, BYVAL x2 AS WORD, BYVAL y2 AS WORD, BYVAL colorVal AS BYTE)
     ' Use function pointer for ultra-fast dispatch
-    IF SVGADispatch.DrawRect <> 0 THEN
-        SELECT CASE VESASystemContext.CurrentMode
-            CASE %SVGA_MODEX
-            CALL ModeX_DrawRect(x1, y1, x2, y2, colorVal)
-            CASE %SVGA_VESA
-            CALL Vesa_DrawRect(x1, y1, x2, y2, colorVal)
-            CASE ELSE
-            CALL Vga_DrawRect(x1, y1, x2, y2, colorVal)
-        END SELECT
-    END IF
+    DIM fpDispatch AS DWORD
+    fpDispatch = SVGADispatch.DrawRect
+    CALL DWORD fpDispatch BDECL (x1, y1, x2, y2, colorVal)
 END SUB
 
 ' =============================================================================
@@ -504,17 +516,9 @@ END SUB
 ' =============================================================================
 SUB Svga_DrawCircle(BYVAL centerX AS WORD, BYVAL centerY AS WORD, BYVAL radius AS WORD, BYVAL colorVal AS BYTE)
     ' Use function pointer for ultra-fast dispatch
-    IF SVGADispatch.DrawCircle <> 0 THEN
-        SELECT CASE VESASystemContext.CurrentMode
-            CASE %SVGA_MODEX
-            CALL ModeX_DrawCircle(centerX, centerY, radius, colorVal)
-            CASE ELSE
-            CALL Vga_DrawCircle(centerX, centerY, radius, colorVal)
-        END SELECT
-    ELSE
-        ' VESA doesn't have optimized circle - use generic implementation
-        CALL Svga_DrawCircleGeneric(centerX, centerY, radius, colorVal)
-    END IF
+    DIM fpDispatch AS DWORD
+    fpDispatch = SVGADispatch.DrawCircle
+    CALL DWORD fpDispatch BDECL (centerX, centerY, radius, colorVal)
 END SUB
 
 ' =============================================================================
@@ -527,23 +531,15 @@ END SUB
 ' =============================================================================
 SUB Svga_FillCircle(BYVAL centerX AS WORD, BYVAL centerY AS WORD, BYVAL radius AS WORD, BYVAL colorVal AS BYTE)
     ' Use function pointer for ultra-fast dispatch
-    IF SVGADispatch.FillCircle <> 0 THEN
-        SELECT CASE VESASystemContext.CurrentMode
-            CASE %SVGA_MODEX
-            CALL ModeX_FillCircle(centerX, centerY, radius, colorVal)
-            CASE ELSE
-            CALL Vga_FillCircle(centerX, centerY, radius, colorVal)
-        END SELECT
-    ELSE
-        ' VESA doesn't have optimized filled circle - use generic implementation
-        CALL Svga_FillCircleGeneric(centerX, centerY, radius, colorVal)
-    END IF
+    DIM fpDispatch AS DWORD
+    fpDispatch = SVGADispatch.FillCircle
+    CALL DWORD fpDispatch BDECL (centerX, centerY, radius, colorVal)
 END SUB
 
 ' =============================================================================
 ' Generic circle drawing using PUTPIXEL (for modes without optimized circles)
 ' =============================================================================
-SUB Svga_DrawCircleGeneric(BYVAL centerX AS WORD, BYVAL centerY AS WORD, BYVAL radius AS WORD, BYVAL colorVal AS BYTE)
+SUB Svga_DrawCircleGeneric(centerX AS WORD, centerY AS WORD, radius AS WORD, colorVal AS BYTE)
     DIM X AS INTEGER, Y AS INTEGER, DecisionParam AS INTEGER
     
     X = 0
@@ -582,7 +578,7 @@ END SUB
 ' =============================================================================
 ' Generic filled circle drawing using HLINE (for modes without optimized circles)
 ' =============================================================================
-SUB Svga_FillCircleGeneric(BYVAL centerX AS WORD, BYVAL centerY AS WORD, BYVAL radius AS WORD, BYVAL colorVal AS BYTE)
+SUB Svga_FillCircleGeneric(centerX AS WORD, centerY AS WORD, radius AS WORD, colorVal AS BYTE)
     DIM X AS INTEGER, Y AS INTEGER, DecisionParam AS INTEGER
     DIM PrevY AS INTEGER
     

@@ -1,0 +1,54 @@
+' =============================================================================
+' MODEY.SUB - Mode-Y (320x200, unchained 4-plane planar, 4 video pages)
+' =============================================================================
+' Mode-Y is VGA mode 13h with chain-4 disabled: 320x200x256 spread across the
+' four VGA planes, which frees enough video memory for 4 pages (flicker-free
+' page flipping). It shares Mode-X's unchained planar layout exactly
+' (plane = x AND 3, byte = x\4, offset = y * 80 + byte), so the optimized
+' ModeX_* primitives are wired in for it by Svga_InitDispatchTable - only the
+' mode set-up (resolution / page count) differs.
+' =============================================================================
+SUB ModeY_SetMode
+    ' Start from standard VGA mode 13h (its 320x200 timing is what Mode-Y wants)
+    !MOV AX, &H0013
+    !INT &H10
+
+    ' Disable chain-4 -> unchained planar (Sequencer Memory Mode register 04h)
+    !MOV DX, &H3C4
+    !MOV AL, 4
+    !OUT DX, AL
+    !INC DX
+    !IN AL, DX
+    !AND AL, &HF7          ; clear bit 3 (chain-4)
+    !OR AL, &H04           ; set bit 2 (odd/even disable)
+    !OUT DX, AL
+
+    ' Unlock CRTC vertical retrace end (clear write-protect)
+    !MOV DX, &H3D4
+    !MOV AL, &H11
+    !OUT DX, AL
+    !INC DX
+    !IN AL, DX
+    !AND AL, &H7F
+    !OUT DX, AL
+
+    ' Configure the shared unchained-planar context for 320x200
+    ModeXSystemContext.XRes = 320
+    ModeXSystemContext.YRes = 200
+    ModeXSystemContext.LogicalWidth = 80
+    ModeXSystemContext.PlanarMode = 1
+    ModeXSystemContext.BytesPerPixel = 1
+    ModeXSystemContext.ActivePage = 0
+    ModeXSystemContext.VisiblePage = 0
+    ModeXSystemContext.PageSize = 80 * 200
+    mxLogW = 80
+
+    SVGAScreenContext.XRes = 320
+    SVGAScreenContext.YRes = 200
+    SVGAScreenContext.ColorDepth = 8
+    SVGAScreenContext.BytesPerLine = 80
+
+    VESASystemContext.CurrentMode = %SVGA_MODEY
+    CALL Svga_InitDispatchTable    ' wire the optimized planar primitives
+    CALL ModeX_ClearScreen(0)
+END SUB

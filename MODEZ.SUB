@@ -1,0 +1,54 @@
+' =============================================================================
+' MODEZ.SUB - Mode-Z (320x400, unchained 4-plane planar, 2 video pages)
+' =============================================================================
+' Mode-Z is VGA mode 13h with chain-4 disabled and vertical double-scan turned
+' off, giving 320x400x256 across the four planes (2 pages). Same unchained
+' planar layout as Mode-X/Mode-Y (plane = x AND 3, byte = x\4,
+' offset = y * 80 + byte) so it reuses the optimized ModeX_* primitives.
+' =============================================================================
+SUB ModeZ_SetMode
+    ' Start from standard VGA mode 13h
+    !MOV AX, &H0013
+    !INT &H10
+
+    ' Disable chain-4 -> unchained planar
+    !MOV DX, &H3C4
+    !MOV AL, 4
+    !OUT DX, AL
+    !INC DX
+    !IN AL, DX
+    !AND AL, &HF7
+    !OR AL, &H04
+    !OUT DX, AL
+
+    ' Unlock CRTC vertical retrace end (clear write-protect)
+    !MOV DX, &H3D4
+    !MOV AL, &H11
+    !OUT DX, AL
+    !INC DX
+    !IN AL, DX
+    !AND AL, &H7F
+    !OUT DX, AL
+
+    ' 320x400: turn off vertical double-scan (Max Scan Line) + adjust timing
+    CALL SetModeXRegisters320x400
+
+    ModeXSystemContext.XRes = 320
+    ModeXSystemContext.YRes = 400
+    ModeXSystemContext.LogicalWidth = 80
+    ModeXSystemContext.PlanarMode = 1
+    ModeXSystemContext.BytesPerPixel = 1
+    ModeXSystemContext.ActivePage = 0
+    ModeXSystemContext.VisiblePage = 0
+    ModeXSystemContext.PageSize = 80 * 400
+    mxLogW = 80
+
+    SVGAScreenContext.XRes = 320
+    SVGAScreenContext.YRes = 400
+    SVGAScreenContext.ColorDepth = 8
+    SVGAScreenContext.BytesPerLine = 80
+
+    VESASystemContext.CurrentMode = %SVGA_MODEZ
+    CALL Svga_InitDispatchTable    ' wire the optimized planar primitives
+    CALL ModeX_ClearScreen(0)
+END SUB

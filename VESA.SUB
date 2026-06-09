@@ -318,7 +318,9 @@ END SUB
 ' Returns: Nothing
 ' Note: Handles VESA window switching automatically
 ' =============================================================================
-SUB VESA_PutPixel(BYVAL X AS WORD, BYVAL Y AS WORD, BYVAL colorVal AS BYTE)
+SUB VESA_PutPixel(X_a AS WORD, Y_a AS WORD, colorVal_a AS BYTE)
+    DIM X AS WORD, Y AS WORD, colorVal AS BYTE
+    X = X_a : Y = Y_a : colorVal = colorVal_a
     DIM ByteOffset AS LONG, WindowNumber AS WORD, PixelOffset AS WORD
     
     ' Calculate pixel address
@@ -352,7 +354,9 @@ END SUB
 '   X, Y - Pixel coordinates (BYVAL)
 ' Returns: Pixel colorVal value
 ' =============================================================================
-FUNCTION VESA_GetPixel(BYVAL X AS WORD, BYVAL Y AS WORD) AS BYTE
+SUB VESA_GetPixel(X_a AS WORD, Y_a AS WORD, resultVal AS BYTE)
+    DIM X AS WORD, Y AS WORD
+    X = X_a : Y = Y_a
     DIM ByteOffset AS LONG, WindowNumber AS WORD, PixelOffset AS WORD
     
     IF SVGAScreenContext.ColorDepth = 8 THEN
@@ -368,15 +372,15 @@ FUNCTION VESA_GetPixel(BYVAL X AS WORD, BYVAL Y AS WORD) AS BYTE
         
         ' Get pixel value
         DEF SEG = &HA000
-        VESA_GetPixel = PEEK(PixelOffset)
+        resultVal = PEEK(PixelOffset)
         DEF SEG
     ELSE
         ' Fallback
         DEF SEG = &HA000
-        VESA_GetPixel = PEEK(Y * SVGAScreenContext.BytesPerLine + X)
+        resultVal = PEEK(Y * SVGAScreenContext.BytesPerLine + X)
         DEF SEG
     END IF
-END FUNCTION
+END SUB
 
 ' =============================================================================
 ' Draw horizontal line in VESA mode (optimized for banking)
@@ -387,7 +391,9 @@ END FUNCTION
 ' Returns: Nothing
 ' Note: Optimized to minimize window switches
 ' =============================================================================
-SUB VESA_HLine(BYVAL X1 AS WORD, BYVAL X2 AS WORD, BYVAL Y AS WORD, BYVAL colorVal AS BYTE)
+SUB VESA_HLine(X1_a AS WORD, X2_a AS WORD, Y_a AS WORD, colorVal_a AS BYTE)
+    DIM X1 AS WORD, X2 AS WORD, Y AS WORD, colorVal AS BYTE
+    X1 = X1_a : X2 = X2_a : Y = Y_a : colorVal = colorVal_a
     DIM StartOffset AS LONG, EndOffset AS LONG
     DIM CurrentWindow AS WORD, BytesInWindow AS WORD
     DIM LineLength AS WORD, CurrentX AS WORD
@@ -479,7 +485,9 @@ END SUB
 ' Returns: Nothing
 ' Note: Pre-calculates window boundaries to minimize window switching overhead
 ' =============================================================================
-SUB VESA_VLine(BYVAL X AS WORD, BYVAL Y1 AS WORD, BYVAL Y2 AS WORD, BYVAL colorVal AS BYTE)
+SUB VESA_VLine(X_a AS WORD, Y1_a AS WORD, Y2_a AS WORD, colorVal_a AS BYTE)
+    DIM X AS WORD, Y1 AS WORD, Y2 AS WORD, colorVal AS BYTE
+    X = X_a : Y1 = Y1_a : Y2 = Y2_a : colorVal = colorVal_a
     DIM StartOffset AS LONG, EndOffset AS LONG, CurrentOffset AS LONG
     DIM CurrentWindow AS WORD, WindowStartY AS WORD, WindowEndY AS WORD
     DIM BytesPerLine AS WORD, PixelsPerWindow AS WORD
@@ -548,7 +556,9 @@ END SUB
 ' Returns: Nothing
 ' Note: Uses optimized routines for horizontal/vertical lines
 ' =============================================================================
-SUB VESA_LineDraw(BYVAL X1 AS WORD, BYVAL Y1 AS WORD, BYVAL X2 AS WORD, BYVAL Y2 AS WORD, BYVAL colorVal AS BYTE)
+SUB VESA_LineDraw(X1_a AS WORD, Y1_a AS WORD, X2_a AS WORD, Y2_a AS WORD, colorVal_a AS BYTE)
+    DIM X1 AS WORD, Y1 AS WORD, X2 AS WORD, Y2 AS WORD, colorVal AS BYTE
+    X1 = X1_a : Y1 = Y1_a : X2 = X2_a : Y2 = Y2_a : colorVal = colorVal_a
     ' Check for horizontal line
     IF Y1 = Y2 THEN
         CALL VESA_HLine(X1, X2, Y1, colorVal)
@@ -611,7 +621,9 @@ END SUB
 ' Returns: Nothing
 ' Note: Uses optimized horizontal line fills
 ' =============================================================================
-SUB VESA_FillRect(BYVAL X1 AS WORD, BYVAL Y1 AS WORD, BYVAL X2 AS WORD, BYVAL Y2 AS WORD, BYVAL colorVal AS BYTE)
+SUB VESA_FillRect(X1_a AS WORD, Y1_a AS WORD, X2_a AS WORD, Y2_a AS WORD, colorVal_a AS BYTE)
+    DIM X1 AS WORD, Y1 AS WORD, X2 AS WORD, Y2 AS WORD, colorVal AS BYTE
+    X1 = X1_a : Y1 = Y1_a : X2 = X2_a : Y2 = Y2_a : colorVal = colorVal_a
     DIM ScanLine AS WORD
     
     ' Ensure coordinates are ordered
@@ -632,7 +644,9 @@ END SUB
 '   colorVal - Border colorVal (BYVAL)
 ' Returns: Nothing
 ' =============================================================================
-SUB VESA_DrawRect(BYVAL X1 AS WORD, BYVAL Y1 AS WORD, BYVAL X2 AS WORD, BYVAL Y2 AS WORD, BYVAL colorVal AS BYTE)
+SUB VESA_DrawRect(X1_a AS WORD, Y1_a AS WORD, X2_a AS WORD, Y2_a AS WORD, colorVal_a AS BYTE)
+    DIM X1 AS WORD, Y1 AS WORD, X2 AS WORD, Y2 AS WORD, colorVal AS BYTE
+    X1 = X1_a : Y1 = Y1_a : X2 = X2_a : Y2 = Y2_a : colorVal = colorVal_a
     ' Ensure coordinates are ordered
     IF X1 > X2 THEN SWAP X1, X2
     IF Y1 > Y2 THEN SWAP Y1, Y2
@@ -651,7 +665,9 @@ END SUB
 ' Returns: Nothing
 ' Note: Optimized for VESA banking
 ' =============================================================================
-SUB VESA_ClearScreen(BYVAL colorVal AS BYTE)
+SUB VESA_ClearScreen(colorVal_a AS BYTE)
+    DIM colorVal AS BYTE
+    colorVal = colorVal_a
     DIM TotalBytes AS LONG, WindowNumber AS WORD
     DIM CurrentWindow AS WORD
     DIM ColorWord AS WORD, ColorDWord AS LONG
@@ -727,7 +743,9 @@ END SUB
 ' Returns: Nothing
 ' Note: Pre-calculates window operations to minimize banking overhead
 ' =============================================================================
-SUB Vesa_CopyBlock(BYVAL srcX AS WORD, BYVAL srcY AS WORD, BYVAL destX AS WORD, BYVAL destY AS WORD, BYVAL widthVal AS WORD, BYVAL height AS WORD)
+SUB VESA_CopyBlock(srcX_a AS WORD, srcY_a AS WORD, destX_a AS WORD, destY_a AS WORD, widthVal_a AS WORD, height_a AS WORD)
+    DIM srcX AS WORD, srcY AS WORD, destX AS WORD, destY AS WORD, widthVal AS WORD, height AS WORD
+    srcX = srcX_a : srcY = srcY_a : destX = destX_a : destY = destY_a : widthVal = widthVal_a : height = height_a
     DIM CurrentY AS WORD, CurrentX AS WORD
     DIM SrcOffset AS LONG, DestOffset AS LONG
     DIM SrcWindow AS WORD, DestWindow AS WORD, LastSrcWindow AS WORD, LastDestWindow AS WORD

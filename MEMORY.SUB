@@ -192,11 +192,8 @@ END FUNCTION
 ' Note: Updates global VESASystemContext.VWnd
 ' =============================================================================
 SUB Memory_SetVesaWindow(BYVAL windowNumber AS WORD)
-    DIM memWnd AS BYTE
-    memWnd = VESASystemContext.VWnd
     !MOV AX,&H4F05
-    !XOR BX,BX
-    !MOV BL,memWnd
+    !XOR BX,BX              ; BH=0 set, BL=0 window A
     !MOV DX,windowNumber
     !INT &H10
      

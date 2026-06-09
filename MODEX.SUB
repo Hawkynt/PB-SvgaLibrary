@@ -55,7 +55,7 @@ SUB ModeX_SetMode(BYVAL modeXType AS BYTE)
     
     ' Set Sequencer registers for planar mode
     mxPlane = 1
-    SHIFT LEFT mxPlane, StartPlane
+    SHIFT LEFT mxPlane, 0
     !MOV DX, &H3C4          ; Sequencer Address Register
     !MOV AL, 4              ; Memory Mode Register
     !OUT DX, AL
@@ -154,7 +154,9 @@ END SUB
 ' Returns: Nothing
 ' Note: Uses VGA planar mode for efficient pixel access
 ' =============================================================================
-SUB ModeX_PutPixel(BYVAL X AS WORD, BYVAL Y AS WORD, BYVAL colorVal AS BYTE)
+SUB ModeX_PutPixel(X_a AS WORD, Y_a AS WORD, colorVal_a AS BYTE)
+    DIM X AS WORD, Y AS WORD, colorVal AS BYTE
+    X = X_a : Y = Y_a : colorVal = colorVal_a
     DIM PlaneNumber AS BYTE, ByteOffset AS WORD, BitMask AS BYTE
     
     ' Calculate which plane and byte offset using fast assembly
@@ -166,12 +168,12 @@ SUB ModeX_PutPixel(BYVAL X AS WORD, BYVAL Y AS WORD, BYVAL colorVal AS BYTE)
     !SHR AX, 1
     !MOV BX, AX             ; Store X/4 result
     
-    ByteOffset = Y * ModeXSystemContext.LogicalWidth + BX
+    ByteOffset = Y * ModeXSystemContext.LogicalWidth + (X \ 4)
     BitMask = PlaneMaskTable(PlaneNumber)
     
     ' Set plane select register
     mxPlane = 1
-    SHIFT LEFT mxPlane, StartPlane
+    SHIFT LEFT mxPlane, 0
     !MOV DX, &H3C4          ; Sequencer Address Register
     !MOV AL, 2              ; Map Mask Register
     !OUT DX, AL
@@ -195,7 +197,9 @@ END SUB
 '   X, Y - Pixel coordinates (BYVAL)
 ' Returns: Pixel colorVal
 ' =============================================================================
-FUNCTION ModeX_GetPixel(BYVAL X AS WORD, BYVAL Y AS WORD) AS BYTE
+SUB ModeX_GetPixel(X_a AS WORD, Y_a AS WORD, resultVal AS BYTE)
+    DIM X AS WORD, Y AS WORD
+    X = X_a : Y = Y_a
     DIM PlaneNumber AS BYTE, ByteOffset AS WORD, PixelValue AS BYTE
     
     ' Calculate which plane and byte offset using fast assembly
@@ -207,7 +211,7 @@ FUNCTION ModeX_GetPixel(BYVAL X AS WORD, BYVAL Y AS WORD) AS BYTE
     !SHR AX, 1
     !MOV BX, AX             ; Store X/4 result
     
-    ByteOffset = Y * ModeXSystemContext.LogicalWidth + BX
+    ByteOffset = Y * ModeXSystemContext.LogicalWidth + (X \ 4)
     
     ' Set read plane register
     !MOV DX, &H3CE          ; Graphics Controller Address
@@ -226,8 +230,8 @@ FUNCTION ModeX_GetPixel(BYVAL X AS WORD, BYVAL Y AS WORD) AS BYTE
     !MOV PixelValue, AL
     !POP ES
     
-    ModeX_GetPixel = PixelValue
-END FUNCTION
+    resultVal = PixelValue
+END SUB
 
 ' =============================================================================
 ' Draw horizontal line in Mode-X (optimized)
@@ -238,147 +242,49 @@ END FUNCTION
 ' Returns: Nothing
 ' Note: Optimized for Mode-X planar mode, much faster than pixel-by-pixel
 ' =============================================================================
-SUB ModeX_HLine(BYVAL X1 AS WORD, BYVAL X2 AS WORD, BYVAL Y AS WORD, BYVAL colorVal AS BYTE)
-    DIM StartPlane AS BYTE, EndPlane AS BYTE, StartByte AS WORD, EndByte AS WORD
-    DIM PlaneMask AS BYTE, CurrentByte AS WORD, ByteOffset AS WORD
-    
-    ' Ensure X1 <= X2
+SUB ModeX_HLine(X1_a AS WORD, X2_a AS WORD, Y_a AS WORD, colorVal_a AS BYTE)
+    DIM X1 AS WORD, X2 AS WORD, Y AS WORD, colorVal AS BYTE
+    X1 = X1_a : X2 = X2_a : Y = Y_a : colorVal = colorVal_a
+    DIM p AS INTEGER, fAdj AS INTEGER, lAdj AS INTEGER
+    DIM fx AS WORD, lx AS WORD, b0 AS WORD, b1 AS WORD
+    DIM rowOff AS WORD, ByteOffset AS WORD, cnt AS WORD, planeMask AS BYTE
+
     IF X1 > X2 THEN SWAP X1, X2
-    
-    ' Calculate start and end positions using fast assembly
-    StartPlane = X1 AND 3
-    EndPlane = X2 AND 3
-    
-    ' Ultra-fast division using bit shifts
-    !MOV AX, X1
-    !SHR AX, 1 ; X1/4
-    !SHR AX, 1
-    !MOV StartByte, AX
-    !MOV AX, X2
-    !SHR AX, 1 ; X2/4
-    !SHR AX, 1
-    !MOV EndByte, AX
-    ByteOffset = Y * ModeXSystemContext.LogicalWidth
-    
-    ' Set up VGA for block write
-    mxPlane = 1
-    SHIFT LEFT mxPlane, StartPlane
-    !MOV DX, &H3C4          ; Sequencer Address Register
-    !MOV AL, 2              ; Map Mask Register
-    !OUT DX, AL
-    !INC DX                 ; Sequencer dataBuf Register
-    
-    IF StartByte = EndByte THEN
-        ' Line fits in single byte across planes
-        PlaneMask = 0
-        DIM TempPlane AS BYTE
-        FOR TempPlane = StartPlane TO EndPlane
-            mxPlane = 1
-            SHIFT LEFT mxPlane, TempPlane
-            PlaneMask = PlaneMask OR mxPlane
-        NEXT TempPlane
-        
-        !MOV AL, PlaneMask
-        !OUT DX, AL
-        
-        !PUSH ES
-        !MOV AX, &HA000
-        !MOV ES, AX
-        !MOV BX, ByteOffset
-        !ADD BX, StartByte
-        !MOV AL, colorVal
-        !MOV ES:[BX], AL
-        !POP ES
-    ELSE
-        ' Line spans multiple bytes
-        
-        ' First partial byte
-        IF StartPlane > 0 THEN
-            PlaneMask = &HF
-            SHIFT LEFT PlaneMask, StartPlane
-            !MOV AL, PlaneMask
+    rowOff = Y * ModeXSystemContext.LogicalWidth
+
+    ' One masked REP STOSB run per plane: every 4th pixel lives on the same
+    ' plane and maps to consecutive bytes, so a plane's span is a flat byte fill.
+    FOR p = 0 TO 3
+        fAdj = (p - (X1 AND 3) + 4) AND 3        ' step from X1 up to plane p
+        fx = X1 + fAdj
+        IF fx <= X2 THEN
+            lAdj = ((X2 AND 3) - p + 4) AND 3    ' step from X2 down to plane p
+            lx = X2 - lAdj
+            b0 = fx \ 4
+            b1 = lx \ 4
+            cnt = b1 - b0 + 1
+            planeMask = 1
+            SHIFT LEFT planeMask, p
+            ByteOffset = rowOff + b0
+            !MOV DX, &H3C4          ; Sequencer Address Register
+            !MOV AL, 2              ; Map Mask Register
             !OUT DX, AL
-            
+            !INC DX
+            !MOV AL, planeMask      ; enable only this plane
+            !OUT DX, AL
             !PUSH ES
+            !PUSH DI
             !MOV AX, &HA000
             !MOV ES, AX
-            !MOV BX, ByteOffset
-            !ADD BX, StartByte
+            !MOV DI, ByteOffset
+            !MOV CX, cnt
             !MOV AL, colorVal
-            !MOV ES:[BX], AL
-            !POP ES
-            
-            StartByte = StartByte + 1
-        END IF
-        
-        ' Middle complete bytes (all 4 planes) - optimized with WORD fills
-        IF StartByte < EndByte THEN
-            DIM ByteCount AS WORD, ColorWord AS WORD
-            ByteCount = EndByte - StartByte
-            ColorWord = (colorVal * 256) + colorVal      ' AABBH pattern
-            
-            !MOV AL, &HF        ; All planes
-            !OUT DX, AL
-            
-            !PUSH ES
-            !MOV AX, &HA000
-            !MOV ES, AX
-            !MOV BX, ByteOffset
-            !ADD BX, StartByte
-            !MOV CX, ByteCount
-            
-            ' Use WORD fills where possible for middle section
-            !TEST BX, 1             ; Check if address is odd
-            !JZ ModeXHLineWordAlign ; Jump if even (word-aligned)
-            !CMP CX, 0              ; Check if we have bytes to fill
-            !JZ ModeXHLineFillDone  ; Done if no bytes
-            !MOV AL, colorVal
-            !MOV ES:[BX], AL        ; Fill first byte
-            !INC BX
-            !DEC CX
-            !JZ ModeXHLineFillDone  ; Done if only one byte
-            
-            ModeXHLineWordAlign:
-            ' Fill using WORD writes (2 bytes at a time)
-            !MOV DX, CX
-            !SHR CX, 1              ; Divide by 2 for word count
-            !JZ ModeXHLineRemainder ; Jump if less than 2 bytes leftV
-            !MOV AX, ColorWord
-            
-            ModeXHLineWordFill:
-            !MOV ES:[BX], AX        ; Write 2 bytes at once
-            !ADD BX, 2
-            !LOOP ModeXHLineWordFill
-            
-            ModeXHLineRemainder:
-            ' Handle remaining odd byte
-            !TEST DX, 1             ; Check if original length was odd
-            !JZ ModeXHLineFillDone  ; Jump if no remainder
-            !MOV AL, colorVal
-            !MOV ES:[BX], AL        ; Fill last byte
-            
-            ModeXHLineFillDone:
+            !CLD
+            !REP STOSB
+            !POP DI
             !POP ES
         END IF
-        
-        ' Last partial byte
-        IF EndPlane < 3 THEN
-            PlaneMask = 1
-            SHIFT LEFT PlaneMask, EndPlane + 1
-            PlaneMask = PlaneMask - 1
-            !MOV AL, PlaneMask
-            !OUT DX, AL
-            
-            !PUSH ES
-            !MOV AX, &HA000
-            !MOV ES, AX
-            !MOV BX, ByteOffset
-            !ADD BX, EndByte
-            !MOV AL, colorVal
-            !MOV ES:[BX], AL
-            !POP ES
-        END IF
-    END IF
+    NEXT p
 END SUB
 
 ' =============================================================================
@@ -390,43 +296,42 @@ END SUB
 ' Returns: Nothing
 ' Note: Optimized for Mode-X planar mode, much faster than pixel-by-pixel
 ' =============================================================================
-SUB ModeX_VLine(BYVAL Y1 AS WORD, BYVAL Y2 AS WORD, BYVAL X AS WORD, BYVAL colorVal AS BYTE)
-    DIM StartPlane AS BYTE, ByteOffset AS WORD, CurrentY AS WORD
-    
-    ' Ensure Y1 <= Y2
+SUB ModeX_VLine(X_a AS WORD, Y1_a AS WORD, Y2_a AS WORD, colorVal_a AS BYTE)
+    DIM X AS WORD, Y1 AS WORD, Y2 AS WORD, colorVal AS BYTE
+    X = X_a : Y1 = Y1_a : Y2 = Y2_a : colorVal = colorVal_a
+    DIM pl AS INTEGER, planeMask AS BYTE, byteCol AS WORD
+    DIM w AS WORD, vofs AS WORD, rowCount AS WORD
+
     IF Y1 > Y2 THEN SWAP Y1, Y2
-    
-    StartPlane = X AND 3
-    
-    ' Ultra-fast X/4 using bit shift
-    !MOV AX, X
-    !SHR AX, 1 ; Divide by 4
-    !SHR AX, 1
-    !MOV ByteOffset, AX
-    
-    ' Set up VGA for block write
-    mxPlane = 1
-    SHIFT LEFT mxPlane, StartPlane
+    pl = X AND 3
+    planeMask = 1
+    SHIFT LEFT planeMask, pl
+    byteCol = X \ 4
+    w = ModeXSystemContext.LogicalWidth
+    vofs = Y1 * w + byteCol
+    rowCount = Y2 - Y1 + 1
+
+    ' A vertical line lives on a single plane: select it once, then run a tight
+    ' all-assembly fill stepping one logical width per row (no per-pixel MUL,
+    ' no BASIC loop sharing registers with the writes).
     !MOV DX, &H3C4          ; Sequencer Address Register
     !MOV AL, 2              ; Map Mask Register
     !OUT DX, AL
-    !INC DX                 ; Sequencer dataBuf Register
-    !MOV AL, mxPlane ; Enable only the relevant plane
+    !INC DX
+    !MOV AL, planeMask      ; enable only this plane
     !OUT DX, AL
-    
-    mxLogW = ModeXSystemContext.LogicalWidth
+
     !PUSH ES
     !MOV AX, &HA000
     !MOV ES, AX
+    !MOV BX, vofs
+    !MOV CX, rowCount
+    !MOV DX, w              ; stride = bytes per scanline
     !MOV AL, colorVal
-    
-    FOR CurrentY = Y1 TO Y2
-        !MOV BX, CurrentY
-        !MUL mxLogW
-        !ADD BX, ByteOffset
-        !MOV ES:[BX], AL
-    NEXT CurrentY
-    
+    ModeXVLineFill:
+    !MOV ES:[BX], AL
+    !ADD BX, DX
+    !LOOP ModeXVLineFill
     !POP ES
 END SUB
 
@@ -437,7 +342,9 @@ END SUB
 ' Returns: Nothing
 ' Note: Very fast screen clear using Mode-X planar properties
 ' =============================================================================
-SUB ModeX_ClearScreen(BYVAL colorVal AS BYTE)
+SUB ModeX_ClearScreen(colorVal_a AS BYTE)
+    DIM colorVal AS BYTE
+    colorVal = colorVal_a
     DIM TotalBytes AS WORD, ColorWord AS WORD
     
     TotalBytes = ModeXSystemContext.PageSize
@@ -445,7 +352,7 @@ SUB ModeX_ClearScreen(BYVAL colorVal AS BYTE)
     
     ' Enable all planes for writing
     mxPlane = 1
-    SHIFT LEFT mxPlane, StartPlane
+    SHIFT LEFT mxPlane, 0
     !MOV DX, &H3C4          ; Sequencer Address Register
     !MOV AL, 2              ; Map Mask Register
     !OUT DX, AL
@@ -492,7 +399,9 @@ END SUB
 ' Returns: Nothing
 ' Note: Optimized block copy using Mode-X planar mode
 ' =============================================================================
-SUB ModeX_CopyBlock(BYVAL srcX AS WORD, BYVAL srcY AS WORD, BYVAL destX AS WORD, BYVAL destY AS WORD, BYVAL widthVal AS WORD, BYVAL height AS WORD)
+SUB ModeX_CopyBlock(srcX_a AS WORD, srcY_a AS WORD, destX_a AS WORD, destY_a AS WORD, widthVal_a AS WORD, height_a AS WORD)
+    DIM srcX AS WORD, srcY AS WORD, destX AS WORD, destY AS WORD, widthVal AS WORD, height AS WORD
+    srcX = srcX_a : srcY = srcY_a : destX = destX_a : destY = destY_a : widthVal = widthVal_a : height = height_a
     DIM CurrentY AS WORD, SrcOffset AS WORD, DestOffset AS WORD
     DIM SrcStartByte AS WORD, DestStartByte AS WORD, ByteWidth AS WORD
     
@@ -566,7 +475,7 @@ SUB SetModeXRegisters320x240
     !MOV AL, &H09
     !OUT DX, AL
     !INC DX
-    !MOV AL, &H41          ; Maximum scan line (double scan off)
+    !MOV AL, &H41          ; Maximum scan line (double scan vofs)
     !OUT DX, AL
 END SUB
 
@@ -585,7 +494,7 @@ SUB SetModeXRegisters360x240
     RegisterValues(6) = &HBF   ' Vertical Total
     RegisterValues(7) = &H1F   ' Overflow
     RegisterValues(8) = &H00   ' Preset Row Scan
-    RegisterValues(9) = &H41   ' Maximum Scan Line (double scan off)
+    RegisterValues(9) = &H41   ' Maximum Scan Line (double scan vofs)
     RegisterValues(10) = &H00  ' Cursor Start
     RegisterValues(11) = &H00  ' Cursor End
     RegisterValues(12) = &H00  ' Start Address High
@@ -608,7 +517,7 @@ SUB SetModeXRegisters320x400
     !MOV AL, &H09
     !OUT DX, AL
     !INC DX
-    !MOV AL, &H40          ; Maximum scan line (double scan off)
+    !MOV AL, &H40          ; Maximum scan line (double scan vofs)
     !OUT DX, AL
     
     !MOV AL, &H06
@@ -633,7 +542,7 @@ SUB SetModeXRegisters360x400
     RegisterValues(6) = &HBF   ' Vertical Total (from 320x400)
     RegisterValues(7) = &H1F   ' Overflow (from 360x240)
     RegisterValues(8) = &H00   ' Preset Row Scan
-    RegisterValues(9) = &H40   ' Maximum Scan Line (double scan off, from 320x400)
+    RegisterValues(9) = &H40   ' Maximum Scan Line (double scan vofs, from 320x400)
     RegisterValues(10) = &H00  ' Cursor Start
     RegisterValues(11) = &H00  ' Cursor End
     RegisterValues(12) = &H00  ' Start Address High
@@ -662,7 +571,7 @@ SUB SetModeXRegisters320x480
     RegisterValues(6) = &H0B   ' Vertical Total
     RegisterValues(7) = &H3E   ' Overflow
     RegisterValues(8) = &H00   ' Preset Row Scan
-    RegisterValues(9) = &H40   ' Maximum Scan Line (double scan off)
+    RegisterValues(9) = &H40   ' Maximum Scan Line (double scan vofs)
     RegisterValues(10) = &H00  ' Cursor Start
     RegisterValues(11) = &H00  ' Cursor End
     RegisterValues(12) = &H00  ' Start Address High
@@ -691,7 +600,7 @@ SUB SetModeXRegisters360x480
     RegisterValues(6) = &H0B   ' Vertical Total (from 320x480)
     RegisterValues(7) = &H3E   ' Overflow (from 320x480)
     RegisterValues(8) = &H00   ' Preset Row Scan
-    RegisterValues(9) = &H40   ' Maximum Scan Line (double scan off, from 320x480)
+    RegisterValues(9) = &H40   ' Maximum Scan Line (double scan vofs, from 320x480)
     RegisterValues(10) = &H00  ' Cursor Start
     RegisterValues(11) = &H00  ' Cursor End
     RegisterValues(12) = &H00  ' Start Address High
@@ -720,7 +629,7 @@ SUB SetModeXRegisters256x256
     RegisterValues(6) = &HBF   ' Vertical Total
     RegisterValues(7) = &H1F   ' Overflow
     RegisterValues(8) = &H00   ' Preset Row Scan
-    RegisterValues(9) = &H40   ' Maximum Scan Line (double scan off)
+    RegisterValues(9) = &H40   ' Maximum Scan Line (double scan vofs)
     RegisterValues(10) = &H00  ' Cursor Start
     RegisterValues(11) = &H00  ' Cursor End
     RegisterValues(12) = &H00  ' Start Address High
@@ -749,7 +658,7 @@ SUB SetModeXRegisters400x300
     RegisterValues(6) = &HBF   ' Vertical Total
     RegisterValues(7) = &H1F   ' Overflow
     RegisterValues(8) = &H00   ' Preset Row Scan
-    RegisterValues(9) = &H40   ' Maximum Scan Line (double scan off)
+    RegisterValues(9) = &H40   ' Maximum Scan Line (double scan vofs)
     RegisterValues(10) = &H00  ' Cursor Start
     RegisterValues(11) = &H00  ' Cursor End
     RegisterValues(12) = &H00  ' Start Address High
@@ -776,7 +685,9 @@ END SUB
 ' Returns: Nothing
 ' Note: Optimized for Mode-X with special cases for horizontal/vertical lines
 ' =============================================================================
-SUB ModeX_LineDraw(BYVAL X1 AS WORD, BYVAL Y1 AS WORD, BYVAL X2 AS WORD, BYVAL Y2 AS WORD, BYVAL colorVal AS BYTE)
+SUB ModeX_LineDraw(X1_a AS WORD, Y1_a AS WORD, X2_a AS WORD, Y2_a AS WORD, colorVal_a AS BYTE)
+    DIM X1 AS WORD, Y1 AS WORD, X2 AS WORD, Y2 AS WORD, colorVal AS BYTE
+    X1 = X1_a : Y1 = Y1_a : X2 = X2_a : Y2 = Y2_a : colorVal = colorVal_a
     ' Check for horizontal line
     IF Y1 = Y2 THEN
         CALL ModeX_HLine(X1, X2, Y1, colorVal)
@@ -785,7 +696,7 @@ SUB ModeX_LineDraw(BYVAL X1 AS WORD, BYVAL Y1 AS WORD, BYVAL X2 AS WORD, BYVAL Y
     
     ' Check for vertical line
     IF X1 = X2 THEN
-        CALL ModeX_VLine(Y1, Y2, X1, colorVal)
+        CALL ModeX_VLine(X1, Y1, Y2, colorVal)
         EXIT SUB
     END IF
     
@@ -819,12 +730,12 @@ SUB ModeX_LineDraw(BYVAL X1 AS WORD, BYVAL Y1 AS WORD, BYVAL X2 AS WORD, BYVAL Y
         !SHR AX, 1
         !MOV BX, AX             ; Store CurrentX/4
         
-        ByteOffset = CurrentY * ModeXSystemContext.LogicalWidth + BX
+        ByteOffset = CurrentY * ModeXSystemContext.LogicalWidth + (CurrentX \ 4)
         BitMask = PlaneMaskTable(PlaneNumber)
         
         ' Set plane select register
         mxPlane = 1
-        SHIFT LEFT mxPlane, StartPlane
+        SHIFT LEFT mxPlane, 0
     !MOV DX, &H3C4          ; Sequencer Address Register
         !MOV AL, 2              ; Map Mask Register
         !OUT DX, AL
@@ -869,7 +780,9 @@ END SUB
 ' Returns: Nothing
 ' Note: Highly optimized for Mode-X planar architecture
 ' =============================================================================
-SUB ModeX_FillRect(BYVAL X1 AS WORD, BYVAL Y1 AS WORD, BYVAL X2 AS WORD, BYVAL Y2 AS WORD, BYVAL colorVal AS BYTE)
+SUB ModeX_FillRect(X1_a AS WORD, Y1_a AS WORD, X2_a AS WORD, Y2_a AS WORD, colorVal_a AS BYTE)
+    DIM X1 AS WORD, Y1 AS WORD, X2 AS WORD, Y2 AS WORD, colorVal AS BYTE
+    X1 = X1_a : Y1 = Y1_a : X2 = X2_a : Y2 = Y2_a : colorVal = colorVal_a
     DIM ScanLine AS WORD
     
     ' Ensure coordinates are ordered
@@ -890,7 +803,9 @@ END SUB
 '   colorVal - Border colorVal (BYVAL)
 ' Returns: Nothing
 ' =============================================================================
-SUB ModeX_DrawRect(BYVAL X1 AS WORD, BYVAL Y1 AS WORD, BYVAL X2 AS WORD, BYVAL Y2 AS WORD, BYVAL colorVal AS BYTE)
+SUB ModeX_DrawRect(X1_a AS WORD, Y1_a AS WORD, X2_a AS WORD, Y2_a AS WORD, colorVal_a AS BYTE)
+    DIM X1 AS WORD, Y1 AS WORD, X2 AS WORD, Y2 AS WORD, colorVal AS BYTE
+    X1 = X1_a : Y1 = Y1_a : X2 = X2_a : Y2 = Y2_a : colorVal = colorVal_a
     ' Ensure coordinates are ordered
     IF X1 > X2 THEN SWAP X1, X2
     IF Y1 > Y2 THEN SWAP Y1, Y2
@@ -898,8 +813,8 @@ SUB ModeX_DrawRect(BYVAL X1 AS WORD, BYVAL Y1 AS WORD, BYVAL X2 AS WORD, BYVAL Y
     ' Draw four sides using optimized line routines
     CALL ModeX_HLine(X1, X2, Y1, colorVal)  ' Top
     CALL ModeX_HLine(X1, X2, Y2, colorVal)  ' Bottom
-    CALL ModeX_VLine(Y1, Y2, X1, colorVal)  ' leftV
-    CALL ModeX_VLine(Y1, Y2, X2, colorVal)  ' rightV
+    CALL ModeX_VLine(X1, Y1, Y2, colorVal)  ' leftV
+    CALL ModeX_VLine(X2, Y1, Y2, colorVal)  ' rightV
 END SUB
 
 ' =============================================================================
@@ -911,7 +826,9 @@ END SUB
 ' Returns: Nothing
 ' Note: Optimized for Mode-X with symmetry exploitation
 ' =============================================================================
-SUB ModeX_DrawCircle(BYVAL centerX AS WORD, BYVAL centerY AS WORD, BYVAL radius AS WORD, BYVAL colorVal AS BYTE)
+SUB ModeX_DrawCircle(centerX_a AS WORD, centerY_a AS WORD, radius_a AS WORD, colorVal_a AS BYTE)
+    DIM centerX AS WORD, centerY AS WORD, radius AS WORD, colorVal AS BYTE
+    centerX = centerX_a : centerY = centerY_a : radius = radius_a : colorVal = colorVal_a
     DIM X AS INTEGER, Y AS INTEGER, DecisionParam AS INTEGER
     
     X = 0
@@ -956,7 +873,9 @@ END SUB
 ' Returns: Nothing
 ' Note: Uses horizontal line fills for efficiency
 ' =============================================================================
-SUB ModeX_FillCircle(BYVAL centerX AS WORD, BYVAL centerY AS WORD, BYVAL radius AS WORD, BYVAL colorVal AS BYTE)
+SUB ModeX_FillCircle(centerX_a AS WORD, centerY_a AS WORD, radius_a AS WORD, colorVal_a AS BYTE)
+    DIM centerX AS WORD, centerY AS WORD, radius AS WORD, colorVal AS BYTE
+    centerX = centerX_a : centerY = centerY_a : radius = radius_a : colorVal = colorVal_a
     DIM X AS INTEGER, Y AS INTEGER, DecisionParam AS INTEGER
     DIM PrevY AS INTEGER
     
@@ -1213,7 +1132,7 @@ SUB ModeX_FastFill(BYVAL X1 AS WORD, BYVAL Y1 AS WORD, BYVAL X2 AS WORD, BYVAL Y
     
     ' Enable all planes for writing
     mxPlane = 1
-    SHIFT LEFT mxPlane, StartPlane
+    SHIFT LEFT mxPlane, 0
     !MOV DX, &H3C4          ; Sequencer Address Register
     !MOV AL, 2              ; Map Mask Register
     !OUT DX, AL

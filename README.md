@@ -39,8 +39,13 @@ This library provides a comprehensive set of functions and subroutines for worki
 - **🎨 Palette Management:** Full 256-color palette control
 - **📺 Multi-Mode Support:**
   - VGA Mode 13h (320x200x256)
-  - Mode-X (planar 256-color modes)
-  - VESA (up to 1600x1200)
+  - Mode-X (320x240 unchained planar 256-color)
+  - Mode-Y (320x200 unchained planar, 4 video pages for page flipping)
+  - Mode-Z (320x400 unchained planar, 2 video pages)
+  - 800x600 in 16 colours (VGA tweaked mode 6Ah, bit-planed — write-mode-2 + bit-mask)
+  - VESA (up to 1600x1200) — with width-specialized fast paths for 320/640/800/1024/1280: the scanline offset is computed by shift/add instead of a multiply, and the span primitives (HLine/VLine/FillRect/DrawRect) fill whole runs, switching the VESA bank only at 64 KB boundaries (never per pixel)
+
+  All graphics primitives are dispatched through a per-mode function-pointer table (`SVGADispatch`), so each mode plugs in its own optimized handlers at set-up time and the hot drawing paths never branch on the mode.
 - **🪟 Virtual Coordinate System:** Viewport and scaling support
 - **💾 Memory Management:** EMS support for large graphics buffers with ultra-fast clearing
 - **⏰ High-Precision Timer System:** 10ms resolution interrupt-driven timers for smooth animations
@@ -132,7 +137,10 @@ $INCLUDE "SVGA.SUB"
 | `Svga_Init` | Initialize the SVGA library (call first) |
 | `Svga_SetRes(xres, yres, colors)` | Set graphics resolution (auto-selects best mode) |
 | `Svga_SetVga(mode)` | Set specific VESA mode number |
-| `ModeX_SetMode(mode)` | Initialize Mode-X graphics mode |
+| `ModeX_SetMode(mode)` | Initialize Mode-X graphics mode (320x240 unchained) |
+| `ModeY_SetMode` | Initialize Mode-Y (320x200 unchained, 4 pages) |
+| `ModeZ_SetMode` | Initialize Mode-Z (320x400 unchained, 2 pages) |
+| `Mode16_SetMode` | Initialize 800x600x16 bit-planed VGA tweaked mode (6Ah) |
 | `VGA_InitMode13h` | Initialize standard VGA Mode 13h |
 | `Svga_Close` | Return to text mode |
 | `Svga_Cleanup` | Clean up library resources |
@@ -179,7 +187,7 @@ $INCLUDE "SVGA.SUB"
 | `ModeX_PutPixel(x, y, color)` | Mode-X planar pixel write |
 | `ModeX_GetPixel(x, y)` | Mode-X planar pixel read |
 | `ModeX_HLine(x1, x2, y, color)` | Mode-X optimized horizontal line |
-| `ModeX_VLine(y1, y2, x, color)` | Mode-X optimized vertical line |
+| `ModeX_VLine(x, y1, y2, color)` | Mode-X optimized vertical line |
 | `ModeX_LineDraw(x1, y1, x2, y2, color)` | Mode-X line drawing |
 | `ModeX_FillRect(x1, y1, x2, y2, color)` | Mode-X filled rectangle |
 | `ModeX_DrawRect(x1, y1, x2, y2, color)` | Mode-X rectangle outline |
