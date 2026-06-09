@@ -120,13 +120,23 @@ STOSW              ; Eliminates loop overhead
 
 ## 🚀 Usage
 
-To use this library in your Power BASIC project, you need to include the `SVGA.SUB` file in your main program using the `$INCLUDE` metacommand. This includes everything else.
+### Recommended: link the precompiled library (`SVGA.PBL`)
+
+The full library is larger than PowerBASIC/DOS's 64 KB-per-compilation-unit code limit, so the whole thing cannot be `$INCLUDE`d into one program. The build therefore ships a linkable **`SVGA.PBL`** (every module compiled as a separate `$COMPILE UNIT`, packed into ≤64 KB code segments) together with the **`SVGA.BI`** interface. Grab them from the [latest release](../../releases/latest) and:
 
 ```basic
-$INCLUDE "SVGA.SUB"
+$INCLUDE "SVGA.BI"      ' types, globals and DECLAREs
+$LINK "SVGA.PBL"        ' the compiled library (linked across several code segments)
 
+CALL Svga_Init(0)
 ' Your code goes here
 ```
+
+(`SVGA.PBL` is reproduced by `scripts/build-pbl.py`, which the CI build runs and then verifies by linking a pixel round-trip self-test.)
+
+### Alternative: source-include individual modules
+
+For a small program you can `$INCLUDE` only the `.SUB` modules you actually need (e.g. `TYPES.SUB`, `VGA.SUB`, `MODEX.SUB`). Including *everything* via `SVGA.SUB` will exceed the 64 KB unit limit — that is what `SVGA.PBL` is for.
 
 ## 📖 Complete API Reference
 

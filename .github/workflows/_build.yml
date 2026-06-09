@@ -1,13 +1,14 @@
 name: Build artifacts
 
-# Reusable build: compile-checks the library with the real PowerBASIC 3.5
-# compiler under DOSBox and, when it compiles cleanly, uploads the
-# directly-usable source-include library (zip of the .SUB modules) as an
+# Reusable build: assembles the library into a linkable SVGA.PBL with the real
+# PowerBASIC 3.5 toolchain under DOSBox (each .SUB -> a $COMPILE UNIT, PBLIB ->
+# SVGA.PBL), verifies it by linking a self-test that round-trips a pixel, and
+# uploads SVGA.PBL + the SVGA.BI interface (plus the .SUB sources) as an
 # artifact. Called by ci.yml (advisory), nightly.yml and release.yml.
 #
-# advisory=true  -> a missing toolchain or a library that does not yet compile
-#                   leaves the job GREEN and simply produces no artifact (CI;
-#                   the structural check is the required gate).
+# advisory=true  -> a missing toolchain or a build/link failure leaves the job
+#                   GREEN and produces no artifact (CI; the structural check is
+#                   the required gate).
 # advisory=false -> either of those FAILS the job, so no broken bundle ships.
 on:
   workflow_call:
@@ -65,42 +66,49 @@ jobs:
         if: steps.tc.outcome == 'success'
         run: sudo apt-get update && sudo apt-get install -y dosbox
 
-      - name: Compile-check the library under DOSBox
+      - name: Build SVGA.PBL under DOSBox
         id: compile
         if: steps.tc.outcome == 'success'
         continue-on-error: true
         run: |
-          mkdir -p build && cp *.SUB build/ && cp pb/* build/
-          printf '$INCLUDE "SVGA.SUB"\r\n' > build/SVGALIB.BAS
+          # The whole library exceeds PB/DOS's 64k-per-compilation-unit limit, so it
+          # is built as separately-compiled $COMPILE UNITs assembled into SVGA.PBL.
+          # scripts/build-pbl.py derives the units + interface (SVGA.BI/SVGAINT.BI)
+          # + the PBLIB librarian script + a link-and-run self-test from the .SUB.
+          python3 scripts/build-pbl.py . build
+          cp pb/* build/
           {
+            echo "[cpu]"; echo "core=dynamic"; echo "cycles=max"
             echo "[autoexec]"; echo "mount c \"$(pwd)/build\""; echo "c:"
-            echo "PBC.EXE -CU -G386 -FNPX SVGALIB.BAS > PBCOUT.TXT"
+            while read u; do echo "PBC.EXE -CU -G386 -FNPX $u.BAS >> CLOG.TXT"; done < build/UNITS.txt
+            echo "PBLIB.EXE < PBLIB.IN"
+            echo "PBC.EXE -CE -G386 -FNPX SELFTEST.BAS >> CLOG.TXT"
+            echo "SELFTEST.EXE"
             echo "EXIT"
           } > build/dosbox.conf
-          SDL_VIDEODRIVER=dummy timeout 400 dosbox -conf build/dosbox.conf -exit >/dev/null 2>&1 || true
-          out=$(find build -iname pbcout.txt | head -1)
-          echo "=== PBC output ==="; cat "$out" 2>/dev/null || true
-          # The whole source-include library is far larger than PB/DOS's 64k-per-unit
-          # code limit, so compiling $INCLUDE "SVGA.SUB" as one unit always ends in
-          # Error 408 (segment exceeds 64k) - that is expected and is NOT a defect:
-          # consumers $INCLUDE only the modules they need, and PB reports any real
-          # (syntax) error BEFORE the size check, so "only 408" means the entire
-          # library parsed cleanly. Fail only on an error that is NOT 408.
-          if [ -z "$out" ] || { grep -E "Error [0-9]+:" "$out" | grep -qvE "Error 408:"; }; then
-            echo "::error::library did not compile under PowerBASIC 3.5 - see output above."; exit 1
-          fi
-          echo "Library parsed cleanly (the trailing Error 408 is the expected per-unit 64k cap)."
+          SDL_VIDEODRIVER=dummy timeout 600 dosbox -conf build/dosbox.conf -exit >/dev/null 2>&1 || true
+          echo "=== compile/link log ==="; cat build/CLOG.TXT 2>/dev/null || true
+          echo "=== link-and-run self-test ==="; cat build/O.TXT 2>/dev/null || true
+          if [ ! -f build/SVGA.PBL ]; then echo "::error::SVGA.PBL was not produced (see log)."; exit 1; fi
+          if grep -qiE "Error [0-9]+:" build/CLOG.TXT 2>/dev/null; then echo "::error::a unit failed to compile or the .PBL failed to link - see log."; exit 1; fi
+          if ! grep -q "PIXEL_ROUNDTRIP_OK" build/O.TXT 2>/dev/null; then echo "::error::SVGA.PBL link-and-run self-test did not round-trip a pixel."; exit 1; fi
+          echo "SVGA.PBL built ($(wc -c < build/SVGA.PBL) bytes) and the link-and-run self-test round-tripped a mode-13h pixel."
 
       - name: Require successful compile (non-advisory builds)
         if: ${{ inputs.advisory != true && steps.tc.outcome == 'success' && steps.compile.outcome == 'failure' }}
         run: echo "::error::library failed to compile."; exit 1
 
-      - name: Bundle the source-include library
+      - name: Bundle the linkable library
         if: steps.compile.outcome == 'success'
         run: |
-          mkdir -p dist
-          zip -j dist/svga-library.zip *.SUB README.md LICENSE
-          ls -l dist
+          # Ship the compiled SVGA.PBL + the interface a consumer $INCLUDEs
+          # ($INCLUDE "SVGA.BI" : $LINK "SVGA.PBL"), and the .SUB sources for
+          # anyone who prefers to $INCLUDE individual modules.
+          mkdir -p dist/svga
+          cp build/SVGA.PBL build/SVGA.BI build/SVGATYPE.BI build/SVGADECL.BI dist/svga/
+          cp *.SUB README.md LICENSE dist/svga/
+          (cd dist/svga && zip -r ../svga-library.zip .)
+          ls -l dist dist/svga
 
       - uses: actions/upload-artifact@v4
         if: steps.compile.outcome == 'success'
