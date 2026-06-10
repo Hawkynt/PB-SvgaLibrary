@@ -6,6 +6,7 @@
 $INCLUDE "TESTLIB.BI"
 $INCLUDE "TYPES.SUB"
 $INCLUDE "VGA.SUB"
+DECLARE FUNCTION Svga_GetPixel(BYVAL x AS WORD, BYVAL y AS WORD) AS BYTE
 $INCLUDE "CURSOR.SUB"
 
 SUB Svga_InitDispatchTable
@@ -16,9 +17,13 @@ END SUB
 SUB Svga_PutPixel(x AS WORD, y AS WORD, c AS BYTE)
     CALL Vga_PutPixel(x, y, c)
 END SUB
-SUB Svga_GetPixel(x AS WORD, y AS WORD, r AS BYTE)
-    CALL Vga_GetPixel(x, y, r)
-END SUB
+' test double matches the REAL library shape: a FUNCTION(x, y) AS BYTE
+FUNCTION Svga_GetPixel(BYVAL x AS WORD, BYVAL y AS WORD) AS BYTE
+    DIM xv AS WORD, yv AS WORD, r AS BYTE
+    xv = x : yv = y : r = 0
+    CALL Vga_GetPixel(xv, yv, r)
+    Svga_GetPixel = r
+END FUNCTION
 
 SUB PutBg(BYVAL x AS WORD, BYVAL y AS WORD, BYVAL c AS BYTE)
     DIM xv AS WORD, yv AS WORD, cv AS BYTE

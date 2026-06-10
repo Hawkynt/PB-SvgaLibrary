@@ -298,8 +298,8 @@ SUB Cursor_SaveCursorBackground
             IF ScreenX >= SVGAScreenContext.XRes THEN EXIT FOR
             IF ScreenX < 0 THEN GOTO NextSaveX
             
-            ' Get pixel from screen
-            CALL Svga_GetPixel(ScreenX, ScreenY, PixelColor)
+            ' Get pixel from screen (Svga_GetPixel is a FUNCTION(x, y) AS BYTE)
+            PixelColor = Svga_GetPixel(ScreenX, ScreenY)
             
             ' Store in background buffer
             BackgroundIndex = Y * CursorSystemContext.Wide + X + 1
