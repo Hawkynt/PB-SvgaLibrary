@@ -78,6 +78,13 @@ TYPE LZWContextType
     MaxCode AS WORD            ' Maximum code for current size
 END TYPE
 
+' Forward declarations (functions used before their definition in this file)
+DECLARE FUNCTION DrawGif_ParseFile(BYVAL fileHandle AS INTEGER, gifContext AS GIFContextType) AS BYTE
+DECLARE FUNCTION DrawGif_ReadLZWCode(BYVAL dataBuf AS STRING, bitPos AS LONG, BYVAL codeSize AS BYTE) AS WORD
+DECLARE FUNCTION DrawGif_GetDictionaryEntry(lzwContext AS LZWContextType, BYVAL code AS WORD) AS STRING
+DECLARE FUNCTION DrawGif_GetSize(BYVAL fileName AS STRING, widthVal AS WORD, height AS WORD) AS BYTE
+DECLARE FUNCTION DrawGif_GetPalette(BYVAL fileName AS STRING, paletteV() AS BYTE, BYVAL colorDepth AS BYTE) AS BYTE
+
 ' =============================================================================
 ' Load and display GIF image
 ' Parameters:
@@ -137,7 +144,7 @@ FUNCTION DrawGif_ParseFile(BYVAL fileHandle AS INTEGER, gifContext AS GIFContext
     gifContext.DisposalMethod = 0
     
     ' Read GIF header
-    GET fileHandle, 1, header.Signature
+    GET fileHandle, 0, header.Signature    ' BUG FIX: PB3.5 BINARY is 0-based; was 1 (skipped first byte)
     GET fileHandle, , header.Version
     
     ' Validate GIF signature
@@ -406,7 +413,7 @@ SUB DrawGif_DecompressLZW(BYVAL compressedData AS STRING, BYVAL minimumCodeSize 
     CALL DrawGif_InitializeLZWDictionary(lzwContext)
     
     decodedData = ""
-    bitPos = 1
+    bitPos = 0    ' BUG FIX: bit stream is 0-based; 1 skipped the LSB of every code
     oldCode = 0
     
     ' Simplified LZW decompression
@@ -423,10 +430,12 @@ SUB DrawGif_DecompressLZW(BYVAL compressedData AS STRING, BYVAL minimumCodeSize 
             lzwContext.CurrentCodeSize = lzwContext.CodeSize + 1
             lzwContext.MaxCode = (2 ^ lzwContext.CurrentCodeSize) - 1
             
+            ' BUG FIX: advance past clear code before reading first pixel code
+            bitPos = bitPos + lzwContext.CurrentCodeSize
             ' Read next code after clear
             code = DrawGif_ReadLZWCode(compressedData, bitPos, lzwContext.CurrentCodeSize)
             IF code = lzwContext.EndCode THEN EXIT DO
-            
+
             decodedData = decodedData + CHR$(code)
             oldCode = code
             firstChar = code
@@ -595,17 +604,8 @@ SUB DrawGif_DrawPixelData(BYVAL pixelData AS STRING, paletteV() AS BYTE, imageDe
                 GOTO NextGIFPixel
             END IF
             
-            ' Get RGB values from paletteV
-            IF colorIndex * 3 + 2 <= UBOUND(paletteV) THEN
-                r = paletteV(colorIndex * 3)
-                g = paletteV(colorIndex * 3 + 1)
-                b = paletteV(colorIndex * 3 + 2)
-                
-                ' Convert to 8-bit grayscale for display
-                pixelValue = (r + g + b) \ 3
-            ELSE
-                pixelValue = colorIndex
-            END IF
+            ' BUG FIX: store colorIndex as palette index; grayscale avg lost index info
+            pixelValue = colorIndex
             
             ' Draw the pixel
             CALL Svga_PutPixel(drawX, drawY, pixelValue)
