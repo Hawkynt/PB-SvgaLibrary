@@ -52,6 +52,14 @@ TYPE TGAContextType
     AlphaDepth AS BYTE          ' Alpha channel depth
 END TYPE
 
+' Forward declarations for functions used before their definition
+DECLARE FUNCTION DrawTga_ParseFile(BYVAL fileHandle AS INTEGER, tgaContext AS TGAContextType) AS BYTE
+DECLARE FUNCTION DrawTga_GetSize(BYVAL fileName AS STRING, widthVal AS WORD, height AS WORD) AS BYTE
+DECLARE FUNCTION DrawTga_GetInfo(BYVAL fileName AS STRING, widthVal AS WORD, height AS WORD, bitsPerPixel AS BYTE, imageType AS BYTE) AS BYTE
+DECLARE FUNCTION DrawTga_GetPalette(BYVAL fileName AS STRING, paletteV() AS BYTE, BYVAL colorDepth AS BYTE) AS BYTE
+DECLARE FUNCTION DrawTga_Create(BYVAL fileName AS STRING, BYVAL imageBuffer AS STRING, BYVAL widthVal AS WORD, BYVAL height AS WORD, BYVAL bitsPerPixel AS BYTE) AS BYTE
+DECLARE FUNCTION DrawTga_Extract(BYVAL fileName AS STRING, imageBuffer AS STRING, widthVal AS WORD, height AS WORD) AS BYTE
+
 ' =============================================================================
 ' Load and display TGA image
 ' Parameters:
@@ -108,8 +116,8 @@ FUNCTION DrawTga_ParseFile(BYVAL fileHandle AS INTEGER, tgaContext AS TGAContext
     tgaContext.OriginRight = 0
     tgaContext.AlphaDepth = 0
     
-    ' Read TGA header
-    GET fileHandle, 1, header.IDLength
+    ' Read TGA header (PB3.5 BINARY is 0-based: position 0 = first byte)
+    GET fileHandle, 0, header.IDLength  ' Bug fix: was 1 (off-by-one, skipped first byte)
     GET fileHandle, , header.ColorMapType
     GET fileHandle, , header.ImageType
     GET fileHandle, , header.ColorMapFirst
@@ -324,10 +332,11 @@ SUB DrawTga_DrawPixelData(BYVAL imageData AS STRING, tgaContext AS TGAContextTyp
                 drawX = x + pixelX
             END IF
             
+            ' Bug fix: Y mapping was swapped - bottom-up means row0=bottom so needs flip
             IF tgaContext.OriginBottom THEN
-                drawY = y + pixelY
-            ELSE
                 drawY = y + (tgaContext.Height - 1 - pixelY)
+            ELSE
+                drawY = y + pixelY
             END IF
             
             ' Check bounds
@@ -442,7 +451,7 @@ FUNCTION DrawTga_GetSize(BYVAL fileName AS STRING, widthVal AS WORD, height AS W
     height = 0
     
     fileHandle = FREEFILE
-    OPEN fileName FOR BINARY ACCESS READ AS fileHandle
+    OPEN fileName FOR BINARY AS #fileHandle  ' Bug fix: removed unsupported ACCESS READ; use # prefix
     IF LOF(fileHandle) < 18 THEN
         CALL FileUtil_CloseBinary(fileHandle)
         DrawTga_GetSize = 0
@@ -484,7 +493,7 @@ FUNCTION DrawTga_GetInfo(BYVAL fileName AS STRING, widthVal AS WORD, height AS W
     imageType = 0
     
     fileHandle = FREEFILE
-    OPEN fileName FOR BINARY ACCESS READ AS fileHandle
+    OPEN fileName FOR BINARY AS #fileHandle  ' Bug fix: removed unsupported ACCESS READ; use # prefix
     IF LOF(fileHandle) < 18 THEN
         CALL FileUtil_CloseBinary(fileHandle)
         DrawTga_GetInfo = 0
@@ -528,7 +537,7 @@ FUNCTION DrawTga_GetPalette(BYVAL fileName AS STRING, paletteV() AS BYTE, BYVAL 
     NEXT i
     
     fileHandle = FREEFILE
-    OPEN fileName FOR BINARY ACCESS READ AS fileHandle
+    OPEN fileName FOR BINARY AS #fileHandle  ' Bug fix: removed unsupported ACCESS READ; use # prefix
     IF LOF(fileHandle) < 18 THEN
         CALL FileUtil_CloseBinary(fileHandle)
         DrawTga_GetPalette = 0
@@ -571,8 +580,8 @@ FUNCTION DrawTga_Create(BYVAL fileName AS STRING, BYVAL imageBuffer AS STRING, B
     DIM header AS TGAHeaderType
     
     fileHandle = FREEFILE
-    OPEN fileName FOR BINARY ACCESS WRITE AS fileHandle
-    
+    OPEN fileName FOR BINARY AS #fileHandle  ' Bug fix: removed unsupported ACCESS WRITE; use # prefix
+
     ' Initialize TGA header
     header.IDLength = 0
     header.ColorMapType = 0
