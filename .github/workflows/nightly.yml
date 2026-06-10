@@ -30,7 +30,9 @@ jobs:
     uses: ./.github/workflows/_build.yml
     with:
       version: nightly
-      advisory: true
+      # the nightly is the drift-catcher: a broken unit/.PBL build MUST turn it
+      # red (CI keeps its advisory build for fast feedback; releases also gate)
+      advisory: false
     secrets: inherit
 
   publish:

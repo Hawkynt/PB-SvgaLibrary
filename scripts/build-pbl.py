@@ -19,7 +19,10 @@ import os, re, glob, sys, shutil
 SRC = sys.argv[1] if len(sys.argv) > 1 else '.'
 OUT = sys.argv[2] if len(sys.argv) > 2 else 'build_pbl'
 shutil.rmtree(OUT, ignore_errors=True); os.makedirs(OUT)
-def rd(p): return open(p, 'rb').read().decode('latin1')
+def rd(p):
+    # normalize to CRLF so the line-based parsing below never silently skips
+    # procs in a file that picked up LF-only lines (wr() re-emits CRLF anyway)
+    return open(p, 'rb').read().decode('latin1').replace('\r\n', '\n').replace('\n', '\r\n')
 def wr(p, s): open(os.path.join(OUT, p), 'wb').write(s.replace('\r\n', '\n').replace('\n', '\r\n').encode('latin1'))
 
 modules = sorted(os.path.basename(p) for p in glob.glob(SRC + '/*.SUB'))
@@ -111,11 +114,12 @@ def mark_public(text):
         out.append(line)
     return '\n'.join(out)
 
-# bin-pack units into <=64k $CODE SEG groups (total code ~128k -> 3 segments).
+# bin-pack units into <=64k $CODE SEG groups (total code ~141k -> 3 segments of
+# ~47k each, greedy-packed from the measured per-unit code sizes of 2026-06-10).
 # Re-pack if a future change pushes a segment over 64k (the build will Error 408).
-GROUPS = [['VESAOPT', 'MODEX', 'DRAW_ANI', 'SPRITE', 'VESA', 'DRAW_CUR', 'DRAW_ICL', 'PORTGLUE'],
-          ['DRAW_ICO', 'DRAW_GIF', 'DRAW_TGA', 'SCROLL', 'DRAW_TIF', 'VGA', 'CURSOR', 'SVGA', 'DRAW_BMP', 'FONTS', 'DRAW_PCX', 'TIMER', 'MEMORY', 'MODEZ'],
-          ['GRAPHICS', 'MODE16', 'FILEUTIL', 'MODETEXT', 'VIRTUAL', 'MODEY', 'TYPES']]
+GROUPS = [['VESAOPT', 'DRAW_GIF', 'DRAW_TIF', 'CURSOR', 'DRAW_PCX', 'MODE16', 'MEMORY', 'MODEY', 'TYPES'],
+          ['MODEX', 'VESA', 'DRAW_CUR', 'SCROLL', 'VGA', 'SVGA', 'TIMER', 'FILEUTIL', 'VIRTUAL', 'MODEZ', 'PORTGLUE'],
+          ['DRAW_ANI', 'SPRITE', 'DRAW_TGA', 'DRAW_ICO', 'DRAW_ICL', 'DRAW_BMP', 'FONTS', 'GRAPHICS', 'MODETEXT']]
 SEGGROUP = {u: 'SEG%d' % i for i, g in enumerate(GROUPS) for u in g}
 
 units = []
