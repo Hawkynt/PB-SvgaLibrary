@@ -62,8 +62,19 @@ SUB Vesa320_HLine(x1_a AS WORD, x2_a AS WORD, y_a AS WORD, c_a AS BYTE)
         !MOV DI, winOff
         !MOV CX, runLen
         !MOV AL, c
+        !MOV AH, AL
         !CLD
-        !REP STOSB
+        !TEST DI, 1
+        !JZ V320HLAligned
+        !STOSB
+        !DEC CX
+        !JZ V320HLDone
+        V320HLAligned:
+        !SHR CX, 1
+        !REP STOSW
+        !JNC V320HLDone
+        !STOSB
+        V320HLDone:
         !POP DI
         !POP ES
     ELSE
@@ -75,8 +86,19 @@ SUB Vesa320_HLine(x1_a AS WORD, x2_a AS WORD, y_a AS WORD, c_a AS BYTE)
         !MOV DI, winOff
         !MOV CX, toEnd
         !MOV AL, c
+        !MOV AH, AL
         !CLD
-        !REP STOSB
+        !TEST DI, 1
+        !JZ V320HLAAligned
+        !STOSB
+        !DEC CX
+        !JZ V320HLADone
+        V320HLAAligned:
+        !SHR CX, 1
+        !REP STOSW
+        !JNC V320HLADone
+        !STOSB
+        V320HLADone:
         !POP DI
         !POP ES
         CALL Memory_SetVesaWindow(bank + 1)
@@ -87,8 +109,13 @@ SUB Vesa320_HLine(x1_a AS WORD, x2_a AS WORD, y_a AS WORD, c_a AS BYTE)
         !XOR DI, DI
         !MOV CX, rest
         !MOV AL, c
+        !MOV AH, AL
         !CLD
-        !REP STOSB
+        !SHR CX, 1
+        !REP STOSW
+        !JNC V320HLBDone
+        !STOSB
+        V320HLBDone:
         !POP DI
         !POP ES
     END IF

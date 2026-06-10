@@ -59,8 +59,19 @@ SUB Vesa1024_HLine(x1_a AS WORD, x2_a AS WORD, y_a AS WORD, c_a AS BYTE)
         !MOV DI, winOff
         !MOV CX, runLen
         !MOV AL, c
+        !MOV AH, AL
         !CLD
-        !REP STOSB
+        !TEST DI, 1
+        !JZ V1024HLAligned
+        !STOSB
+        !DEC CX
+        !JZ V1024HLDone
+        V1024HLAligned:
+        !SHR CX, 1
+        !REP STOSW
+        !JNC V1024HLDone
+        !STOSB
+        V1024HLDone:
         !POP DI
         !POP ES
     ELSE
@@ -72,8 +83,19 @@ SUB Vesa1024_HLine(x1_a AS WORD, x2_a AS WORD, y_a AS WORD, c_a AS BYTE)
         !MOV DI, winOff
         !MOV CX, toEnd
         !MOV AL, c
+        !MOV AH, AL
         !CLD
-        !REP STOSB
+        !TEST DI, 1
+        !JZ V1024HLAAligned
+        !STOSB
+        !DEC CX
+        !JZ V1024HLADone
+        V1024HLAAligned:
+        !SHR CX, 1
+        !REP STOSW
+        !JNC V1024HLADone
+        !STOSB
+        V1024HLADone:
         !POP DI
         !POP ES
         CALL Memory_SetVesaWindow(bank + 1)
@@ -84,8 +106,13 @@ SUB Vesa1024_HLine(x1_a AS WORD, x2_a AS WORD, y_a AS WORD, c_a AS BYTE)
         !XOR DI, DI
         !MOV CX, rest
         !MOV AL, c
+        !MOV AH, AL
         !CLD
-        !REP STOSB
+        !SHR CX, 1
+        !REP STOSW
+        !JNC V1024HLBDone
+        !STOSB
+        V1024HLBDone:
         !POP DI
         !POP ES
     END IF
@@ -177,8 +204,19 @@ SUB Vesa1024_FillRect(x1_a AS WORD, y1_a AS WORD, x2_a AS WORD, y2_a AS WORD, c_
             !MOV DI, winOff
             !MOV CX, part1
             !MOV AL, c
+            !MOV AH, AL
             !CLD
-            !REP STOSB
+            !TEST DI, 1
+            !JZ V1024FRAAligned
+            !STOSB
+            !DEC CX
+            !JZ V1024FRADone
+            V1024FRAAligned:
+            !SHR CX, 1
+            !REP STOSW
+            !JNC V1024FRADone
+            !STOSB
+            V1024FRADone:
             !POP DI
             !POP ES
             CALL Memory_SetVesaWindow(bank + 1)
@@ -189,8 +227,13 @@ SUB Vesa1024_FillRect(x1_a AS WORD, y1_a AS WORD, x2_a AS WORD, y2_a AS WORD, c_
             !XOR DI, DI
             !MOV CX, part2
             !MOV AL, c
+            !MOV AH, AL
             !CLD
-            !REP STOSB
+            !SHR CX, 1
+            !REP STOSW
+            !JNC V1024FRBDone
+            !STOSB
+            V1024FRBDone:
             !POP DI
             !POP ES
             o = o + 1024
@@ -291,8 +334,19 @@ SUB Vesa1024_FillCircle(cx_a AS WORD, cy_a AS WORD, r_a AS WORD, c_a AS BYTE)
             !MOV DI, winOff
             !MOV CX, part1
             !MOV AL, c
+            !MOV AH, AL
             !CLD
-            !REP STOSB
+            !TEST DI, 1
+            !JZ V1024FCAAligned
+            !STOSB
+            !DEC CX
+            !JZ V1024FCADone
+            V1024FCAAligned:
+            !SHR CX, 1
+            !REP STOSW
+            !JNC V1024FCADone
+            !STOSB
+            V1024FCADone:
             !POP DI
             !POP ES
             CALL Memory_SetVesaWindow(bank + 1)
@@ -303,8 +357,13 @@ SUB Vesa1024_FillCircle(cx_a AS WORD, cy_a AS WORD, r_a AS WORD, c_a AS BYTE)
             !XOR DI, DI
             !MOV CX, part2
             !MOV AL, c
+            !MOV AH, AL
             !CLD
-            !REP STOSB
+            !SHR CX, 1
+            !REP STOSW
+            !JNC V1024FCBDone
+            !STOSB
+            V1024FCBDone:
             !POP DI
             !POP ES
         ELSE

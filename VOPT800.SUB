@@ -65,8 +65,19 @@ SUB Vesa800_HLine(x1_a AS WORD, x2_a AS WORD, y_a AS WORD, c_a AS BYTE)
         !MOV DI, winOff
         !MOV CX, runLen
         !MOV AL, c
+        !MOV AH, AL
         !CLD
-        !REP STOSB
+        !TEST DI, 1
+        !JZ V800HLAligned
+        !STOSB
+        !DEC CX
+        !JZ V800HLDone
+        V800HLAligned:
+        !SHR CX, 1
+        !REP STOSW
+        !JNC V800HLDone
+        !STOSB
+        V800HLDone:
         !POP DI
         !POP ES
     ELSE
@@ -78,8 +89,19 @@ SUB Vesa800_HLine(x1_a AS WORD, x2_a AS WORD, y_a AS WORD, c_a AS BYTE)
         !MOV DI, winOff
         !MOV CX, toEnd
         !MOV AL, c
+        !MOV AH, AL
         !CLD
-        !REP STOSB
+        !TEST DI, 1
+        !JZ V800HLAAligned
+        !STOSB
+        !DEC CX
+        !JZ V800HLADone
+        V800HLAAligned:
+        !SHR CX, 1
+        !REP STOSW
+        !JNC V800HLADone
+        !STOSB
+        V800HLADone:
         !POP DI
         !POP ES
         CALL Memory_SetVesaWindow(bank + 1)
@@ -90,8 +112,13 @@ SUB Vesa800_HLine(x1_a AS WORD, x2_a AS WORD, y_a AS WORD, c_a AS BYTE)
         !XOR DI, DI
         !MOV CX, rest
         !MOV AL, c
+        !MOV AH, AL
         !CLD
-        !REP STOSB
+        !SHR CX, 1
+        !REP STOSW
+        !JNC V800HLBDone
+        !STOSB
+        V800HLBDone:
         !POP DI
         !POP ES
     END IF
@@ -187,8 +214,19 @@ SUB Vesa800_FillRect(x1_a AS WORD, y1_a AS WORD, x2_a AS WORD, y2_a AS WORD, c_a
             !MOV DI, winOff
             !MOV CX, part1
             !MOV AL, c
+            !MOV AH, AL
             !CLD
-            !REP STOSB
+            !TEST DI, 1
+            !JZ V800FRAAligned
+            !STOSB
+            !DEC CX
+            !JZ V800FRADone
+            V800FRAAligned:
+            !SHR CX, 1
+            !REP STOSW
+            !JNC V800FRADone
+            !STOSB
+            V800FRADone:
             !POP DI
             !POP ES
             CALL Memory_SetVesaWindow(bank + 1)
@@ -199,8 +237,13 @@ SUB Vesa800_FillRect(x1_a AS WORD, y1_a AS WORD, x2_a AS WORD, y2_a AS WORD, c_a
             !XOR DI, DI
             !MOV CX, part2
             !MOV AL, c
+            !MOV AH, AL
             !CLD
-            !REP STOSB
+            !SHR CX, 1
+            !REP STOSW
+            !JNC V800FRBDone
+            !STOSB
+            V800FRBDone:
             !POP DI
             !POP ES
             o = o + 800
@@ -303,8 +346,19 @@ SUB Vesa800_FillCircle(cx_a AS WORD, cy_a AS WORD, r_a AS WORD, c_a AS BYTE)
             !MOV DI, winOff
             !MOV CX, part1
             !MOV AL, c
+            !MOV AH, AL
             !CLD
-            !REP STOSB
+            !TEST DI, 1
+            !JZ V800FCAAligned
+            !STOSB
+            !DEC CX
+            !JZ V800FCADone
+            V800FCAAligned:
+            !SHR CX, 1
+            !REP STOSW
+            !JNC V800FCADone
+            !STOSB
+            V800FCADone:
             !POP DI
             !POP ES
             CALL Memory_SetVesaWindow(bank + 1)
@@ -315,8 +369,13 @@ SUB Vesa800_FillCircle(cx_a AS WORD, cy_a AS WORD, r_a AS WORD, c_a AS BYTE)
             !XOR DI, DI
             !MOV CX, part2
             !MOV AL, c
+            !MOV AH, AL
             !CLD
-            !REP STOSB
+            !SHR CX, 1
+            !REP STOSW
+            !JNC V800FCBDone
+            !STOSB
+            V800FCBDone:
             !POP DI
             !POP ES
         ELSE

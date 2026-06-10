@@ -93,11 +93,22 @@ SUB Test_FillRect
     CALL Assert_IsEqual(GetP(99, 100), 0, "no bleed")
 END SUB
 
+SUB Test_ClearScreen_FullBanks
+    CALL Test_Case("ClearScreen floods every 64k bank of the 640x480 frame")
+    DIM cv AS BYTE
+    cv = 77
+    CALL VESA_ClearScreen(cv)
+    CALL Assert_IsEqual(GetP(0, 0), 77, "first pixel (bank 0)")
+    CALL Assert_IsEqual(GetP(300, 200), 77, "bank 1")
+    CALL Assert_IsEqual(GetP(320, 307), 77, "bank 2/3 area")
+    CALL Assert_IsEqual(GetP(639, 479), 77, "last pixel (bank 4)")
+END SUB
+
 SUB Test_GetMode_Lookup
     CALL Test_Case("Vesa_GetMode maps 640x480x256 to a real VBE mode number")
     DIM m AS WORD
     m = Vesa_GetMode(640, 480, 256)
-    CALL Assert_IsTrue(m <> 0, "a non-zero VBE mode is returned (regression: used to always return 0)")
+    CALL Assert_IsTrue(m <> 0, "a non-zero VBE mode is returned")
     m = Vesa_GetMode(12345, 6789, 256)
     CALL Assert_IsEqual(m, 0, "an impossible resolution returns 0")
 END SUB

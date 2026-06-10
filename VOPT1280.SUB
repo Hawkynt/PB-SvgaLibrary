@@ -62,8 +62,19 @@ SUB Vesa1280_HLine(x1_a AS WORD, x2_a AS WORD, y_a AS WORD, c_a AS BYTE)
         !MOV DI, winOff
         !MOV CX, runLen
         !MOV AL, c
+        !MOV AH, AL
         !CLD
-        !REP STOSB
+        !TEST DI, 1
+        !JZ V1280HLAligned
+        !STOSB
+        !DEC CX
+        !JZ V1280HLDone
+        V1280HLAligned:
+        !SHR CX, 1
+        !REP STOSW
+        !JNC V1280HLDone
+        !STOSB
+        V1280HLDone:
         !POP DI
         !POP ES
     ELSE
@@ -75,8 +86,19 @@ SUB Vesa1280_HLine(x1_a AS WORD, x2_a AS WORD, y_a AS WORD, c_a AS BYTE)
         !MOV DI, winOff
         !MOV CX, toEnd
         !MOV AL, c
+        !MOV AH, AL
         !CLD
-        !REP STOSB
+        !TEST DI, 1
+        !JZ V1280HLAAligned
+        !STOSB
+        !DEC CX
+        !JZ V1280HLADone
+        V1280HLAAligned:
+        !SHR CX, 1
+        !REP STOSW
+        !JNC V1280HLADone
+        !STOSB
+        V1280HLADone:
         !POP DI
         !POP ES
         CALL Memory_SetVesaWindow(bank + 1)
@@ -87,8 +109,13 @@ SUB Vesa1280_HLine(x1_a AS WORD, x2_a AS WORD, y_a AS WORD, c_a AS BYTE)
         !XOR DI, DI
         !MOV CX, rest
         !MOV AL, c
+        !MOV AH, AL
         !CLD
-        !REP STOSB
+        !SHR CX, 1
+        !REP STOSW
+        !JNC V1280HLBDone
+        !STOSB
+        V1280HLBDone:
         !POP DI
         !POP ES
     END IF
@@ -182,8 +209,19 @@ SUB Vesa1280_FillRect(x1_a AS WORD, y1_a AS WORD, x2_a AS WORD, y2_a AS WORD, c_
             !MOV DI, winOff
             !MOV CX, part1
             !MOV AL, c
+            !MOV AH, AL
             !CLD
-            !REP STOSB
+            !TEST DI, 1
+            !JZ V1280FRAAligned
+            !STOSB
+            !DEC CX
+            !JZ V1280FRADone
+            V1280FRAAligned:
+            !SHR CX, 1
+            !REP STOSW
+            !JNC V1280FRADone
+            !STOSB
+            V1280FRADone:
             !POP DI
             !POP ES
             CALL Memory_SetVesaWindow(bank + 1)
@@ -194,8 +232,13 @@ SUB Vesa1280_FillRect(x1_a AS WORD, y1_a AS WORD, x2_a AS WORD, y2_a AS WORD, c_
             !XOR DI, DI
             !MOV CX, part2
             !MOV AL, c
+            !MOV AH, AL
             !CLD
-            !REP STOSB
+            !SHR CX, 1
+            !REP STOSW
+            !JNC V1280FRBDone
+            !STOSB
+            V1280FRBDone:
             !POP DI
             !POP ES
             o = o + 1280
@@ -297,8 +340,19 @@ SUB Vesa1280_FillCircle(cx_a AS WORD, cy_a AS WORD, r_a AS WORD, c_a AS BYTE)
             !MOV DI, winOff
             !MOV CX, part1
             !MOV AL, c
+            !MOV AH, AL
             !CLD
-            !REP STOSB
+            !TEST DI, 1
+            !JZ V1280FCAAligned
+            !STOSB
+            !DEC CX
+            !JZ V1280FCADone
+            V1280FCAAligned:
+            !SHR CX, 1
+            !REP STOSW
+            !JNC V1280FCADone
+            !STOSB
+            V1280FCADone:
             !POP DI
             !POP ES
             CALL Memory_SetVesaWindow(bank + 1)
@@ -309,8 +363,13 @@ SUB Vesa1280_FillCircle(cx_a AS WORD, cy_a AS WORD, r_a AS WORD, c_a AS BYTE)
             !XOR DI, DI
             !MOV CX, part2
             !MOV AL, c
+            !MOV AH, AL
             !CLD
-            !REP STOSB
+            !SHR CX, 1
+            !REP STOSW
+            !JNC V1280FCBDone
+            !STOSB
+            V1280FCBDone:
             !POP DI
             !POP ES
         ELSE
