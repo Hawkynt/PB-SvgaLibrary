@@ -283,24 +283,15 @@ END SUB
 
 SUB Memory_ClearVideoMemory(BYVAL colorVal as BYTE)
 	!PUSH ES
+	!PUSH DI
 	!MOV AX, &HA000
-	!MOV BL, colorVal
-	!MOV BH, BL
 	!MOV ES, AX
-	!XOR CL, CL
-	!MOV CH, 16
-LoopLbl:
-	!STOSW
-	!STOSW
-	!STOSW
-	!STOSW
-	!STOSW
-	!STOSW
-	!STOSW
-	!STOSW
-	!DEC CL
-	!JNZ LoopLbl
-	!DEC CH
-	!JNZ LoopLbl
+	!XOR DI, DI            ; start at the top of the segment
+	!MOV AL, colorVal      ; AX = colour replicated into both bytes...
+	!MOV AH, AL            ; ...so each STOSW writes two pixels of it
+	!MOV CX, 32000         ; 320*200 = 64000 bytes = 32000 words
+	!CLD
+	!REP STOSW
+	!POP DI
 	!POP ES
 END SUB
