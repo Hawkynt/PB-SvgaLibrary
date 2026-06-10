@@ -160,6 +160,154 @@ SUB MakeCur4x4_8bit(BYVAL fileName AS STRING)
     CLOSE #2
 END SUB
 
+' =============================================================================
+' MakeCur4x4_4bit: 4x4 4-bit CUR fixture (ColorCount=16, hotspot (1,1))
+'
+' Nibble-packed pixel data (bottom-up rows, each row = 2 nibbles = 1 byte + 1 byte pad to DWORD):
+'   scanlineWidth = ((4*4+31)\32)*4 = 4 bytes/row
+'   pixel layout (col 0..3): nibble upper=col0, lower=col1; next byte: upper=col2, lower=col3
+'   file-row 0 (image row 3): all pixel=0xF -> CHR$(&HFF)+CHR$(&HF0) + 2 pad
+'   file-row 1 (image row 2): pixels 0xA,0xB,0xC,0xD -> &HAB, &HCD + 2 pad
+'   file-row 2 (image row 1): pixels 1,2,3,4 -> &H12, &H34 + 2 pad
+'   file-row 3 (image row 0): pixels 5,6,7,8 -> &H56, &H78 + 2 pad
+' =============================================================================
+SUB MakeCur4x4_4bit(BYVAL fileName AS STRING)
+    DIM hdr AS STRING, entry AS STRING, bih AS STRING
+    DIM pal AS STRING, xorData AS STRING, andData AS STRING
+    DIM imageOffset AS LONG, bytesInRes AS LONG
+
+    hdr = LE16(0) + LE16(2) + LE16(1)
+    imageOffset = 22
+    ' DIB: 40 (BIH) + 64 (16-entry palette) + 16 (XOR) + 16 (AND)
+    bytesInRes = 40 + 64 + 16 + 16
+
+    ' ColorCount=16 -> 4-bit depth detection
+    entry = CHR$(4) + CHR$(4) + CHR$(16) + CHR$(0) + _
+            LE16(1) + LE16(1) + _
+            LE32(bytesInRes) + LE32(imageOffset)
+
+    ' BITMAPINFOHEADER: height=8 (XOR+AND doubled)
+    bih = LE32(40) + LE32(4) + LE32(8) + LE16(1) + LE16(4) + _
+          LE32(0) + LE32(0) + LE32(0) + LE32(0) + LE32(0) + LE32(0)
+
+    ' 16-entry BGRA palette: entry i = B=i*4 G=i*4 R=i*4 A=0
+    pal = ""
+    DIM pi AS INTEGER
+    FOR pi = 0 TO 15
+        pal = pal + CHR$(pi * 4) + CHR$(pi * 4) + CHR$(pi * 4) + CHR$(0)
+    NEXT pi
+
+    ' XOR data bottom-up
+    ' file-row 0: pixels 0xF,0xF,0xF,0xF -> packed &HFF &HFF
+    xorData = CHR$(&HFF) + CHR$(&HFF) + CHR$(0) + CHR$(0)
+    ' file-row 1: pixels 0xA,0xB,0xC,0xD -> &HAB &HCD
+    xorData = xorData + CHR$(&HAB) + CHR$(&HCD) + CHR$(0) + CHR$(0)
+    ' file-row 2: pixels 1,2,3,4 -> &H12 &H34
+    xorData = xorData + CHR$(&H12) + CHR$(&H34) + CHR$(0) + CHR$(0)
+    ' file-row 3 (image row 0): pixels 5,6,7,8 -> &H56 &H78
+    xorData = xorData + CHR$(&H56) + CHR$(&H78) + CHR$(0) + CHR$(0)
+
+    ' AND mask: all opaque
+    andData = STRING$(16, CHR$(0))
+
+    OPEN fileName FOR BINARY AS #3
+    PUT$ #3, hdr + entry + bih + pal + xorData + andData
+    CLOSE #3
+END SUB
+
+' =============================================================================
+' MakeCur_TwoCursors: two-cursor CUR file
+'   cursor 0: 2x2, 1-bit, hotspot (0,0), pixels all = 1 (white=255)
+'   cursor 1: 4x4, 8-bit, hotspot (2,2), all pixels = index 7
+' =============================================================================
+SUB MakeCur_TwoCursors(BYVAL fileName AS STRING)
+    DIM hdr AS STRING, e0 AS STRING, e1 AS STRING
+    DIM bih0 AS STRING, bih1 AS STRING
+    DIM pal0 AS STRING, pal1 AS STRING
+    DIM xor0 AS STRING, xor1 AS STRING, and0 AS STRING, and1 AS STRING
+    DIM off0 AS LONG, bytes0 AS LONG, off1 AS LONG, bytes1 AS LONG
+
+    hdr = LE16(0) + LE16(2) + LE16(2)
+
+    ' cursor 0: 2x2 1-bit
+    ' scanlineWidth = ((2*1+31)\32)*4 = 4 bytes/row; maskScanWidth = 4 bytes/row
+    ' palette: 2 entries * 4 = 8 bytes; XOR: 4*2=8; AND: 4*2=8
+    bytes0 = 40 + 8 + 8 + 8
+    off0 = 6 + 16 * 2  ' CURDIR + 2 entries
+
+    ' cursor 1: 4x4 8-bit (ColorCount=0)
+    ' scanlineWidth = ((4*8+31)\32)*4 = 4 bytes/row; 16 bytes XOR + 16 bytes AND
+    bytes1 = 40 + 1024 + 16 + 16
+    off1 = off0 + bytes0
+
+    e0 = CHR$(2) + CHR$(2) + CHR$(2) + CHR$(0) + _
+         LE16(0) + LE16(0) + _
+         LE32(bytes0) + LE32(off0)
+
+    e1 = CHR$(4) + CHR$(4) + CHR$(0) + CHR$(0) + _
+         LE16(2) + LE16(2) + _
+         LE32(bytes1) + LE32(off1)
+
+    ' Cursor 0 BIH + data
+    bih0 = LE32(40) + LE32(2) + LE32(4) + LE16(1) + LE16(1) + _
+           LE32(0) + LE32(0) + LE32(0) + LE32(0) + LE32(0) + LE32(0)
+    pal0 = CHR$(0)+CHR$(0)+CHR$(0)+CHR$(0) + CHR$(255)+CHR$(255)+CHR$(255)+CHR$(0)
+    ' XOR: both rows = 1111 ... -> &HFF pad to 4 bytes (2 rows)
+    xor0 = CHR$(&HFF)+CHR$(0)+CHR$(0)+CHR$(0) + CHR$(&HFF)+CHR$(0)+CHR$(0)+CHR$(0)
+    and0 = STRING$(8, CHR$(0))
+
+    ' Cursor 1 BIH + data
+    bih1 = LE32(40) + LE32(4) + LE32(8) + LE16(1) + LE16(8) + _
+           LE32(0) + LE32(0) + LE32(0) + LE32(0) + LE32(0) + LE32(0)
+    pal1 = STRING$(1024, CHR$(0))
+    ' all 4x4 pixels = index 7
+    xor1 = STRING$(16, CHR$(7))
+    and1 = STRING$(16, CHR$(0))
+
+    OPEN fileName FOR BINARY AS #4
+    PUT$ #4, hdr + e0 + e1 + bih0 + pal0 + xor0 + and0 + bih1 + pal1 + xor1 + and1
+    CLOSE #4
+END SUB
+
+' =============================================================================
+' MakeCur4x4_ANDMasked: 4x4 8-bit CUR with partial AND mask transparency
+'
+' AND mask (bottom-up):
+'   file-row 0 (drawn at y+3): all transparent = &HF0
+'   file-row 1 (drawn at y+2): all opaque = 0x00
+'   file-row 2 (drawn at y+1): all opaque = 0x00
+'   file-row 3 (drawn at y+0): px0,1 transparent, px2,3 opaque = &HC0
+' XOR: all pixels = index 5; hotspot (0,0)
+' =============================================================================
+SUB MakeCur4x4_ANDMasked(BYVAL fileName AS STRING)
+    DIM hdr AS STRING, entry AS STRING, bih AS STRING
+    DIM pal AS STRING, xorData AS STRING, andData AS STRING
+    DIM imageOffset AS LONG, bytesInRes AS LONG
+
+    hdr = LE16(0) + LE16(2) + LE16(1)
+    imageOffset = 22
+    bytesInRes = 40 + 1024 + 16 + 16
+
+    entry = CHR$(4) + CHR$(4) + CHR$(0) + CHR$(0) + _
+            LE16(0) + LE16(0) + _
+            LE32(bytesInRes) + LE32(imageOffset)
+
+    bih = LE32(40) + LE32(4) + LE32(8) + LE16(1) + LE16(8) + _
+          LE32(0) + LE32(0) + LE32(0) + LE32(0) + LE32(0) + LE32(0)
+
+    pal = STRING$(1024, CHR$(0))
+    xorData = STRING$(16, CHR$(5))
+
+    andData = CHR$(&HF0) + CHR$(0) + CHR$(0) + CHR$(0)  ' row 0 (drawn y+3): all transp
+    andData = andData + CHR$(0) + CHR$(0) + CHR$(0) + CHR$(0)  ' row 1 (y+2): all opaque
+    andData = andData + CHR$(0) + CHR$(0) + CHR$(0) + CHR$(0)  ' row 2 (y+1): all opaque
+    andData = andData + CHR$(&HC0) + CHR$(0) + CHR$(0) + CHR$(0)  ' row 3 (y+0): px0,1 transp
+
+    OPEN fileName FOR BINARY AS #5
+    PUT$ #5, hdr + entry + bih + pal + xorData + andData
+    CLOSE #5
+END SUB
+
 ' ---------------------------------------------------------------------------
 ' Test cases
 ' ---------------------------------------------------------------------------
@@ -344,6 +492,83 @@ SUB Test_LoadBitmap_MissingFile
     CALL Assert_IsZero(ok, "LoadBitmap = 0 for missing file")
     CALL Assert_IsZero(w, "width = 0 on failure")
     CALL Assert_IsZero(h, "height = 0 on failure")
+END SUB
+
+' =============================================================================
+' Test_Show_4bit_Pixels: DrawCur_Show decodes 4-bit nibble-packed pixels correctly
+' hotspot (1,1), Show at (10,10) -> origin (9,9)
+' image row 0 (screen y=9): pixels 5,6,7,8 (file-row 3)
+' image row 1 (screen y=10): pixels 1,2,3,4 (file-row 2)
+' =============================================================================
+SUB Test_Show_4bit_Pixels
+    CALL Test_Case("Show decodes 4-bit cursor nibble-packed pixels correctly")
+    CALL MakeCur4x4_4bit("T4.CUR")
+    CALL DrawCur_Show("T4.CUR", 10, 10, 0)
+    ' image row 0 at screen (9,9): file-row 3 = pixels 5,6,7,8
+    CALL Assert_IsEqual(GetP(9,  9), 5, "4bit row0 col0 = 5")
+    CALL Assert_IsEqual(GetP(10, 9), 6, "4bit row0 col1 = 6")
+    CALL Assert_IsEqual(GetP(11, 9), 7, "4bit row0 col2 = 7")
+    CALL Assert_IsEqual(GetP(12, 9), 8, "4bit row0 col3 = 8")
+    ' image row 1 at screen (9,10): file-row 2 = pixels 1,2,3,4
+    CALL Assert_IsEqual(GetP(9,  10), 1, "4bit row1 col0 = 1")
+    CALL Assert_IsEqual(GetP(12, 10), 4, "4bit row1 col3 = 4")
+END SUB
+
+' =============================================================================
+' Test_GetInfo_Index1_TwoCursors: GetInfo on cursor index=1 returns 4x4 8-bit
+' =============================================================================
+SUB Test_GetInfo_Index1_TwoCursors
+    CALL Test_Case("GetInfo with index=1 returns second cursor info from two-cursor CUR")
+    DIM w AS WORD, h AS WORD, cd AS WORD, hx AS WORD, hy AS WORD
+    CALL MakeCur_TwoCursors("T2.CUR")
+    CALL DrawCur_GetInfo("T2.CUR", 1, w, h, cd, hx, hy)
+    CALL Assert_IsEqual(w,  4, "two-cursor index1 width = 4")
+    CALL Assert_IsEqual(h,  4, "two-cursor index1 height = 4")
+    CALL Assert_IsEqual(cd, 8, "two-cursor index1 colorDepth = 8")
+    CALL Assert_IsEqual(hx, 2, "two-cursor index1 hotX = 2")
+    CALL Assert_IsEqual(hy, 2, "two-cursor index1 hotY = 2")
+END SUB
+
+' =============================================================================
+' Test_Show_SecondCursor_TwoCursorFile: Show at index=1 renders the second cursor
+' cursor 1: 4x4 8-bit all pixels=7, hotspot (2,2), Show at (20,20) -> origin (18,18)
+' =============================================================================
+SUB Test_Show_SecondCursor
+    CALL Test_Case("Show with index=1 renders the second cursor from a two-cursor file")
+    CALL MakeCur_TwoCursors("T2.CUR")
+    CALL DrawCur_Show("T2.CUR", 20, 20, 1)
+    CALL Assert_IsEqual(GetP(18, 18), 7, "2nd cursor row0 col0 = 7")
+    CALL Assert_IsEqual(GetP(21, 18), 7, "2nd cursor row0 col3 = 7")
+    CALL Assert_IsEqual(GetP(18, 21), 7, "2nd cursor row3 col0 = 7")
+    CALL Assert_IsEqual(GetP(21, 21), 7, "2nd cursor row3 col3 = 7")
+END SUB
+
+' =============================================================================
+' Test_Show_ANDMask_Transparency: AND mask bit=1 means transparent; those pixels stay at background
+' Pre-fill area with 33; opaque pixels must be 5, transparent must remain 33
+' =============================================================================
+SUB Test_Show_ANDMask_Transparency
+    CALL Test_Case("Show does not draw pixels where AND mask bit is 1 (transparent)")
+    CALL MakeCur4x4_ANDMasked("TMASK.CUR")
+    DIM fx AS WORD, fy AS WORD
+    FOR fy = 30 TO 33
+        FOR fx = 50 TO 53
+            CALL Vga_PutPixel(fx, fy, 33)
+        NEXT fx
+    NEXT fy
+    ' hotspot (0,0) -> Show at (50,30) draws at (50,30)
+    CALL DrawCur_Show("TMASK.CUR", 50, 30, 0)
+    ' screen y=30 (pixelY=0): file-row 3 mask=&HC0 -> px0,1 transparent, px2,3 opaque
+    CALL Assert_IsEqual(GetP(50, 30), 33, "AND-mask: row0 col0 transparent = 33")
+    CALL Assert_IsEqual(GetP(51, 30), 33, "AND-mask: row0 col1 transparent = 33")
+    CALL Assert_IsEqual(GetP(52, 30),  5, "AND-mask: row0 col2 opaque = 5")
+    CALL Assert_IsEqual(GetP(53, 30),  5, "AND-mask: row0 col3 opaque = 5")
+    ' screen y=31 (pixelY=1): file-row 2 mask=0x00 -> all opaque
+    CALL Assert_IsEqual(GetP(50, 31), 5, "AND-mask: row1 col0 opaque = 5")
+    CALL Assert_IsEqual(GetP(53, 31), 5, "AND-mask: row1 col3 opaque = 5")
+    ' screen y=33 (pixelY=3): file-row 0 mask=&HF0 -> all transparent
+    CALL Assert_IsEqual(GetP(50, 33), 33, "AND-mask: row3 col0 transparent = 33")
+    CALL Assert_IsEqual(GetP(53, 33), 33, "AND-mask: row3 col3 transparent = 33")
 END SUB
 
 SUB Test_Setup

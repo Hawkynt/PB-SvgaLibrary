@@ -258,3 +258,91 @@ SUB Test_DrawScanline_Direct
     CALL Assert_IsEqual(GetP(12, 20), 42, "DrawScanline pixel 2 = 42")
     CALL Assert_IsEqual(GetP(13, 20), 43, "DrawScanline pixel 3 = 43")
 END SUB
+
+' =============================================================================
+' Test_ReadScanline_MaxLiteralByte: a byte value of 191 (0xBF) is the largest
+' value that is treated as a literal pixel (< 192).  It must NOT be decoded
+' as an RLE header and must be stored directly as pixel index 191.
+' =============================================================================
+SUB Test_ReadScanline_MaxLiteralByte
+    CALL Test_Case("ReadScanline treats byte 191 as literal pixel (boundary: max non-RLE byte)")
+    ' Build a minimal PCX: 1-pixel wide, 1 row, data = CHR$(191)
+    ' Header: manufacturer=0x0A, version=5, enc=1, bpp=8
+    ' XMin=0,YMin=0,XMax=0,YMax=0 -> width=1, height=1
+    DIM hdr AS STRING, imgData AS STRING, pal AS STRING
+    hdr = CHR$(10) + CHR$(5) + CHR$(1) + CHR$(8)
+    hdr = hdr + LE16(0) + LE16(0) + LE16(0) + LE16(0)
+    hdr = hdr + STRING$(128 - LEN(hdr), CHR$(0))
+    imgData = CHR$(191)    ' 0xBF = 191 < 192 -> literal
+    pal = CHR$(12) + STRING$(768, CHR$(0))
+    OPEN "TLIT.PCX" FOR BINARY AS #1
+    PUT$ #1, hdr + imgData + pal
+    CLOSE #1
+
+    DIM fh AS INTEGER, sl AS STRING
+    fh = FileUtil_OpenBinary("TLIT.PCX")
+    SEEK fh, 128
+    CALL DrawPcx_ReadScanline(fh, sl, 1)
+    CALL FileUtil_CloseBinary(fh)
+    CALL Assert_IsEqual(LEN(sl), 1, "max-literal: scanline length = 1")
+    CALL Assert_IsEqual(ASC(MID$(sl, 1, 1)), 191, "max-literal: sl[0] = 191")
+END SUB
+
+' =============================================================================
+' Test_ReadScanline_RleClippedAtBoundary: an RLE run that is larger than the
+' remaining pixels in the scanline must be clipped.  The code already has the
+' EXIT FOR guard; this test verifies it actually fires.
+'
+' Setup: width=3, stream = CHR$(0xC5)=197 (run of 5) CHR$(88)
+' The run of 5 should fill exactly 3 pixels (width=3) and stop.
+' =============================================================================
+SUB Test_ReadScanline_RleClippedAtBoundary
+    CALL Test_Case("ReadScanline clips an over-long RLE run at the scanline boundary")
+    DIM fh AS INTEGER, sl AS STRING
+    ' Write just the compressed bytes to a temp file and seek there
+    OPEN "TCLIP.TMP" FOR BINARY AS #1
+    PUT$ #1, CHR$(197) + CHR$(88)   ' run of 5 x 88, but width=3
+    CLOSE #1
+    fh = FileUtil_OpenBinary("TCLIP.TMP")
+    SEEK fh, 0
+    CALL DrawPcx_ReadScanline(fh, sl, 3)
+    CALL FileUtil_CloseBinary(fh)
+    CALL Assert_IsEqual(LEN(sl), 3, "clipped run: scanline length = 3")
+    CALL Assert_IsEqual(ASC(MID$(sl, 1, 1)), 88, "clipped sl[0] = 88")
+    CALL Assert_IsEqual(ASC(MID$(sl, 2, 1)), 88, "clipped sl[1] = 88")
+    CALL Assert_IsEqual(ASC(MID$(sl, 3, 1)), 88, "clipped sl[2] = 88")
+END SUB
+
+' =============================================================================
+' Test_Show_OddWidthBytesPerLine: PCX image whose width is not a multiple of
+' the BytesPerLine (which is typically the same as width for 8-bit PCX, but
+' the GetSize/ReadHeader path still reports the correct pixel count).
+'
+' We build a 5x1 PCX with 5 literal bytes (all < 192) and verify GetSize
+' returns width=5 and that Show plots exactly 5 correct pixels.
+' =============================================================================
+SUB Test_Show_OddWidthBytesPerLine
+    CALL Test_Case("Show handles PCX with odd width correctly (5-pixel wide image)")
+    DIM hdr AS STRING, imgData AS STRING, pal AS STRING
+    hdr = CHR$(10) + CHR$(5) + CHR$(1) + CHR$(8)
+    hdr = hdr + LE16(0) + LE16(0) + LE16(4) + LE16(0)  ' XMax=4 -> width=5
+    hdr = hdr + STRING$(128 - LEN(hdr), CHR$(0))
+    ' 5 literal pixels: 11,22,33,44,55  (all < 192)
+    imgData = CHR$(11) + CHR$(22) + CHR$(33) + CHR$(44) + CHR$(55)
+    pal = CHR$(12) + STRING$(768, CHR$(0))
+    OPEN "TODD.PCX" FOR BINARY AS #1
+    PUT$ #1, hdr + imgData + pal
+    CLOSE #1
+
+    DIM w AS WORD, h AS WORD
+    CALL DrawPcx_GetSize("TODD.PCX", w, h)
+    CALL Assert_IsEqual(w, 5, "odd-width GetSize: width = 5")
+    CALL Assert_IsEqual(h, 1, "odd-width GetSize: height = 1")
+
+    CALL DrawPcx_Show("TODD.PCX", 70, 90)
+    CALL Assert_IsEqual(GetP(70, 90), 11, "odd-width px0 = 11")
+    CALL Assert_IsEqual(GetP(71, 90), 22, "odd-width px1 = 22")
+    CALL Assert_IsEqual(GetP(72, 90), 33, "odd-width px2 = 33")
+    CALL Assert_IsEqual(GetP(73, 90), 44, "odd-width px3 = 44")
+    CALL Assert_IsEqual(GetP(74, 90), 55, "odd-width px4 = 55")
+END SUB

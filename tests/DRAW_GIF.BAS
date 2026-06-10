@@ -338,6 +338,139 @@ SUB Test_Show_BadSig_NoOp
     CALL Assert_IsEqual(px, 42, "bad-sig show leaves screen unchanged")
 END SUB
 
+' =============================================================================
+' MakeGifMinCode2: 2x2 GIF87a with minCodeSize=2 (different from existing tests)
+'
+' Global CT: 4 colours
+' minCodeSize = 2  -> ClearCode=4, EndCode=5, initial codeSize=3, MaxCode=7
+' Proper LZW encoding for pixels [0,1,2,3]:
+'   At codeSize=3: emit clear(4), code0(0), code1(1)  [after code1: NextCode=8>7, bump to codeSize=4]
+'   At codeSize=4: emit code2(2), code3(3), end(5)
+' Bytes: 0x44 0x64 0x0A
+' Pixels decoded: 0,1,2,3
+' =============================================================================
+SUB MakeGifMinCode2
+    DIM gifData AS STRING
+    ' "GIF87a" 6 bytes
+    gifData = CHR$(71) + CHR$(73) + CHR$(70) + CHR$(56) + CHR$(55) + CHR$(97)
+    ' Screen descriptor: w=2 h=2 packed=0x81 bg=0 asp=0
+    gifData = gifData + CHR$(2) + CHR$(0) + CHR$(2) + CHR$(0) + CHR$(129) + CHR$(0) + CHR$(0)
+    ' Global CT: 4 RGB triples (R,G,B order in file)
+    gifData = gifData + CHR$(255) + CHR$(0)   + CHR$(0)    ' index 0 red
+    gifData = gifData + CHR$(0)   + CHR$(255) + CHR$(0)    ' index 1 green
+    gifData = gifData + CHR$(0)   + CHR$(0)   + CHR$(255)  ' index 2 blue
+    gifData = gifData + CHR$(255) + CHR$(255) + CHR$(255)  ' index 3 white
+    ' Image descriptor: 0x2C left=0 top=0 w=2 h=2 packed=0
+    gifData = gifData + CHR$(44) + CHR$(0) + CHR$(0) + CHR$(0) + CHR$(0)
+    gifData = gifData + CHR$(2) + CHR$(0) + CHR$(2) + CHR$(0) + CHR$(0)
+    ' LZW min code size = 2
+    gifData = gifData + CHR$(2)
+    ' Sub-block: size=3, data=0x44,0x64,0x0A, then terminator 0x00
+    gifData = gifData + CHR$(3) + CHR$(&H44) + CHR$(&H64) + CHR$(&H0A) + CHR$(0)
+    ' Trailer
+    gifData = gifData + CHR$(59)
+    OPEN "TMC2.GIF" FOR BINARY AS #1
+    PUT$ #1, gifData
+    CLOSE #1
+END SUB
+
+' =============================================================================
+' MakeGif89aGCE: GIF89a with a Graphic Control Extension before the image block.
+'
+' GCE block (0x21 0xF9): label=0xF9, blockSize=4, packed=0x00,
+'                         delayLow=0x0A, delayHigh=0x00, transparentIdx=0x00,
+'                         block terminator=0x00
+' This is followed by the normal 2x2 image (same LZW as MakeGif89).
+' The extension parser must consume the GCE and then find the image block.
+' =============================================================================
+SUB MakeGif89aGCE
+    DIM gifData AS STRING
+    ' "GIF89a" header + screen descriptor + global CT (same as MakeGif89)
+    gifData = CHR$(71) + CHR$(73) + CHR$(70) + CHR$(56) + CHR$(57) + CHR$(97)
+    gifData = gifData + CHR$(2) + CHR$(0) + CHR$(2) + CHR$(0) + CHR$(129) + CHR$(0) + CHR$(0)
+    gifData = gifData + CHR$(255) + CHR$(0)   + CHR$(0)
+    gifData = gifData + CHR$(0)   + CHR$(255) + CHR$(0)
+    gifData = gifData + CHR$(0)   + CHR$(0)   + CHR$(255)
+    gifData = gifData + CHR$(255) + CHR$(255) + CHR$(255)
+    ' GCE block: 0x21 (extension) 0xF9 (graphic control) size=4 packed=0 delayLo=10 delayHi=0 transpIdx=0 terminator=0
+    gifData = gifData + CHR$(&H21) + CHR$(&HF9)
+    gifData = gifData + CHR$(4) + CHR$(0) + CHR$(10) + CHR$(0) + CHR$(0) + CHR$(0)
+    ' Image block (same LZW as MakeGif89: minCodeSize=3 -> bytes 0x08,0x21,0x93)
+    gifData = gifData + CHR$(44) + CHR$(0) + CHR$(0) + CHR$(0) + CHR$(0)
+    gifData = gifData + CHR$(2) + CHR$(0) + CHR$(2) + CHR$(0) + CHR$(0)
+    gifData = gifData + CHR$(3)
+    gifData = gifData + CHR$(3) + CHR$(8) + CHR$(33) + CHR$(147) + CHR$(0)
+    gifData = gifData + CHR$(59)
+    OPEN "TGCE.GIF" FOR BINARY AS #1
+    PUT$ #1, gifData
+    CLOSE #1
+END SUB
+
+' =============================================================================
+' Test_DecompressLZW_MinCodeSize2: use minCodeSize=2 (different from existing tests)
+' ClearCode=4, EndCode=5, initial codeSize=3, MaxCode=7
+' Proper encoding for pixels [0,1,2,3]:
+'   codeSize=3: clear(4), code0(0), code1(1)  -> after code1: NextCode=8>7, bump to codeSize=4
+'   codeSize=4: code2(2), code3(3), end(5)
+' Stream bytes: 0x44, 0x64, 0x0A
+' =============================================================================
+SUB Test_DecompressLZW_MinCodeSize2
+    CALL Test_Case("DecompressLZW with minCodeSize=2 (code-size bumps 3->4 mid-stream) decodes 4 pixels")
+    DIM compressed AS STRING, decoded AS STRING
+    compressed = CHR$(&H44) + CHR$(&H64) + CHR$(&H0A)
+    CALL DrawGif_DecompressLZW(compressed, 2, decoded)
+    CALL Assert_IsEqual(LEN(decoded), 4, "minCS2 decoded length = 4")
+    CALL Assert_IsEqual(ASC(MID$(decoded, 1, 1)), 0, "minCS2 pixel[0] = 0")
+    CALL Assert_IsEqual(ASC(MID$(decoded, 2, 1)), 1, "minCS2 pixel[1] = 1")
+    CALL Assert_IsEqual(ASC(MID$(decoded, 3, 1)), 2, "minCS2 pixel[2] = 2")
+    CALL Assert_IsEqual(ASC(MID$(decoded, 4, 1)), 3, "minCS2 pixel[3] = 3")
+END SUB
+
+' =============================================================================
+' Test_Show_MinCodeSize2: full round-trip with minCodeSize=2 GIF
+' =============================================================================
+SUB Test_Show_MinCodeSize2
+    CALL Test_Case("Show renders correct pixels for GIF with minCodeSize=2")
+    CALL MakeGifMinCode2
+    CALL DrawGif_Show("TMC2.GIF", 30, 40)
+    CALL Assert_IsEqual(GetP(30, 40), 0, "minCS2: pixel(0,0) = 0")
+    CALL Assert_IsEqual(GetP(31, 40), 1, "minCS2: pixel(1,0) = 1")
+    CALL Assert_IsEqual(GetP(30, 41), 2, "minCS2: pixel(0,1) = 2")
+    CALL Assert_IsEqual(GetP(31, 41), 3, "minCS2: pixel(1,1) = 3")
+END SUB
+
+' =============================================================================
+' Test_Show_GCE_ExtensionSkipped: a GIF89a with a Graphic Control Extension
+' block (0x21 0xF9) before the image must still render the image correctly.
+' =============================================================================
+SUB Test_Show_GCE_ExtensionSkipped
+    CALL Test_Case("Show correctly renders image after skipping GCE extension block")
+    CALL MakeGif89aGCE
+    CALL DrawGif_Show("TGCE.GIF", 60, 70)
+    CALL Assert_IsEqual(GetP(60, 70), 0, "GCE-skip: pixel(0,0) = 0")
+    CALL Assert_IsEqual(GetP(61, 70), 1, "GCE-skip: pixel(1,0) = 1")
+    CALL Assert_IsEqual(GetP(60, 71), 2, "GCE-skip: pixel(0,1) = 2")
+    CALL Assert_IsEqual(GetP(61, 71), 3, "GCE-skip: pixel(1,1) = 3")
+END SUB
+
+' =============================================================================
+' Test_ParseFile_GCE_PopulatesContext: after parsing a file with a GCE block,
+' gifContext fields set by ProcessExtension (DelayTime, HasTransparentColor) are
+' tested via DrawGif_ParseFile on the header portion.  We test that ParseFile
+' returns 1 (success) for the GCE file.
+' =============================================================================
+SUB Test_ParseFile_GCE_ContextSet
+    CALL Test_Case("ParseFile returns success for GIF89a file containing a GCE extension")
+    CALL MakeGif89aGCE
+    DIM fh AS INTEGER, ctx AS GIFContextType, ok AS BYTE
+    fh = FREEFILE
+    OPEN "TGCE.GIF" FOR BINARY ACCESS READ AS fh
+    ok = DrawGif_ParseFile(fh, ctx)
+    CLOSE fh
+    CALL Assert_IsEqual(ok, 1, "ParseFile returns 1 for GCE file")
+    CALL Assert_IsNotZero(ctx.GlobalColorTable, "GlobalColorTable set for GCE file")
+END SUB
+
 ' --- Mode 13h setup / teardown ---
 SUB Test_Setup
     !MOV AX, &H0013

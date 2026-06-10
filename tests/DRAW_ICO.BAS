@@ -464,3 +464,103 @@ SUB Test_GetPalette_8bit
     CALL Assert_IsEqual(pal(7 * 3),       0, "palette[7].R = 0")
     CALL Assert_IsEqual(pal(7 * 3 + 2), 255, "palette[7].B = 255")
 END SUB
+
+' =============================================================================
+' MakeIco8AndMask: 4x4 8-bit ICO where the AND mask marks some pixels transparent
+'
+' AND mask semantics: 0 = opaque (draw XOR pixel), 1 = transparent (skip).
+' Mask layout (bottom-up rows, bits packed MSB-first in each byte):
+'   file-row 0 (= image row 3): pixels 0-3 -> all transparent = &HF0 (bits: 1111 0000)
+'   file-row 1 (= image row 2): all opaque = &H00
+'   file-row 2 (= image row 1): all opaque = &H00
+'   file-row 3 (= image row 0): pixels 0,1 transparent, 2,3 opaque -> &HC0 (1100 0000)
+'
+' XOR pixels (bottom-up, all = palette entry 3):
+'   All entries set to 3.
+'
+' Expected screen at (10,20) after pre-filling background with 42:
+'   screen y=20 (file-row 3, mask=&HC0): px0=transparent (42), px1=transparent (42), px2=opaque (3), px3=opaque (3)
+'   screen y=21 (file-row 2, mask=0x00): all opaque (3)
+'   screen y=22 (file-row 1, mask=0x00): all opaque (3)
+'   screen y=23 (file-row 0, mask=&HF0): all transparent (42)
+' =============================================================================
+SUB MakeIco8AndMask
+    DIM hdr AS STRING, entry AS STRING, bih AS STRING
+    DIM pal AS STRING, xorBmp AS STRING, andMask AS STRING
+    DIM imageOffset AS LONG, bytesInRes AS LONG
+
+    hdr = LE16(0) + LE16(1) + LE16(1)
+    imageOffset = 22
+    pal = STRING$(1024, CHR$(0))
+    ' entry 3: anything (we just check pixel presence, not value)
+    MID$(pal, 3 * 4 + 1, 1) = CHR$(0)     ' B
+    MID$(pal, 3 * 4 + 2, 1) = CHR$(0)     ' G
+    MID$(pal, 3 * 4 + 3, 1) = CHR$(200)   ' R
+
+    ' XOR: all pixels = 3 (4 rows x 4 bytes per row)
+    xorBmp = STRING$(16, CHR$(3))
+
+    ' AND mask: maskScanlineWidth = ((4+31)\32)*4 = 4 bytes/row, 4 rows = 16 bytes
+    ' file-row 0 (image row 3): all transparent bits 1111: &HF0 + 3 pad bytes
+    ' file-row 1 (image row 2): all opaque bits 0000: 0x00
+    ' file-row 2 (image row 1): all opaque: 0x00
+    ' file-row 3 (image row 0): px0,1 transparent, px2,3 opaque: bits 1100.... = &HC0
+    andMask = CHR$(&HF0) + CHR$(0) + CHR$(0) + CHR$(0)
+    andMask = andMask + CHR$(0) + CHR$(0) + CHR$(0) + CHR$(0)
+    andMask = andMask + CHR$(0) + CHR$(0) + CHR$(0) + CHR$(0)
+    andMask = andMask + CHR$(&HC0) + CHR$(0) + CHR$(0) + CHR$(0)
+
+    bytesInRes = 40 + 1024 + 16 + 16
+    entry = CHR$(4) + CHR$(4) + CHR$(0) + CHR$(0)
+    entry = entry + LE16(1) + LE16(8) + LE32(bytesInRes) + LE32(imageOffset)
+    bih = LE32(40) + LE32(4) + LE32(8) + LE16(1) + LE16(8)
+    bih = bih + LE32(0) + LE32(0) + LE32(0) + LE32(0) + LE32(0) + LE32(0)
+
+    OPEN "TMASK.ICO" FOR BINARY AS #1
+    PUT$ #1, hdr + entry + bih + pal + xorBmp + andMask
+    CLOSE #1
+END SUB
+
+' =============================================================================
+' Test_Show_ANDMask_Transparency: transparent pixels must NOT be drawn
+' =============================================================================
+SUB Test_Show_ANDMask_Transparency
+    CALL Test_Case("Show does not draw pixels where the AND mask bit is 1 (transparent)")
+    CALL MakeIco8AndMask
+    ' Pre-fill target area with pixel value 42 so transparent pixels are visible
+    DIM fillX AS WORD, fillY AS WORD
+    FOR fillY = 20 TO 23
+        FOR fillX = 10 TO 13
+            CALL Vga_PutPixel(fillX, fillY, 42)
+        NEXT fillX
+    NEXT fillY
+
+    CALL DrawIco_Show("TMASK.ICO", 10, 20, 0)
+
+    ' image row 0 (y=20): px0,1 = transparent (remain 42), px2,3 = opaque (3)
+    CALL Assert_IsEqual(GetP(10, 20), 42, "AND-mask: row0 col0 transparent = 42")
+    CALL Assert_IsEqual(GetP(11, 20), 42, "AND-mask: row0 col1 transparent = 42")
+    CALL Assert_IsEqual(GetP(12, 20),  3, "AND-mask: row0 col2 opaque = 3")
+    CALL Assert_IsEqual(GetP(13, 20),  3, "AND-mask: row0 col3 opaque = 3")
+    ' image row 1 (y=21): all opaque
+    CALL Assert_IsEqual(GetP(10, 21), 3, "AND-mask: row1 all opaque = 3")
+    CALL Assert_IsEqual(GetP(13, 21), 3, "AND-mask: row1 col3 opaque = 3")
+    ' image row 3 (y=23): all transparent (remain 42)
+    CALL Assert_IsEqual(GetP(10, 23), 42, "AND-mask: row3 col0 transparent = 42")
+    CALL Assert_IsEqual(GetP(13, 23), 42, "AND-mask: row3 col3 transparent = 42")
+END SUB
+
+' =============================================================================
+' Test_Show_SecondIcon_TwoIconFile: Show with index=1 draws from icon 1 (4x4 entry 9)
+' in a two-icon file.  Uses T2.ICO from MakeIco8Two.
+' =============================================================================
+SUB Test_Show_SecondIcon
+    CALL Test_Case("Show with index=1 renders the second icon from a two-icon file")
+    CALL MakeIco8Two
+    ' Icon 1 (4x4): all pixels = index 9; AND mask all opaque.
+    CALL DrawIco_Show("T2.ICO", 150, 100, 1)
+    CALL Assert_IsEqual(GetP(150, 100), 9, "2nd icon row0 col0 = 9")
+    CALL Assert_IsEqual(GetP(153, 100), 9, "2nd icon row0 col3 = 9")
+    CALL Assert_IsEqual(GetP(150, 103), 9, "2nd icon row3 col0 = 9")
+    CALL Assert_IsEqual(GetP(153, 103), 9, "2nd icon row3 col3 = 9")
+END SUB

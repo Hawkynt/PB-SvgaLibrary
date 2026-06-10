@@ -310,6 +310,108 @@ SUB Test_GetPalette_MissingFileReturnsZero
 END SUB
 
 ' ---------------------------------------------------------------------------
+' Build a 4x4 8-bit uncompressed TIFF split into 2 strips of 2 rows each.
+'
+' File layout (all offsets 0-based, little-endian "II"):
+'   0-7:   TIFF header: "II" + LE16(42) + LE32(8)
+'   8-9:   IFD entry count = 9
+'   10-117: 9 IFD entries x 12 bytes each
+'   118-121: IFD next-offset = 0
+'   122-129: StripOffsets array = [LE32(138), LE32(146)]
+'   130-137: StripByteCounts array = [LE32(8), LE32(8)]
+'   138-145: Strip 0 pixel data: rows 0-1 (pixels 0..7)
+'   146-153: Strip 1 pixel data: rows 2-3 (pixels 8..15)
+' ---------------------------------------------------------------------------
+SUB MakeTifMultiStrip4x4(BYVAL fileName AS STRING)
+    DIM hdr AS STRING, ifd AS STRING
+    DIM offsets AS STRING, bytecounts AS STRING
+    DIM pix0 AS STRING, pix1 AS STRING
+    DIM r AS INTEGER, c AS INTEGER
+
+    hdr = CHR$(73) + CHR$(73) + LE16(42) + LE32(8)
+
+    ifd = LE16(9)
+    ifd = ifd + TifEntry(256, 3, 1, 4)        ' ImageWidth = 4
+    ifd = ifd + TifEntry(257, 3, 1, 4)        ' ImageLength = 4
+    ifd = ifd + TifEntry(258, 3, 1, 8)        ' BitsPerSample = 8
+    ifd = ifd + TifEntry(259, 3, 1, 1)        ' Compression = 1 (none)
+    ifd = ifd + TifEntry(262, 3, 1, 1)        ' PhotometricInterp = 1
+    ifd = ifd + TifEntry(273, 4, 2, 122)      ' StripOffsets -> array at 122
+    ifd = ifd + TifEntry(277, 3, 1, 1)        ' SamplesPerPixel = 1
+    ifd = ifd + TifEntry(278, 3, 1, 2)        ' RowsPerStrip = 2
+    ifd = ifd + TifEntry(279, 4, 2, 130)      ' StripByteCounts -> array at 130
+    ifd = ifd + LE32(0)                        ' Next IFD = 0
+
+    ' Strip offsets: strip0 at 138, strip1 at 146
+    offsets = LE32(138) + LE32(146)
+    bytecounts = LE32(8) + LE32(8)
+
+    ' Strip 0: rows 0-1, pixels 0..7 (row-major: 0,1,2,3,4,5,6,7)
+    pix0 = ""
+    FOR r = 0 TO 1
+        FOR c = 0 TO 3
+            pix0 = pix0 + CHR$(r * 4 + c)
+        NEXT c
+    NEXT r
+
+    ' Strip 1: rows 2-3, pixels 8..15
+    pix1 = ""
+    FOR r = 2 TO 3
+        FOR c = 0 TO 3
+            pix1 = pix1 + CHR$(r * 4 + c)
+        NEXT c
+    NEXT r
+
+    OPEN fileName FOR BINARY AS #1
+    PUT$ #1, hdr + ifd + offsets + bytecounts + pix0 + pix1
+    CLOSE #1
+END SUB
+
+' ---------------------------------------------------------------------------
+' Test: multi-strip TIFF (RowsPerStrip=2, 2 strips) renders all rows correctly
+' ---------------------------------------------------------------------------
+SUB Test_Show_MultiStrip_PixelValues
+    CALL Test_Case("Show renders 4x4 8-bit TIFF with 2 strips (RowsPerStrip=2) correctly")
+    CALL MakeTifMultiStrip4x4("TMS.TIF")
+    CALL DrawTif_Show("TMS.TIF", 50, 60)
+    ' Strip 0: rows 0-1
+    CALL Assert_IsEqual(GetP(50, 60),  0, "multi-strip pixel(0,0) = 0")
+    CALL Assert_IsEqual(GetP(53, 60),  3, "multi-strip pixel(3,0) = 3")
+    CALL Assert_IsEqual(GetP(50, 61),  4, "multi-strip pixel(0,1) = 4")
+    CALL Assert_IsEqual(GetP(53, 61),  7, "multi-strip pixel(3,1) = 7")
+    ' Strip 1: rows 2-3
+    CALL Assert_IsEqual(GetP(50, 62),  8, "multi-strip pixel(0,2) = 8")
+    CALL Assert_IsEqual(GetP(53, 62), 11, "multi-strip pixel(3,2) = 11")
+    CALL Assert_IsEqual(GetP(50, 63), 12, "multi-strip pixel(0,3) = 12")
+    CALL Assert_IsEqual(GetP(53, 63), 15, "multi-strip pixel(3,3) = 15")
+END SUB
+
+' ---------------------------------------------------------------------------
+' Build a minimal big-endian "MM" TIFF (version=42 stored as 0x2A00 big-endian)
+' ---------------------------------------------------------------------------
+SUB MakeTifBigEndian(BYVAL fileName AS STRING)
+    OPEN fileName FOR BINARY AS #1
+    ' "MM" = CHR$(77)+CHR$(77), then version 42 as big-endian = CHR$(0)+CHR$(42), IFD offset
+    PUT$ #1, CHR$(77) + CHR$(77) + CHR$(0) + CHR$(42) + CHR$(0) + CHR$(0) + CHR$(0) + CHR$(8)
+    ' Minimal IFD with 0 entries (ParseFile will reject zero dims)
+    PUT$ #1, CHR$(0) + CHR$(0) + CHR$(0) + CHR$(0) + CHR$(0) + CHR$(0)
+    CLOSE #1
+END SUB
+
+' ---------------------------------------------------------------------------
+' Test: ParseFile rejects big-endian "MM" TIFF (version field reads as 10752, not 42)
+' ---------------------------------------------------------------------------
+SUB Test_ParseFile_BigEndian_MM_Rejected
+    CALL Test_Case("ParseFile rejects big-endian MM TIFF (version reads as LE-10752, not 42)")
+    DIM fh AS INTEGER, ctx AS TIFFContextType, ok AS BYTE
+    CALL MakeTifBigEndian("TMM.TIF")
+    fh = FileUtil_OpenBinary("TMM.TIF")
+    ok = DrawTif_ParseFile(fh, ctx)
+    CALL FileUtil_CloseBinary(fh)
+    CALL Assert_IsZero(ok, "ParseFile = 0 for MM big-endian TIFF")
+END SUB
+
+' ---------------------------------------------------------------------------
 ' Test_Setup / Test_Teardown
 ' ---------------------------------------------------------------------------
 SUB Test_Setup

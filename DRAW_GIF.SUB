@@ -418,8 +418,12 @@ SUB DrawGif_DecompressLZW(BYVAL compressedData AS STRING, BYVAL minimumCodeSize 
 
     ' Simplified LZW decompression
     DO WHILE bitPos <= LEN(compressedData) * 8
+        ' Capture the code size used to read this code before any resize
+        DIM readCodeSize AS BYTE
+        readCodeSize = lzwContext.CurrentCodeSize
+
         ' Read next code
-        code = DrawGif_ReadLZWCode(compressedData, bitPos, lzwContext.CurrentCodeSize)
+        code = DrawGif_ReadLZWCode(compressedData, bitPos, readCodeSize)
 
         IF code = lzwContext.EndCode THEN
             EXIT DO
@@ -430,9 +434,10 @@ SUB DrawGif_DecompressLZW(BYVAL compressedData AS STRING, BYVAL minimumCodeSize 
             lzwContext.CurrentCodeSize = lzwContext.CodeSize + 1
             lzwContext.MaxCode = (2 ^ lzwContext.CurrentCodeSize) - 1
 
-            bitPos = bitPos + lzwContext.CurrentCodeSize
+            bitPos = bitPos + readCodeSize
+            readCodeSize = lzwContext.CurrentCodeSize
             ' Read next code after clear
-            code = DrawGif_ReadLZWCode(compressedData, bitPos, lzwContext.CurrentCodeSize)
+            code = DrawGif_ReadLZWCode(compressedData, bitPos, readCodeSize)
             IF code = lzwContext.EndCode THEN EXIT DO
 
             decodedData = decodedData + CHR$(code)
@@ -452,7 +457,7 @@ SUB DrawGif_DecompressLZW(BYVAL compressedData AS STRING, BYVAL minimumCodeSize 
                     lzwContext.NextCode = lzwContext.NextCode + 1
 
                     ' Check if code size needs to increase
-                    IF lzwContext.NextCode > lzwContext.MaxCode AND lzwContext.CurrentCodeSize < 12 THEN
+                    IF lzwContext.NextCode >= lzwContext.MaxCode AND lzwContext.CurrentCodeSize < 12 THEN
                         lzwContext.CurrentCodeSize = lzwContext.CurrentCodeSize + 1
                         lzwContext.MaxCode = (2 ^ lzwContext.CurrentCodeSize) - 1
                     END IF
@@ -469,7 +474,7 @@ SUB DrawGif_DecompressLZW(BYVAL compressedData AS STRING, BYVAL minimumCodeSize 
                     CALL DrawGif_AddDictionaryEntry(lzwContext, outputString)
                     lzwContext.NextCode = lzwContext.NextCode + 1
 
-                    IF lzwContext.NextCode > lzwContext.MaxCode AND lzwContext.CurrentCodeSize < 12 THEN
+                    IF lzwContext.NextCode >= lzwContext.MaxCode AND lzwContext.CurrentCodeSize < 12 THEN
                         lzwContext.CurrentCodeSize = lzwContext.CurrentCodeSize + 1
                         lzwContext.MaxCode = (2 ^ lzwContext.CurrentCodeSize) - 1
                     END IF
@@ -480,7 +485,7 @@ SUB DrawGif_DecompressLZW(BYVAL compressedData AS STRING, BYVAL minimumCodeSize 
             END IF
         END IF
 
-        bitPos = bitPos + lzwContext.CurrentCodeSize
+        bitPos = bitPos + readCodeSize
     LOOP
 END SUB
 

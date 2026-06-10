@@ -290,6 +290,187 @@ SUB Test_Show_SinglePixel
     CALL Assert_IsEqual(GetP(10, 10), 77, "1x1 pixel value = 77")
 END SUB
 
+' =============================================================================
+' MakeTgaRleGray2x2: type=11 (RLE mono/grayscale), top-down, 2x2 image.
+'
+' Pixel layout (row-major, top-left first, as stored):
+'   row 0: 42, 43
+'   row 1: 44, 45
+'
+' RLE encoding (TGA packet: header-byte + pixel(s)):
+'   0x81 = RLE-packet count=2: repeat pixel 42 (simulated: actually we encode 2 unique
+'           pixels to exercise the RAW path and 1 run to exercise the RLE path)
+'   Raw packet header: &H01 = raw count 2 -> next 2 bytes are literal pixels
+'   RLE packet header: &H81 = rle count 2 -> repeat next byte 2 times
+'
+' Encoding:
+'   Raw packet: &H01 42 43   (2 raw pixels: 42, 43)
+'   RLE packet: &H81 44      (repeat 44 twice: 44, 44 -> but we want 44,45)
+'   Actually we can't encode 44,45 as a single RLE run, so:
+'   Raw packet: &H01 44 45   (2 raw pixels: 44, 45)
+'
+' Expected screen pixels at (20,30): (20,30)=42, (21,30)=43, (20,31)=44, (21,31)=45
+' =============================================================================
+SUB MakeTgaRleGray2x2(BYVAL fileName AS STRING)
+    DIM hdr AS STRING, rle AS STRING
+    hdr = MakeTgaHeader(11, 0, 0, 2, 2, 8, &H20)
+    ' Raw packet of 2: pixels 42,43
+    rle = CHR$(&H01) + CHR$(42) + CHR$(43)
+    ' Raw packet of 2: pixels 44,45
+    rle = rle + CHR$(&H01) + CHR$(44) + CHR$(45)
+    OPEN fileName FOR BINARY AS #1
+    PUT$ #1, hdr + rle
+    CLOSE #1
+END SUB
+
+' =============================================================================
+' MakeTgaRleGrayRun2x2: type=11 (RLE mono), 2x2, uses an actual RLE run.
+'
+' All 4 pixels = 77.  RLE packet: &H83 (run of 4) + CHR$(77)
+' Expected: all screen pixels at (x,y) through (x+1,y+1) = 77
+' =============================================================================
+SUB MakeTgaRleGrayRun2x2(BYVAL fileName AS STRING)
+    DIM hdr AS STRING, rle AS STRING
+    hdr = MakeTgaHeader(11, 0, 0, 2, 2, 8, &H20)
+    rle = CHR$(&H83) + CHR$(77)   ' RLE run of 4 (0x83 AND 0x7F)+1 = 4
+    OPEN fileName FOR BINARY AS #1
+    PUT$ #1, hdr + rle
+    CLOSE #1
+END SUB
+
+' =============================================================================
+' MakeTgaRleCmap2x2: type=9 (RLE colour-mapped), top-down, 2x2 image.
+'
+' Colourmap: 4 entries, 24-bit BGR:
+'   idx 0: B=10, G=20, R=30  -> grayscale = (30+20+10)\3 = 20
+'   idx 1: B=0,  G=0,  R=60  -> grayscale = 20
+'   idx 2: B=0,  G=60, R=0   -> grayscale = 20
+'   idx 3: B=60, G=0,  R=0   -> grayscale = 20
+' To produce distinct grayscale values use:
+'   idx 0: B=0,G=0,R=30  -> gray=10
+'   idx 1: B=0,G=0,R=60  -> gray=20
+'   idx 2: B=0,G=0,R=90  -> gray=30
+'   idx 3: B=0,G=0,R=120 -> gray=40
+'
+' Pixel indices (2x2, row-major, top-down):
+'   row 0: 0, 1
+'   row 1: 2, 3
+'
+' RLE encode all 4 as raw: &H03 + bytes 0,1,2,3
+' =============================================================================
+SUB MakeTgaRleCmap2x2(BYVAL fileName AS STRING)
+    DIM hdr AS STRING, cmap AS STRING, rle AS STRING
+    hdr = MakeTgaHeader(9, 4, 24, 2, 2, 8, &H20)
+    ' 4 BGR entries
+    cmap = CHR$(0) + CHR$(0) + CHR$(30)    ' idx0: R=30 -> gray=10
+    cmap = cmap + CHR$(0) + CHR$(0) + CHR$(60)    ' idx1: R=60 -> gray=20
+    cmap = cmap + CHR$(0) + CHR$(0) + CHR$(90)    ' idx2: R=90 -> gray=30
+    cmap = cmap + CHR$(0) + CHR$(0) + CHR$(120)   ' idx3: R=120 -> gray=40
+    ' Raw packet of 4 pixels
+    rle = CHR$(&H03) + CHR$(0) + CHR$(1) + CHR$(2) + CHR$(3)
+    OPEN fileName FOR BINARY AS #1
+    PUT$ #1, hdr + cmap + rle
+    CLOSE #1
+END SUB
+
+' =============================================================================
+' Test_Show_RleGrayscale_RawPacket: type=11, raw RLE packets decode correctly
+' =============================================================================
+SUB Test_Show_RleGrayscale_RawPacket
+    CALL Test_Case("Show renders type-11 RLE grayscale (raw packets) with correct pixel values")
+    CALL MakeTgaRleGray2x2("TRLEG.TGA")
+    CALL DrawTga_Show("TRLEG.TGA", 40, 40)
+    CALL Assert_IsEqual(GetP(40, 40), 42, "RLE-gray raw: pixel(0,0) = 42")
+    CALL Assert_IsEqual(GetP(41, 40), 43, "RLE-gray raw: pixel(1,0) = 43")
+    CALL Assert_IsEqual(GetP(40, 41), 44, "RLE-gray raw: pixel(0,1) = 44")
+    CALL Assert_IsEqual(GetP(41, 41), 45, "RLE-gray raw: pixel(1,1) = 45")
+END SUB
+
+' =============================================================================
+' Test_Show_RleGrayscale_RunPacket: type=11, RLE run packet: all pixels same value
+' =============================================================================
+SUB Test_Show_RleGrayscale_RunPacket
+    CALL Test_Case("Show renders type-11 RLE grayscale (run packet) with repeated pixel value")
+    CALL MakeTgaRleGrayRun2x2("TRLEGR.TGA")
+    CALL DrawTga_Show("TRLEGR.TGA", 80, 80)
+    CALL Assert_IsEqual(GetP(80, 80), 77, "RLE-run: pixel(0,0) = 77")
+    CALL Assert_IsEqual(GetP(81, 80), 77, "RLE-run: pixel(1,0) = 77")
+    CALL Assert_IsEqual(GetP(80, 81), 77, "RLE-run: pixel(0,1) = 77")
+    CALL Assert_IsEqual(GetP(81, 81), 77, "RLE-run: pixel(1,1) = 77")
+END SUB
+
+' =============================================================================
+' Test_Show_RleColorMapped: type=9 (RLE colour-mapped) raw packets decode correctly
+' Grayscale output = average of R,G,B stored in colour-map entry
+' =============================================================================
+SUB Test_Show_RleColorMapped
+    CALL Test_Case("Show renders type-9 RLE colour-mapped TGA as grayscale averages")
+    CALL MakeTgaRleCmap2x2("TRLEC.TGA")
+    CALL DrawTga_Show("TRLEC.TGA", 100, 100)
+    ' idx0: R=30, G=0, B=0 -> gray = (30+0+0)\3 = 10
+    CALL Assert_IsEqual(GetP(100, 100), 10, "RLE-cmap: pixel(0,0) idx=0 -> gray=10")
+    ' idx1: R=60, G=0, B=0 -> gray = 20
+    CALL Assert_IsEqual(GetP(101, 100), 20, "RLE-cmap: pixel(1,0) idx=1 -> gray=20")
+    ' idx2: R=90 -> gray = 30
+    CALL Assert_IsEqual(GetP(100, 101), 30, "RLE-cmap: pixel(0,1) idx=2 -> gray=30")
+    ' idx3: R=120 -> gray = 40
+    CALL Assert_IsEqual(GetP(101, 101), 40, "RLE-cmap: pixel(1,1) idx=3 -> gray=40")
+END SUB
+
+' =============================================================================
+' Test_GetInfo_ColormappedType: GetInfo returns ImageType=1 for type-1 TGA
+' =============================================================================
+SUB Test_GetInfo_ColormappedType
+    CALL Test_Case("GetInfo returns imageType=1 for colour-mapped TGA")
+    CALL MakeTgaCmap4x4("TC.TGA")
+    DIM w AS WORD, h AS WORD, bpp AS BYTE, imgType AS BYTE
+    CALL DrawTga_GetInfo("TC.TGA", w, h, bpp, imgType)
+    CALL Assert_IsEqual(imgType, 1, "info type = 1 (colour-mapped)")
+    CALL Assert_IsEqual(bpp, 8, "info bpp = 8")
+    CALL Assert_IsEqual(w, 4, "info width = 4")
+    CALL Assert_IsEqual(h, 4, "info height = 4")
+END SUB
+
+' =============================================================================
+' Test_ParseFile_RleTypeAccepted: ParseFile accepts types 9, 10, 11
+' =============================================================================
+SUB Test_ParseFile_RleTypesAccepted
+    CALL Test_Case("ParseFile accepts RLE image types 9 10 11")
+    DIM hdr9 AS STRING, hdr10 AS STRING, hdr11 AS STRING
+    DIM fh AS INTEGER, ctx AS TGAContextType, ok AS BYTE
+
+    hdr9 = MakeTgaHeader(9, 4, 24, 2, 2, 8, &H20)
+    ' Append minimal colourmap (4 * 3 = 12 bytes) so ParseFile can consume it
+    DIM cmap AS STRING
+    cmap = STRING$(12, CHR$(0))
+    OPEN "TR9.TGA" FOR BINARY AS #1
+    PUT$ #1, hdr9 + cmap
+    CLOSE #1
+    fh = FileUtil_OpenBinary("TR9.TGA")
+    ok = DrawTga_ParseFile(fh, ctx)
+    CALL FileUtil_CloseBinary(fh)
+    CALL Assert_IsEqual(ok, 1, "ParseFile accepts type 9")
+    CALL Assert_IsEqual(ctx.ImageType, 9, "ctx.ImageType = 9")
+
+    hdr10 = MakeTgaHeader(10, 0, 0, 2, 2, 8, &H20)
+    OPEN "TR10.TGA" FOR BINARY AS #1
+    PUT$ #1, hdr10
+    CLOSE #1
+    fh = FileUtil_OpenBinary("TR10.TGA")
+    ok = DrawTga_ParseFile(fh, ctx)
+    CALL FileUtil_CloseBinary(fh)
+    CALL Assert_IsEqual(ok, 1, "ParseFile accepts type 10")
+
+    hdr11 = MakeTgaHeader(11, 0, 0, 2, 2, 8, &H20)
+    OPEN "TR11.TGA" FOR BINARY AS #1
+    PUT$ #1, hdr11
+    CLOSE #1
+    fh = FileUtil_OpenBinary("TR11.TGA")
+    ok = DrawTga_ParseFile(fh, ctx)
+    CALL FileUtil_CloseBinary(fh)
+    CALL Assert_IsEqual(ok, 1, "ParseFile accepts type 11")
+END SUB
+
 SUB Test_Setup
     !MOV AX, &H0013
     !INT &H10
