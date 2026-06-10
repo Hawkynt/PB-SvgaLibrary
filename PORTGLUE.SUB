@@ -15,13 +15,15 @@ END SUB
 ' Higher colour depths are approximated by using the leading byte of each pixel.
 SUB BMP_DrawScanline(scanData AS STRING, BYVAL X AS WORD, BYVAL Y AS WORD, BYVAL widthVal AS WORD, BYVAL depth AS BYTE)
     DIM bytesPerPixel AS BYTE
-    DIM px AS WORD
+    DIM px AS INTEGER           ' signed to avoid WORD underflow when widthVal=0
     DIM srcOffset AS WORD
     DIM colorIndex AS BYTE
 
     bytesPerPixel = depth \ 8
     IF bytesPerPixel = 0 THEN bytesPerPixel = 1
 
+    ' Guard: widthVal=0 -> widthVal-1 wraps to 65535 for WORD; skip loop
+    IF widthVal = 0 THEN EXIT SUB
     FOR px = 0 TO widthVal - 1
         srcOffset = px * bytesPerPixel + 1
         IF srcOffset <= LEN(scanData) THEN
