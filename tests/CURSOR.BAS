@@ -81,7 +81,7 @@ SUB Test_GetPos_Hotspot
 END SUB
 
 SUB Test_IsVisible_Tracks
-    CALL Test_Case("Cursor_IsVisible reflects the visible flag (regression: was always 0)")
+    CALL Test_Case("Cursor_IsVisible reflects the visible flag")
     CALL Cursor_Init
     CALL Assert_IsZero(Cursor_IsVisible, "hidden after init")
     CursorSystemContext.IsVisible = 1
@@ -107,7 +107,7 @@ SUB Test_ShowHide_BackgroundRoundTrip
     CALL Assert_IsEqual(GetP(100, 100), 9, "cursor pixel drawn over the background")
     CALL Cursor_Hide
     CALL Assert_IsZero(Cursor_IsVisible, "hidden after Hide")
-    CALL Assert_IsEqual(GetP(100, 100), 5, "original background restored (relies on the GetPixel save fix)")
+    CALL Assert_IsEqual(GetP(100, 100), 5, "original background restored")
     !MOV AX, &H0003
     !INT &H10
 END SUB

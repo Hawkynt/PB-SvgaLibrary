@@ -15,17 +15,17 @@
 ' =============================================================================
 SUB Graphics_Bar (BYVAL x1 AS WORD, BYVAL y1 AS WORD, BYVAL x2 AS WORD, BYVAL y2 AS WORD, BYVAL borderColor AS BYTE, BYVAL fillColor AS BYTE)
     DIM TempX AS WORD, TempY AS WORD, ScanLine AS WORD
-    
+
     ' Ensure coordinates are properly ordered
     IF y2 < y1 THEN SWAP y1, y2
     IF x2 < x1 THEN SWAP x1, x2
-    
+
     IF VESASystemContext.CurrentMode = %SVGA_MODEX THEN
         ' Fill the interior using optimized Mode-X horizontal line drawing
         FOR ScanLine = y1 TO y2
             CALL ModeX_HLine(x1, x2, ScanLine, fillColor)
         NEXT ScanLine
-        
+
         ' Draw the border using optimized Mode-X horizontal/vertical line drawing
         CALL ModeX_HLine(x1, x2, y1, borderColor)  ' Top
         CALL ModeX_HLine(x1, x2, y2, borderColor)  ' Bottom
@@ -38,7 +38,7 @@ SUB Graphics_Bar (BYVAL x1 AS WORD, BYVAL y1 AS WORD, BYVAL x2 AS WORD, BYVAL y2
     FOR ScanLine = y1 TO y2
         CALL Svga_LineDraw(x1, ScanLine, x2, ScanLine, fillColor)
     NEXT ScanLine
-    
+
     ' Draw the border
     CALL Svga_LineDraw(x1, y1, x2, y1, borderColor)  ' Top
     CALL Svga_LineDraw(x1, y1, x1, y2, borderColor)  ' leftV
@@ -58,11 +58,11 @@ END SUB
 ' =============================================================================
 SUB Graphics_Bar3d (BYVAL x1 AS WORD, BYVAL y1 AS WORD, BYVAL x2 AS WORD, BYVAL y2 AS WORD, BYVAL depth AS WORD, BYVAL borderColor AS BYTE, BYVAL fillColor AS BYTE)
     DIM ScanLine AS WORD
-    
+
     ' Ensure coordinates are properly ordered
     IF Y2 < Y1 THEN SWAP Y1, Y2
     IF X2 < X1 THEN SWAP X1, X2
-    
+
     IF VESASystemContext.CurrentMode = %SVGA_MODEX THEN
         ' Fill the main face if fill colorVal specified
         IF FillColor > 0 THEN
@@ -70,7 +70,7 @@ SUB Graphics_Bar3d (BYVAL x1 AS WORD, BYVAL y1 AS WORD, BYVAL x2 AS WORD, BYVAL 
                 CALL ModeX_HLine(X1, X2, ScanLine, FillColor)
             NEXT ScanLine
         END IF
-        
+
         ' Draw main rectangle border
         CALL ModeX_HLine(X1, X2, Y1, BorderColor)  ' Top
         CALL ModeX_HLine(X1, X2, Y2, BorderColor)  ' Bottom
@@ -83,13 +83,13 @@ SUB Graphics_Bar3d (BYVAL x1 AS WORD, BYVAL y1 AS WORD, BYVAL x2 AS WORD, BYVAL 
                 CALL Svga_LineDraw(X1, ScanLine, X2, ScanLine, FillColor)
             NEXT ScanLine
         END IF
-        
+
         ' Draw main rectangle border
         CALL Svga_LineDraw(X1, Y1, X2, Y1, BorderColor)  ' Top
         CALL Svga_LineDraw(X1, Y1, X1, Y2, BorderColor)  ' leftV
         CALL Svga_LineDraw(X2, Y2, X1, Y2, BorderColor)  ' Bottom
         CALL Svga_LineDraw(X2, Y2, X2, Y1, BorderColor)  ' rightV
-        
+
         ' Draw 3D depth lines
         CALL Svga_LineDraw(X1, Y1, X1 + Depth, Y1 - Depth, BorderColor)        ' Top-leftV to back
         CALL Svga_LineDraw(X2, Y1, X2 + Depth, Y1 - Depth, BorderColor)        ' Top-rightV to back
@@ -126,23 +126,23 @@ SUB Graphics_CircleDraw (BYVAL centerX AS WORD, BYVAL centerY AS WORD, BYVAL rad
     DIM PI AS SINGLE, StepSize AS SINGLE, Angle AS SINGLE
     DIM X AS WORD, Y AS WORD, OldX AS WORD, OldY AS WORD
     DIM FillY AS WORD, FillStartX AS WORD, FillEndX AS WORD
-    
+
     PI = 4 * ATN(1)
-    
+
     ' Calculate step size based on radius
-    IF (RadiusX + RadiusY) / 2 = 0 THEN 
-        StepSize = 1 
-    ELSE 
+    IF (RadiusX + RadiusY) / 2 = 0 THEN
+        StepSize = 1
+    ELSE
         StepSize = 1 / ((RadiusX + RadiusY) / 64)
     END IF
-    
+
     ' Adjust step direction for reverse drawing
     IF EndAngle < StartAngle THEN StepSize = -StepSize
-    
+
     ' Calculate initial point
     X = INT(CenterX + RadiusX * COS(StartAngle * PI / 180))
     Y = INT(CenterY + RadiusY * SIN(StartAngle * PI / 180))
-    
+
     IF FillMode = 0 THEN
         ' Draw outline only
         FOR Angle = StartAngle TO EndAngle STEP StepSize
@@ -183,7 +183,7 @@ SUB Graphics_Frame (BYVAL x1 AS WORD, BYVAL y1 AS WORD, BYVAL x2 AS WORD, BYVAL 
     ' Ensure coordinates are properly ordered
     IF Y2 < Y1 THEN SWAP Y1, Y2
     IF X2 < X1 THEN SWAP X1, X2
-    
+
     ' Draw the four sides
     CALL Svga_LineDraw(X1, Y1, X2, Y1, colorVal)  ' Top
     CALL Svga_LineDraw(X1, Y1, X1, Y2, colorVal)  ' leftV

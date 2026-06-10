@@ -273,7 +273,7 @@ SUB Test_IsPlaying_AfterStart
 END SUB
 
 ' =============================================================================
-' IsPlaying: false after StopAnimation (regression for TotalLoops=0 bug)
+' IsPlaying: false after StopAnimation even with TotalLoops=0 (infinite)
 ' =============================================================================
 SUB Test_IsPlaying_AfterStop
     CALL Test_Case("IsPlaying false after StopAnimation even when TotalLoops=0")

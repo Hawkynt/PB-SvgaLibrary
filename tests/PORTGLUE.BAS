@@ -159,7 +159,7 @@ SUB Test_BmpDrawScanline_Depth8_FirstPixel
 END SUB
 
 SUB Test_BmpDrawScanline_Width0_NoOp
-    CALL Test_Case("BMP_DrawScanline width=0 makes no Svga_PutPixel calls (bug fix)")
+    CALL Test_Case("BMP_DrawScanline width=0 makes no Svga_PutPixel calls")
     ' Before fix: widthVal-1 wraps WORD to 65535 -> infinite loop
     CALL ResetSpy
     DIM scanStr AS STRING, sx AS WORD, sy AS WORD, sw AS WORD, dep AS BYTE

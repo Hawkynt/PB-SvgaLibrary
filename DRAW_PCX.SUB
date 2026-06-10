@@ -15,20 +15,20 @@ SUB DrawPcx_Show(BYVAL fileName AS STRING, BYVAL x AS WORD, BYVAL y AS WORD)
     DIM imageWidth AS WORD, imageHeight AS WORD
     DIM scanlineData AS STRING, decodedData AS STRING
     DIM pixelY AS WORD, physicalX AS WORD, physicalY AS WORD
-    
+
     ' Convert virtual coordinates to physical
     CALL Virtual_ToPhysical(x, y, physicalX, physicalY)
-    
+
     ' Open PCX file
     fileHandle = FileUtil_OpenBinary(fileName)
     IF fileHandle < 0 THEN EXIT SUB
-    
+
     ' Read PCX header
     CALL DrawPcx_ReadHeader(fileHandle, imageWidth, imageHeight)
-    
+
     ' Load PCX paletteV
     CALL DrawPcx_LoadPalette(fileHandle)
-    
+
     ' Update image context
     ImageSystemContext.X1 = 0
     ImageSystemContext.Y1 = 0
@@ -36,19 +36,19 @@ SUB DrawPcx_Show(BYVAL fileName AS STRING, BYVAL x AS WORD, BYVAL y AS WORD)
     ImageSystemContext.Y2 = imageHeight - 1
     ImageSystemContext.ColorDepth = 8
     ImageSystemContext.BitsPerPixel = 8
-    
+
     ' Read and display image dataBuf with RLE decompression
-    SEEK fileHandle, 128  ' PCX data starts at byte 128 (0-based); was 129 (off by one)
-    
+    SEEK fileHandle, 128
+
     FOR pixelY = 0 TO imageHeight - 1
         CALL DrawPcx_ReadScanline(fileHandle, scanlineData, imageWidth)
-        
+
         ' Check if scanline is visible
         IF Virtual_IsVisible(x, y + pixelY) THEN
             CALL DrawPcx_DrawScanline(scanlineData, physicalX, physicalY + pixelY, imageWidth)
         END IF
     NEXT pixelY
-    
+
     CALL FileUtil_CloseBinary(fileHandle)
 END SUB
 
@@ -58,16 +58,16 @@ END SUB
 SUB DrawPcx_ReadHeader(BYVAL fileHandle AS INTEGER, imageWidth AS WORD, imageHeight AS WORD)
     DIM HeaderData AS STRING
     DIM XMin AS WORD, YMin AS WORD, XMax AS WORD, YMax AS WORD
-    
+
     ' Read bounding box (bytes 4-11)
-    SEEK FileHandle, 4  ' 0-based; was 5 (off by one, skipped XMin low byte)
+    SEEK FileHandle, 4
     GET$ FileHandle, 8, HeaderData
-    
+
     XMin = ASC(MID$(HeaderData, 1, 1)) + 256 * ASC(MID$(HeaderData, 2, 1))
     YMin = ASC(MID$(HeaderData, 3, 1)) + 256 * ASC(MID$(HeaderData, 4, 1))
     XMax = ASC(MID$(HeaderData, 5, 1)) + 256 * ASC(MID$(HeaderData, 6, 1))
     YMax = ASC(MID$(HeaderData, 7, 1)) + 256 * ASC(MID$(HeaderData, 8, 1))
-    
+
     ImageWidth = XMax - XMin + 1
     ImageHeight = YMax - YMin + 1
 END SUB
@@ -78,20 +78,20 @@ END SUB
 SUB DrawPcx_LoadPalette(BYVAL fileHandle AS INTEGER)
     DIM PaletteData AS STRING, ColorIndex AS WORD
     DIM FileSize AS LONG, PaletteMarker AS BYTE
-    
+
     ' Get file size and seek to paletteV
     FileSize = LOF(FileHandle)
-    SEEK FileHandle, FileSize - 769  ' 0-based: marker byte is at offset FileSize-769; was FileSize-768 (skipped marker)
-    
+    SEEK FileHandle, FileSize - 769  ' the palette block is [marker byte][768 RGB bytes]
+
     ' Check for paletteV marker (should be 12)
     GET$ FileHandle, 1, PaletteData
     PaletteMarker = ASC(PaletteData)
-    
+
     IF PaletteMarker = 12 THEN
         ' Read and set 256-colorVal paletteV
         FOR ColorIndex = 0 TO 255
             GET$ FileHandle, 3, PaletteData
-            
+
             OUT &H3C8, ColorIndex
             OUT &H3C9, ASC(MID$(PaletteData, 1, 1)) \ 4  ' Red (scale to 6-bit)
             OUT &H3C9, ASC(MID$(PaletteData, 2, 1)) \ 4  ' Green
@@ -106,20 +106,20 @@ END SUB
 SUB DrawPcx_ReadScanline(BYVAL fileHandle AS INTEGER, decodedData AS STRING, BYVAL widthVal AS WORD)
     DIM CompressedByte AS BYTE, RunLength AS BYTE, PixelValue AS BYTE
     DIM ByteData AS STRING, DecodedIndex AS WORD, RunCount AS WORD
-    
+
     DecodedData = ""
     DecodedIndex = 0
-    
+
     DO WHILE DecodedIndex < widthVal
         GET$ FileHandle, 1, ByteData
         CompressedByte = ASC(ByteData)
-        
+
         IF CompressedByte >= 192 THEN
             ' RLE compressed run
             RunLength = CompressedByte - 192
             GET$ FileHandle, 1, ByteData
             PixelValue = ASC(ByteData)
-            
+
             FOR RunCount = 1 TO RunLength
                 DecodedData = DecodedData + CHR$(PixelValue)
                 DecodedIndex = DecodedIndex + 1
@@ -155,11 +155,11 @@ END SUB
 SUB DrawPcx_GetSize(BYVAL fileName AS STRING, widthVal AS WORD, height AS WORD)
     DIM FileHandle AS INTEGER, HeaderData AS STRING
     DIM ImageWidth AS LONG, ImageHeight AS LONG
-    
+
     FileHandle = FREEFILE
     OPEN FileName FOR BINARY AS #FileHandle
-    
-    ' Read image dimensions from PCX bounding box (bytes 4-11, 0-based)
+
+    ' Read image dimensions from PCX bounding box (bytes 4-11)
     ' was: SEEK &H12 + 4-byte DWORD reads (BMP format, wrong for PCX)
     DIM XMin AS LONG, YMin AS LONG, XMax AS LONG, YMax AS LONG
     SEEK FileHandle, 4
@@ -173,7 +173,7 @@ SUB DrawPcx_GetSize(BYVAL fileName AS STRING, widthVal AS WORD, height AS WORD)
 
     widthVal = ImageWidth
     Height = ImageHeight
-    
+
     CALL FileUtil_CloseBinary(fileHandle)
 END SUB
 
@@ -188,23 +188,23 @@ END SUB
 SUB DrawPcx_GetPalette(BYVAL fileName AS STRING, paletteV() AS BYTE, BYVAL colorDepth AS BYTE)
     DIM FileHandle AS INTEGER, PaletteData AS STRING
     DIM NumColors AS WORD, ColorIndex AS WORD, ArrayIndex AS WORD
-    
+
     NumColors = 2 ^ ColorDepth
     FileHandle = FREEFILE
     OPEN FileName FOR BINARY AS #FileHandle
-    
+
     ' Seek to paletteV location
     SEEK FileHandle, 55
-    
+
     ArrayIndex = 0
     FOR ColorIndex = 0 TO NumColors - 1
         GET$ FileHandle, 4, PaletteData  ' Read BGRA
-        
+
         paletteV(ArrayIndex) = ASC(MID$(PaletteData, 3, 1))      ' Red
         paletteV(ArrayIndex + 1) = ASC(MID$(PaletteData, 2, 1))  ' Green
         paletteV(ArrayIndex + 2) = ASC(MID$(PaletteData, 1, 1))  ' Blue
         ArrayIndex = ArrayIndex + 3
     NEXT ColorIndex
-    
+
     CALL FileUtil_CloseBinary(fileHandle)
 END SUB

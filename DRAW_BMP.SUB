@@ -16,20 +16,20 @@ SUB DrawBmp_Show(BYVAL fileName AS STRING, BYVAL x AS WORD, BYVAL y AS WORD)
     DIM fileHandle AS INTEGER, headerData AS STRING
     DIM dataOffset AS LONG, imageWidth AS LONG, imageHeight AS LONG
     DIM colorDepth AS WORD, numColors AS WORD
-    DIM scanlineData AS STRING, pixelX AS WORD, pixelY AS INTEGER   ' pixelY descends to 0 - MUST be signed
+    DIM scanlineData AS STRING, pixelX AS WORD, pixelY AS INTEGER
     DIM paletteIndex AS WORD, bytesPerLine AS WORD
     DIM physicalX AS WORD, physicalY AS WORD
-    
+
     ' Convert virtual coordinates to physical
     CALL Virtual_ToPhysical(x, y, physicalX, physicalY)
-    
+
     ' Open BMP file
     fileHandle = FileUtil_OpenBinary(fileName)
     IF fileHandle < 0 THEN EXIT SUB
-    
+
     ' Read BMP header information
     CALL DrawBmp_ReadHeader(fileHandle, dataOffset, imageWidth, imageHeight, colorDepth, numColors)
-    
+
     ' Update image context
     ImageSystemContext.X1 = 0
     ImageSystemContext.Y1 = 0
@@ -37,19 +37,19 @@ SUB DrawBmp_Show(BYVAL fileName AS STRING, BYVAL x AS WORD, BYVAL y AS WORD)
     ImageSystemContext.Y2 = imageHeight - 1
     ImageSystemContext.ColorDepth = colorDepth
     ImageSystemContext.BitsPerPixel = colorDepth
-    
+
     ' Load and set paletteV if 8-bit mode
     IF colorDepth = 8 THEN
         CALL DrawBmp_LoadPalette(fileHandle, numColors)
     END IF
-    
+
     ' Calculate bytes per scanline (must be DWORD-aligned)
     IF colorDepth = 8 THEN
         bytesPerLine = ((imageWidth + 3) \ 4) * 4
     ELSE
         bytesPerLine = ((imageWidth + 7) \ 8) * 4  ' 4-bit packed
     END IF
-    
+
     ' Read and display image dataBuf (BMPs are stored bottom-up)
     SEEK FileHandle, DataOffset
 
@@ -61,7 +61,7 @@ SUB DrawBmp_Show(BYVAL fileName AS STRING, BYVAL x AS WORD, BYVAL y AS WORD)
             CALL DrawBmp_DrawScanline(ScanlineData, PhysicalX, PhysicalY + PixelY, ImageWidth, ColorDepth)
         END IF
     NEXT PixelY
-    
+
     CALL FileUtil_CloseBinary(fileHandle)
 END SUB
 
@@ -70,21 +70,21 @@ END SUB
 ' =============================================================================
 SUB DrawBmp_ReadHeader(BYVAL fileHandle AS INTEGER, dataOffset AS LONG, imageWidth AS LONG, imageHeight AS LONG, colorDepth AS WORD, numColors AS WORD)
     DIM HeaderData AS STRING
-    
+
     ' Read dataBuf offset (offset 0x0A, 4 bytes)
     SEEK FileHandle, &HA
     GET$ FileHandle, 4, HeaderData
     DataOffset = ASC(MID$(HeaderData, 1, 1)) + 256& * ASC(MID$(HeaderData, 2, 1)) + 65536& * ASC(MID$(HeaderData, 3, 1)) + 16777216& * ASC(MID$(HeaderData, 4, 1))
-    
+
     ' Read image widthVal (offset 0x12, 4 bytes)
     SEEK FileHandle, &H12
     GET$ FileHandle, 4, HeaderData
     ImageWidth = ASC(MID$(HeaderData, 1, 1)) + 256& * ASC(MID$(HeaderData, 2, 1)) + 65536& * ASC(MID$(HeaderData, 3, 1)) + 16777216& * ASC(MID$(HeaderData, 4, 1))
-    
+
     ' Read image height (offset 0x16, 4 bytes)
     GET$ FileHandle, 4, HeaderData
     ImageHeight = ASC(MID$(HeaderData, 1, 1)) + 256& * ASC(MID$(HeaderData, 2, 1)) + 65536& * ASC(MID$(HeaderData, 3, 1)) + 16777216& * ASC(MID$(HeaderData, 4, 1))
-    
+
     ' Read colorVal depth (offset 0x1C, 2 bytes)
     SEEK FileHandle, &H1C
     GET$ FileHandle, 2, HeaderData
@@ -98,18 +98,16 @@ END SUB
 SUB DrawBmp_LoadPalette(BYVAL fileHandle AS INTEGER, BYVAL numColors AS WORD)
     DIM PaletteData AS STRING, ColorIndex AS WORD
     DIM RedValue AS BYTE, GreenValue AS BYTE, BlueValue AS BYTE
-    
-    ' Seek to paletteV location (after the 14-byte file + 40-byte info header;
-    ' PB 3.5 BINARY is 0-based, so byte offset 54)
+
     SEEK FileHandle, 54  ' Standard BMP paletteV location
-    
+
     ' Read and set paletteV (BMP uses BGR format)
     FOR ColorIndex = 0 TO NumColors - 1
         GET$ FileHandle, 4, PaletteData  ' Read BGRA
         BlueValue = ASC(MID$(PaletteData, 1, 1)) \ 4    ' Scale to 6-bit
         GreenValue = ASC(MID$(PaletteData, 2, 1)) \ 4
         RedValue = ASC(MID$(PaletteData, 3, 1)) \ 4
-        
+
         ' Set VGA paletteV register
         OUT &H3C8, ColorIndex
         OUT &H3C9, RedValue
@@ -123,20 +121,20 @@ END SUB
 ' =============================================================================
 SUB DrawBmp_DrawScanline(BYVAL scanlineData AS STRING, BYVAL x AS WORD, BYVAL y AS WORD, BYVAL widthVal AS WORD, BYVAL colorDepth AS WORD)
     DIM PixelX AS WORD, DataIndex AS WORD, PixelColor AS BYTE
-    
+
     IF ColorDepth = 8 THEN
         ' 8-bit mode - use fast horizontal line segments where possible
         DIM StartX AS WORD, CurrentColor AS BYTE, SegmentLength AS WORD
-        
+
         StartX = X
         CurrentColor = ASC(MID$(ScanlineData, 1, 1))
         SegmentLength = 1
         DataIndex = 1
-        
+
         FOR PixelX = 1 TO widthVal - 1
             DataIndex = DataIndex + 1
             PixelColor = ASC(MID$(ScanlineData, DataIndex, 1))
-            
+
             IF PixelColor = CurrentColor THEN
                 SegmentLength = SegmentLength + 1
             ELSE
@@ -146,32 +144,32 @@ SUB DrawBmp_DrawScanline(BYVAL scanlineData AS STRING, BYVAL x AS WORD, BYVAL y 
                 ELSE
                     CALL Svga_PutPixel(StartX, Y, CurrentColor)
                 END IF
-                
+
                 ' Start new segment
                 StartX = X + PixelX
                 CurrentColor = PixelColor
                 SegmentLength = 1
             END IF
         NEXT PixelX
-        
+
         ' Draw final segment
         IF SegmentLength > 1 THEN
             CALL Svga_HLine(StartX, StartX + SegmentLength - 1, Y, CurrentColor)
         ELSE
             CALL Svga_PutPixel(StartX, Y, CurrentColor)
         END IF
-        
+
     ELSE
         ' 4-bit mode - unpack and draw
         DataIndex = 1
         FOR PixelX = 0 TO widthVal - 1 STEP 2
             PixelColor = ASC(MID$(ScanlineData, DataIndex, 1))
-            
+
             CALL Svga_PutPixel(X + PixelX, Y, PixelColor \ 16)  ' High nibble
             IF PixelX + 1 < widthVal THEN
                 CALL Svga_PutPixel(X + PixelX + 1, Y, PixelColor AND 15)  ' Low nibble
             END IF
-            
+
             DataIndex = DataIndex + 1
         NEXT PixelX
     END IF
@@ -191,21 +189,21 @@ END SUB
 SUB DrawBmp_GetSize(BYVAL fileName AS STRING, widthVal AS WORD, height AS WORD)
     DIM FileHandle AS INTEGER, HeaderData AS STRING
     DIM ImageWidth AS LONG, ImageHeight AS LONG
-    
+
     FileHandle = FREEFILE
     OPEN FileName FOR BINARY AS #FileHandle
-    
+
     ' Read image dimensions from header
     SEEK FileHandle, &H12
     GET$ FileHandle, 4, HeaderData
     ImageWidth = ASC(MID$(HeaderData, 1, 1)) + 256& * ASC(MID$(HeaderData, 2, 1)) + 65536& * ASC(MID$(HeaderData, 3, 1)) + 16777216& * ASC(MID$(HeaderData, 4, 1))
-    
+
     GET$ FileHandle, 4, HeaderData
     ImageHeight = ASC(MID$(HeaderData, 1, 1)) + 256& * ASC(MID$(HeaderData, 2, 1)) + 65536& * ASC(MID$(HeaderData, 3, 1)) + 16777216& * ASC(MID$(HeaderData, 4, 1))
-    
+
     widthVal = ImageWidth
     Height = ImageHeight
-    
+
     CALL FileUtil_CloseBinary(fileHandle)
 END SUB
 
@@ -220,23 +218,23 @@ END SUB
 SUB DrawBmp_GetPalette(BYVAL fileName AS STRING, paletteV() AS BYTE, BYVAL colorDepth AS BYTE)
     DIM FileHandle AS INTEGER, PaletteData AS STRING
     DIM NumColors AS WORD, ColorIndex AS WORD, ArrayIndex AS WORD
-    
+
     NumColors = 2 ^ ColorDepth
     FileHandle = FREEFILE
     OPEN FileName FOR BINARY AS #FileHandle
-    
+
     ' Seek to paletteV location
     SEEK FileHandle, 55
-    
+
     ArrayIndex = 0
     FOR ColorIndex = 0 TO NumColors - 1
         GET$ FileHandle, 4, PaletteData  ' Read BGRA
-        
+
         paletteV(ArrayIndex) = ASC(MID$(PaletteData, 3, 1))      ' Red
         paletteV(ArrayIndex + 1) = ASC(MID$(PaletteData, 2, 1))  ' Green
         paletteV(ArrayIndex + 2) = ASC(MID$(PaletteData, 1, 1))  ' Blue
         ArrayIndex = ArrayIndex + 3
     NEXT ColorIndex
-    
+
     CALL FileUtil_CloseBinary(fileHandle)
 END SUB

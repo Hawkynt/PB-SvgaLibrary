@@ -20,7 +20,7 @@ TYPE DOSHeaderType
     Relocations AS WORD         ' Relocations count
     SizeOfHeader AS WORD        ' Size of header in paragraphs
     MinimumExtra AS WORD        ' Minimum extra paragraphs
-    MaximumExtra AS WORD        ' Maximum extra paragraphs  
+    MaximumExtra AS WORD        ' Maximum extra paragraphs
     InitialSS AS WORD           ' Initial SS
     InitialSP AS WORD           ' Initial SP
     Checksum AS WORD            ' Checksum
@@ -102,40 +102,40 @@ FUNCTION DrawIcl_LoadIcoLib(BYVAL fileName AS STRING) AS BYTE
     DIM dosHeader AS DOSHeaderType
     DIM peHeader AS PEHeaderType
     DIM signature AS LONG
-    
+
     ' Find free library slot
     FOR libHandle = 0 TO 3
         IF ICOLIBContexts(libHandle).IsLoaded = 0 THEN EXIT FOR
     NEXT libHandle
-    
+
     IF libHandle > 3 THEN
         DrawIcl_LoadIcoLib = 255  ' No free slots
         EXIT FUNCTION
     END IF
-    
+
     ' Open library file
     fileHandle = FREEFILE
-    OPEN fileName FOR BINARY AS #fileHandle  ' # fix: ACCESS READ unsupported; # required for OPEN in PB 3.5
+    OPEN fileName FOR BINARY AS #fileHandle
     IF LOF(fileHandle) < 64 THEN
         CLOSE fileHandle
         DrawIcl_LoadIcoLib = 255
         EXIT FUNCTION
     END IF
-    
+
     ' Read DOS header
-    GET fileHandle, 0, dosHeader.Signature  ' # fix: PB3.5 BINARY is 0-based; position 0 = first byte
+    GET fileHandle, 0, dosHeader.Signature
     IF dosHeader.Signature <> &H5A4D THEN  ' "MZ"
         CLOSE fileHandle
         DrawIcl_LoadIcoLib = 255
         EXIT FUNCTION
     END IF
-    
+
     ' Read rest of DOS header
     GET fileHandle, , dosHeader.BytesOnLastPage
     GET fileHandle, , dosHeader.PagesInFile
-    SEEK fileHandle, 60  ' # fix: PB3.5 BINARY 0-based; AddressNewEXE at byte 60 (0x3C), not 61
+    SEEK fileHandle, 60
     GET fileHandle, , dosHeader.AddressNewEXE
-    
+
     ' Initialize context
     ICOLIBContexts(libHandle).IsLoaded = 1
     ICOLIBFileNameStore(libHandle) = fileName
@@ -143,15 +143,15 @@ FUNCTION DrawIcl_LoadIcoLib(BYVAL fileName AS STRING) AS BYTE
     ICOLIBContexts(libHandle).ResourceSectionRVA = 0
     ICOLIBContexts(libHandle).ResourceSectionOffset = 0
     ICOLIBContexts(libHandle).IconGroupCount = 0
-    
+
     ' Check for PE header
     IF dosHeader.AddressNewEXE > 0 AND dosHeader.AddressNewEXE < LOF(fileHandle) - 4 THEN
-        SEEK fileHandle, dosHeader.AddressNewEXE  ' # fix: PB3.5 BINARY 0-based; +1 was off by one
+        SEEK fileHandle, dosHeader.AddressNewEXE
         GET fileHandle, , signature
-        
+
         IF signature = &H00004550 THEN  ' "PE\0\0"
             ICOLIBContexts(libHandle).IsPE = 1
-            
+
             ' Parse PE header for resource section
             IF DrawIcl_ParsePEHeader(fileHandle, libHandle) = 0 THEN
                 CLOSE fileHandle
@@ -161,10 +161,10 @@ FUNCTION DrawIcl_LoadIcoLib(BYVAL fileName AS STRING) AS BYTE
             END IF
         END IF
     END IF
-    
+
     ' Scan for icon groups
     CALL DrawIcl_ScanIconGroups(fileHandle, libHandle)
-    
+
     CLOSE fileHandle
     DrawIcl_LoadIcoLib = libHandle
 END FUNCTION
@@ -185,7 +185,7 @@ FUNCTION DrawIcl_ParsePEHeader(BYVAL fileHandle AS INTEGER, BYVAL libHandle AS B
     DIM virtualAddress AS LONG
     DIM sizeOfRawData AS LONG
     DIM pointerToRawData AS LONG
-    
+
     ' Read PE header
     GET fileHandle, , peHeader.Signature
     GET fileHandle, , peHeader.Machine
@@ -195,26 +195,26 @@ FUNCTION DrawIcl_ParsePEHeader(BYVAL fileHandle AS INTEGER, BYVAL libHandle AS B
     GET fileHandle, , peHeader.NumberOfSymbols
     GET fileHandle, , peHeader.SizeOfOptionalHeader
     GET fileHandle, , peHeader.Characteristics
-    
+
     ' Skip optional header
-    SEEK fileHandle, SEEK(fileHandle) + peHeader.SizeOfOptionalHeader  ' # fix: POS() is text cursor; use SEEK() for file position
-    
+    SEEK fileHandle, SEEK(fileHandle) + peHeader.SizeOfOptionalHeader
+
     ' Search for resource section
     numberOfSections = peHeader.NumberOfSections
     FOR i = 1 TO numberOfSections
         ' Read section name
         sectionName = SPACE$(8)
         GET fileHandle, , sectionName
-        
+
         ' Read section header fields
         GET fileHandle, , virtualAddress    ' VirtualSize (skip)
         GET fileHandle, , virtualAddress    ' VirtualAddress
         GET fileHandle, , sizeOfRawData
         GET fileHandle, , pointerToRawData
-        
+
         ' Skip remaining section header fields (16 bytes)
-        SEEK fileHandle, SEEK(fileHandle) + 16  ' # fix: POS() is text cursor; use SEEK() for file position
-        
+        SEEK fileHandle, SEEK(fileHandle) + 16
+
         ' Check if this is the resource section
         IF LEFT$(sectionName, 8) = ".rsrc" + CHR$(0) + CHR$(0) + CHR$(0) THEN
             ICOLIBContexts(libHandle).ResourceSectionRVA = virtualAddress
@@ -223,7 +223,7 @@ FUNCTION DrawIcl_ParsePEHeader(BYVAL fileHandle AS INTEGER, BYVAL libHandle AS B
             EXIT FUNCTION
         END IF
     NEXT i
-    
+
     DrawIcl_ParsePEHeader = 0
 END FUNCTION
 
@@ -239,7 +239,7 @@ SUB DrawIcl_ScanIconGroups(BYVAL fileHandle AS INTEGER, BYVAL libHandle AS BYTE)
     DIM i AS WORD, j AS WORD
     DIM dirEntry AS ResourceDirectoryEntryType
     DIM groupCount AS WORD
-    
+
     IF ICOLIBContexts(libHandle).IsPE = 0 THEN
         ' For 16-bit executables, use simplified scan
         ICOLIBContexts(libHandle).IconGroupCount = 1
@@ -249,13 +249,13 @@ SUB DrawIcl_ScanIconGroups(BYVAL fileHandle AS INTEGER, BYVAL libHandle AS BYTE)
         ICOLIBIconGroupNamesStore(libHandle, 0) = "Default"
         EXIT SUB
     END IF
-    
+
     ' For PE files, parse resource directory
     IF ICOLIBContexts(libHandle).ResourceSectionOffset = 0 THEN EXIT SUB
-    
+
     ' Seek to resource section
-    SEEK fileHandle, ICOLIBContexts(libHandle).ResourceSectionOffset  ' # fix: PB3.5 BINARY 0-based; +1 was off by one
-    
+    SEEK fileHandle, ICOLIBContexts(libHandle).ResourceSectionOffset
+
     ' Read root resource directory
     GET fileHandle, , resourceDir.Characteristics
     GET fileHandle, , resourceDir.TimeDateStamp
@@ -263,25 +263,25 @@ SUB DrawIcl_ScanIconGroups(BYVAL fileHandle AS INTEGER, BYVAL libHandle AS BYTE)
     GET fileHandle, , resourceDir.MinorVersion
     GET fileHandle, , resourceDir.NumberOfNamedEntries
     GET fileHandle, , resourceDir.NumberOfIdEntries
-    
+
     ' Scan for RT_GROUP_ICON entries
     groupCount = 0
     FOR i = 1 TO resourceDir.NumberOfNamedEntries + resourceDir.NumberOfIdEntries
         GET fileHandle, , dirEntry.NameID
         GET fileHandle, , dirEntry.DataRVA
-        
+
         ' Check if this is RT_GROUP_ICON (14)
         IF dirEntry.NameID = %RT_GROUP_ICON THEN
             groupCount = groupCount + 1
         END IF
     NEXT i
-    
+
     ' Store simplified icon group information
     ICOLIBContexts(libHandle).IconGroupCount = groupCount
     IF groupCount > 0 THEN
         ICOLIBIconGroupBound(libHandle) = groupCount - 1
         ICOLIBIconGroupBound(libHandle) = groupCount - 1
-        
+
         FOR i = 0 TO groupCount - 1
             ICOLIBIconGroupIDsStore(libHandle, i) = i + 1
             ICOLIBIconGroupNamesStore(libHandle, i) = "Icon Group" + STR$(i + 1)
@@ -315,12 +315,12 @@ FUNCTION DrawIcl_GetLibIconGroupName$(BYVAL libHandle AS BYTE, BYVAL groupIndex 
         DrawIcl_GetLibIconGroupName$ = ""
         EXIT FUNCTION
     END IF
-    
+
     IF groupIndex >= ICOLIBContexts(libHandle).IconGroupCount THEN
         DrawIcl_GetLibIconGroupName$ = ""
         EXIT FUNCTION
     END IF
-    
+
     DrawIcl_GetLibIconGroupName$ = ICOLIBIconGroupNamesStore(libHandle, groupIndex)
 END FUNCTION
 
@@ -337,15 +337,15 @@ SUB DrawIcl_ShowLibIcon(BYVAL libHandle AS BYTE, BYVAL groupIndex AS WORD, BYVAL
     DIM fileHandle AS INTEGER
     DIM iconData AS STRING
     DIM widthVal AS WORD, height AS WORD
-    
+
     IF libHandle > 3 OR ICOLIBContexts(libHandle).IsLoaded = 0 THEN EXIT SUB
     IF groupIndex >= ICOLIBContexts(libHandle).IconGroupCount THEN EXIT SUB
-    
+
     ' Extract icon dataBuf from library
     IF DrawIcl_ExtractIcon(libHandle, groupIndex, iconIndex, iconData, widthVal, height) = 0 THEN
         EXIT SUB
     END IF
-    
+
     ' Draw extracted icon (simplified)
     CALL DrawIcl_DrawExtractedIcon(iconData, widthVal, height, x, y)
 END SUB
@@ -366,15 +366,15 @@ FUNCTION DrawIcl_ExtractIcon(BYVAL libHandle AS BYTE, BYVAL groupIndex AS WORD, 
     ' 2. Parse the icon group to find individual icon resources
     ' 3. Extract the specific icon dataBuf
     ' 4. Convert from Windows ICO format to raw bitmap dataBuf
-    
+
     ' For now, create a placeholder icon
     widthVal = 32
     height = 32
-    
+
     ' Create simple pattern icon dataBuf (32x32, 1 bit per pixel)
     DIM i AS WORD, j AS WORD, pattern AS BYTE
     iconData = ""
-    
+
     FOR i = 0 TO height - 1
         FOR j = 0 TO widthVal - 1 STEP 8
             ' Create checkerboard pattern
@@ -386,7 +386,7 @@ FUNCTION DrawIcl_ExtractIcon(BYVAL libHandle AS BYTE, BYVAL groupIndex AS WORD, 
             iconData = iconData + CHR$(pattern)
         NEXT j
     NEXT i
-    
+
     DrawIcl_ExtractIcon = 1
 END FUNCTION
 
@@ -403,28 +403,28 @@ SUB DrawIcl_DrawExtractedIcon(BYVAL iconData AS STRING, BYVAL widthVal AS WORD, 
     DIM drawX AS WORD, drawY AS WORD
     DIM dataPos AS WORD, byteValue AS BYTE
     DIM bitPos AS BYTE, pixelValue AS BYTE
-    
+
     dataPos = 1
-    
+
     ' Draw icon (assuming 1-bit bitmap)
     FOR pixelY = 0 TO height - 1
         drawY = y + pixelY
         IF drawY >= SVGAScreenContext.YRes THEN EXIT FOR
-        
+
         FOR pixelX = 0 TO widthVal - 1 STEP 8
             IF dataPos > LEN(iconData) THEN EXIT FOR
-            
+
             byteValue = ASC(MID$(iconData, dataPos, 1))
             dataPos = dataPos + 1
-            
+
             ' Draw 8 pixels from this byte
             FOR bitPos = 0 TO 7
                 drawX = x + pixelX + bitPos
                 IF drawX >= SVGAScreenContext.XRes THEN EXIT FOR
-                
+
                 ' Extract bit
                 pixelValue = (byteValue \ (2 ^ (7 - bitPos))) AND 1
-                
+
                 ' Draw pixel (1 = white, 0 = transparent)
                 IF pixelValue = 1 THEN
                     CALL Svga_PutPixel(drawX, drawY, 255)  ' White
@@ -446,9 +446,9 @@ FUNCTION DrawIcl_SaveLibIcon(BYVAL libHandle AS BYTE, BYVAL groupIndex AS WORD, 
     ' This would extract all icons from a group and save as ICO file
     ' Implementation would create proper ICO file format with:
     ' - ICO file header
-    ' - Icon directory entries  
+    ' - Icon directory entries
     ' - Individual icon image dataBuf
-    
+
     ' For now, return success placeholder
     DrawIcl_SaveLibIcon = 1
 END FUNCTION
@@ -484,14 +484,14 @@ END FUNCTION
 ' =============================================================================
 SUB DrawIcl_CloseIcoLib(BYVAL libHandle AS BYTE)
     IF libHandle > 3 THEN EXIT SUB
-    
+
     ICOLIBContexts(libHandle).IsLoaded = 0
     ICOLIBFileNameStore(libHandle) = ""
     ICOLIBContexts(libHandle).IsPE = 0
     ICOLIBContexts(libHandle).ResourceSectionRVA = 0
     ICOLIBContexts(libHandle).ResourceSectionOffset = 0
     ICOLIBContexts(libHandle).IconGroupCount = 0
-    
+
     ' Free arrays
     IF ICOLIBIconGroupBound(libHandle) >= 0 THEN
         ICOLIBIconGroupBound(libHandle) = -1
@@ -514,13 +514,13 @@ FUNCTION DrawIcl_ListSystemIcons(BYVAL systemPath AS STRING, fileList() AS STRIN
     ' 1. Find all *.DLL and *.EXE files
     ' 2. Test each file for icon resources
     ' 3. Return list of files containing icons
-    
+
     ' For now, return placeholder list
     REDIM fileList(2)
     fileList(0) = "SHELL32.DLL"
     fileList(1) = "USER32.DLL"
     fileList(2) = "COMCTL32.DLL"
-    
+
     DrawIcl_ListSystemIcons = 3
 END FUNCTION
 
@@ -535,25 +535,25 @@ FUNCTION DrawIcl_ExtractAllIcons(BYVAL libHandle AS BYTE, BYVAL outputPath AS ST
     DIM groupIndex AS WORD, iconIndex AS WORD
     DIM extractCount AS WORD
     DIM outputFile AS STRING
-    
+
     IF libHandle > 3 OR ICOLIBContexts(libHandle).IsLoaded = 0 THEN
         DrawIcl_ExtractAllIcons = 0
         EXIT FUNCTION
     END IF
-    
+
     extractCount = 0
-    
+
     ' Extract each icon group
     FOR groupIndex = 0 TO ICOLIBContexts(libHandle).IconGroupCount - 1
         ' Generate output filename
         outputFile = outputPath + "\" + ICOLIBIconGroupNamesStore(libHandle, groupIndex) + ".ICO"
-        
+
         ' Extract icon group to file
         IF DrawIcl_SaveLibIcon(libHandle, groupIndex, outputFile) THEN
             extractCount = extractCount + 1
         END IF
     NEXT groupIndex
-    
+
     DrawIcl_ExtractAllIcons = extractCount
 END FUNCTION
 
@@ -566,14 +566,14 @@ END FUNCTION
 ' =============================================================================
 SUB DrawIcl_Show(BYVAL fileName AS STRING, BYVAL x AS WORD, BYVAL y AS WORD)
     DIM libHandle AS BYTE
-    
+
     ' Load icon library
     libHandle = DrawIcl_LoadIcoLib(fileName)
     IF libHandle = 255 THEN EXIT SUB
-    
+
     ' Show first icon from first group
     CALL DrawIcl_ShowLibIcon(libHandle, 0, 0, x, y)
-    
+
     ' Cleanup
     CALL DrawIcl_CloseIcoLib(libHandle)
 END SUB
@@ -601,13 +601,13 @@ END SUB
 ' =============================================================================
 FUNCTION DrawIcl_GetPalette(BYVAL fileName AS STRING, paletteV() AS BYTE, BYVAL colorDepth AS BYTE) AS BYTE
     DIM i AS WORD
-    
+
     ' Initialize paletteV to grayscale (ICL files typically use system paletteV)
     FOR i = 0 TO 255
         paletteV(i * 3) = i
         paletteV(i * 3 + 1) = i
         paletteV(i * 3 + 2) = i
     NEXT i
-    
+
     DrawIcl_GetPalette = 1
 END FUNCTION

@@ -20,7 +20,7 @@
 SUB Virtual_SetScale(BYVAL XScale AS WORD, BYVAL YScale AS WORD)
     ScaleSystemContext.XScale = XScale
     ScaleSystemContext.YScale = YScale
-    
+
     ' Update maximum scaled coordinates
     ScaleSystemContext.XScaleMax = SVGAScreenContext.XRes \ XScale
     ScaleSystemContext.YScaleMax = SVGAScreenContext.YRes \ YScale
@@ -54,14 +54,14 @@ END FUNCTION
 SUB Virtual_SetWindow(BYVAL maxX AS WORD, BYVAL maxY AS WORD)
     ScaleSystemContext.XScaleMax = MaxX
     ScaleSystemContext.YScaleMax = MaxY
-    
+
     ' Calculate scaling factors to fit virtual screen to physical screen
     IF MaxX > SVGAScreenContext.XRes THEN
         ScaleSystemContext.XScale = SVGAScreenContext.XRes / MaxX
     ELSE
         ScaleSystemContext.XScale = 1
     END IF
-    
+
     IF MaxY > SVGAScreenContext.YRes THEN
         ScaleSystemContext.YScale = SVGAScreenContext.YRes / MaxY
     ELSE
@@ -111,7 +111,7 @@ SUB Virtual_ToPhysical(BYVAL virtualX AS WORD, BYVAL virtualY AS WORD, physicalX
         PhysicalX = VirtualX
         PhysicalY = VirtualY
     END IF
-    
+
     ' Apply coordinate offset adjustments
     PhysicalX = PhysicalX - VESASystemContext.XDecrease
     PhysicalY = PhysicalY - VESASystemContext.YDecrease
@@ -135,7 +135,7 @@ FUNCTION Virtual_IsVisible(BYVAL virtualX AS WORD, BYVAL virtualY AS WORD) AS BY
             EXIT FUNCTION
         END IF
     END IF
-    
+
     Virtual_IsVisible = 1
 END FUNCTION
 
@@ -151,7 +151,7 @@ SUB Virtual_ToVirtual(BYVAL physicalX AS WORD, BYVAL physicalY AS WORD, virtualX
     ' Reverse coordinate offset adjustments
     PhysicalX = PhysicalX + VESASystemContext.XDecrease
     PhysicalY = PhysicalY + VESASystemContext.YDecrease
-    
+
     ' Reverse coordinate scaling
     IF ScaleSystemContext.XScale <> 1 OR ScaleSystemContext.YScale <> 1 THEN
         VirtualX = PhysicalX \ ScaleSystemContext.XScale
@@ -197,10 +197,10 @@ SUB Virtual_Reset
     ScaleSystemContext.KScale = 1
     ScaleSystemContext.XScaleMax = SVGAScreenContext.XRes
     ScaleSystemContext.YScaleMax = SVGAScreenContext.YRes
-    
+
     VESASystemContext.XDecrease = 0
     VESASystemContext.YDecrease = 0
-    
+
     WindowSystemContext.Current = 0
 END SUB
 

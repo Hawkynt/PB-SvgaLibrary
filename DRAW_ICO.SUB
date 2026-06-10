@@ -43,10 +43,9 @@ END FUNCTION
 
 ' =============================================================================
 ' Internal: read ICONDIRENTRY fields from current file position
-' Bug fix: replaced typed GET (unsupported in PB 3.5 BINARY mode) with GET$
 ' =============================================================================
 SUB DrawIco_ReadEntry(BYVAL fh AS INTEGER, iconEntry AS IconDirEntryType)
-    iconEntry.Wide       = DrawIco_ReadByte(fh)  ' Bug fix: was GET fh,,iconEntry.Wide (typed GET silently reads 0)
+    iconEntry.Wide       = DrawIco_ReadByte(fh)
     iconEntry.Height     = DrawIco_ReadByte(fh)
     iconEntry.ColorCount = DrawIco_ReadByte(fh)
     iconEntry.Reserved   = DrawIco_ReadByte(fh)
@@ -80,7 +79,6 @@ SUB DrawIco_Show(BYVAL fileName AS STRING, BYVAL x AS WORD, BYVAL y AS WORD, BYV
     END IF
 
     ' Read ICO header (6 bytes, all sequential from position 0)
-    ' Bug fix: was GET fh,1,var (typed GET reads 0 in PB3.5 BINARY mode; position 1 also skips first byte)
     resWord   = DrawIco_ReadWord(fileHandle)
     kindWord  = DrawIco_ReadWord(fileHandle)
     countWord = DrawIco_ReadWord(fileHandle)
@@ -120,7 +118,7 @@ FUNCTION DrawIco_GetCount(BYVAL fileName AS STRING) AS WORD
         EXIT FUNCTION
     END IF
 
-    ' Read header (Bug fix: was typed GET which returns 0 in PB3.5 BINARY mode)
+    ' Read header
     resWord   = DrawIco_ReadWord(fileHandle)
     kindWord  = DrawIco_ReadWord(fileHandle)
     countWord = DrawIco_ReadWord(fileHandle)
@@ -172,7 +170,7 @@ SUB DrawIco_GetInfo(BYVAL fileName AS STRING, BYVAL iconIndex AS WORD, widthVal 
         EXIT SUB
     END IF
 
-    ' Read header (Bug fix: was typed GET which returns 0 in PB3.5 BINARY mode)
+    ' Read header
     resWord   = DrawIco_ReadWord(fileHandle)
     kindWord  = DrawIco_ReadWord(fileHandle)
     countWord = DrawIco_ReadWord(fileHandle)
@@ -189,11 +187,10 @@ SUB DrawIco_GetInfo(BYVAL fileName AS STRING, BYVAL iconIndex AS WORD, widthVal 
         EXIT SUB
     END IF
 
-    ' Seek to icon entry (0-based: ICONDIR=6 bytes, each entry=16 bytes)
-    ' Bug fix: was SEEK fh, 7 + (index*16) — off by one (7 vs 6 for 0-based)
+    ' Seek to icon entry (ICONDIR = 6 bytes, each entry = 16 bytes)
     SEEK fileHandle, 6 + (iconIndex * 16)
 
-    ' Read icon entry (Bug fix: was typed GET which returns 0 in PB3.5 BINARY mode)
+    ' Read icon entry
     CALL DrawIco_ReadEntry(fileHandle, iconEntry)
 
     CLOSE fileHandle
@@ -250,7 +247,7 @@ SUB DrawIco_GetPalette(BYVAL fileName AS STRING, paletteV() AS BYTE, BYVAL color
         EXIT SUB
     END IF
 
-    ' Read and validate header (Bug fix: was typed GET which returns 0 in PB3.5 BINARY mode)
+    ' Read and validate header
     resWord   = DrawIco_ReadWord(fileHandle)
     kindWord  = DrawIco_ReadWord(fileHandle)
     countWord = DrawIco_ReadWord(fileHandle)
@@ -261,10 +258,10 @@ SUB DrawIco_GetPalette(BYVAL fileName AS STRING, paletteV() AS BYTE, BYVAL color
     END IF
 
     ' Use first icon for palette
-    ' Seek to first icon entry (Bug fix: was SEEK fh,7 — off by one for 0-based SEEK)
+    ' Seek to first icon entry
     SEEK fileHandle, 6
 
-    ' Read icon entry (Bug fix: was typed GET which returns 0 in PB3.5 BINARY mode)
+    ' Read icon entry
     CALL DrawIco_ReadEntry(fileHandle, iconEntry)
 
     ' Only read paletteV for <= 8-bit icons
@@ -281,13 +278,12 @@ SUB DrawIco_GetPalette(BYVAL fileName AS STRING, paletteV() AS BYTE, BYVAL color
         EXIT SUB
     END IF
 
-    ' Seek to paletteV data (after BITMAPINFOHEADER, 0-based)
-    ' Bug fix: was SEEK fh, imageOffset+40+1 — the +1 was wrong for 0-based SEEK
+    ' Seek to paletteV data (after BITMAPINFOHEADER)
     SEEK fileHandle, iconEntry.ImageOffset + 40
 
     ' Read paletteV entries (BGRA format)
     FOR i = 0 TO paletteSize - 1
-        b   = DrawIco_ReadByte(fileHandle)  ' Bug fix: was GET fh,,b (typed GET reads 0)
+        b   = DrawIco_ReadByte(fileHandle)
         g   = DrawIco_ReadByte(fileHandle)
         r   = DrawIco_ReadByte(fileHandle)
         rsv = DrawIco_ReadByte(fileHandle)
@@ -316,11 +312,10 @@ SUB DrawIco_ReadIconData(BYVAL fileHandle AS INTEGER, BYVAL iconIndex AS WORD, i
     DIM scanlineWidth AS WORD, maskScanlineWidth AS WORD
     DIM paletteSize AS WORD, dataOffset AS LONG
 
-    ' Seek to icon entry (0-based)
-    ' Bug fix: was SEEK fh, 7+(index*16) — position 7 is one past byte 6 (first entry) for 0-based SEEK
+    ' Seek to icon entry
     SEEK fileHandle, 6 + (iconIndex * 16)
 
-    ' Read icon directory entry (Bug fix: was typed GET which returns 0 in PB3.5 BINARY mode)
+    ' Read icon directory entry
     CALL DrawIco_ReadEntry(fileHandle, iconEntry)
 
     ' Handle 0 dimensions (means 256)
@@ -340,18 +335,17 @@ SUB DrawIco_ReadIconData(BYVAL fileHandle AS INTEGER, BYVAL iconIndex AS WORD, i
         paletteSize = 0
     END IF
 
-    ' Seek to icon data (skip BITMAPINFOHEADER + palette, 0-based)
-    ' Bug fix: was dataOffset = imageOffset+40+paletteSize+1 — the +1 was wrong for 0-based SEEK
+    ' Seek to icon data (skip BITMAPINFOHEADER + palette)
     dataOffset = iconEntry.ImageOffset + 40 + paletteSize
     SEEK fileHandle, dataOffset
 
     ' Read icon pixel data
     iconData = SPACE$(scanlineWidth * height)
-    GET$ fileHandle, scanlineWidth * height, iconData  ' Bug fix: was GET fh,,iconData (typed GET reads 0)
+    GET$ fileHandle, scanlineWidth * height, iconData
 
     ' Read AND mask
     maskData = SPACE$(maskScanlineWidth * height)
-    GET$ fileHandle, maskScanlineWidth * height, maskData  ' Bug fix: was GET fh,,maskData (typed GET reads 0)
+    GET$ fileHandle, maskScanlineWidth * height, maskData
 END SUB
 
 ' =============================================================================
@@ -460,7 +454,7 @@ FUNCTION DrawIco_Extract(BYVAL fileName AS STRING, BYVAL iconIndex AS WORD, buff
         EXIT FUNCTION
     END IF
 
-    ' Read and validate header (Bug fix: was typed GET which returns 0 in PB3.5 BINARY mode)
+    ' Read and validate header
     resWord   = DrawIco_ReadWord(fileHandle)
     kindWord  = DrawIco_ReadWord(fileHandle)
     countWord = DrawIco_ReadWord(fileHandle)

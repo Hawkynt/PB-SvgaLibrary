@@ -216,7 +216,7 @@ DIM TGAColorMaps(8, 767) AS SHARED BYTE           ' TGA colorVal maps (8 context
 DIM ICOLIBIconGroupIDs(4, 15) AS SHARED WORD      ' Icon group IDs (4 libs, 16 groups max)
 DIM ICOLIBIconGroupNames(4, 15) AS SHARED STRING  ' Icon group names
 
-' --- persistent (was SHARED..STATIC) module globals ---
+' --- persistent module globals ---
 DIM TimerTickCounter AS SHARED WORD
 DIM originalX AS SHARED INTEGER
 DIM originalY AS SHARED INTEGER

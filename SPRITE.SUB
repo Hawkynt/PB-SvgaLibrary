@@ -77,7 +77,7 @@ DIM SpriteSystemInitialized AS SHARED BYTE
 ' =============================================================================
 SUB Sprite_Init
     DIM I AS BYTE, J AS BYTE
-    
+
     ' Clear all sprites
     FOR I = 0 TO 31
         Sprites(I).IsActive = 0
@@ -105,7 +105,7 @@ SUB Sprite_Init
         Sprites(I).LastY = 0
         Sprites(I).UserData = 0
     NEXT I
-    
+
     ' Clear collision matrix
     FOR I = 0 TO 31
         FOR J = 0 TO 31
@@ -113,7 +113,7 @@ SUB Sprite_Init
             CollisionCallback(I, J) = 0
         NEXT J
     NEXT I
-    
+
     SpriteCount = 0
     SpriteSystemInitialized = 1
 END SUB
@@ -128,19 +128,19 @@ END SUB
 ' =============================================================================
 FUNCTION Sprite_Create(BYVAL x AS INTEGER, BYVAL y AS INTEGER, BYVAL widthVal AS WORD, BYVAL height AS WORD, BYVAL imageData AS STRING) AS BYTE
     DIM spriteHandle AS BYTE
-    
+
     IF SpriteSystemInitialized = 0 THEN CALL Sprite_Init
-    
+
     ' Find free sprite slot
     FOR spriteHandle = 0 TO 31
         IF Sprites(spriteHandle).IsActive = 0 THEN EXIT FOR
     NEXT spriteHandle
-    
+
     IF spriteHandle > 31 THEN
         Sprite_Create = 255  ' No free slots
         EXIT FUNCTION
     END IF
-    
+
     ' Initialize sprite
     Sprites(spriteHandle).IsActive = 1
     Sprites(spriteHandle).X = x
@@ -158,14 +158,14 @@ FUNCTION Sprite_Create(BYVAL x AS INTEGER, BYVAL y AS INTEGER, BYVAL widthVal AS
     SpriteMaskStore(spriteHandle) = ""
     Sprites(spriteHandle).LastX = x
     Sprites(spriteHandle).LastY = y
-    
+
     ' Set default movement boundaries to screen size
     Sprites(spriteHandle).BoundsLeft = 0
     Sprites(spriteHandle).BoundsRight = SVGAScreenContext.XRes - widthVal
     Sprites(spriteHandle).BoundsTop = 0
     Sprites(spriteHandle).BoundsBottom = SVGAScreenContext.YRes - height
     Sprites(spriteHandle).MovementMode = %MOVE_BOUNCE
-    
+
     SpriteCount = SpriteCount + 1
     Sprite_Create = spriteHandle
 END FUNCTION
@@ -180,28 +180,28 @@ END FUNCTION
 FUNCTION Sprite_CreateAnimated(BYVAL x AS INTEGER, BYVAL y AS INTEGER, BYVAL animHandle AS BYTE) AS BYTE
     DIM spriteHandle AS BYTE
     DIM animWidth AS WORD, animHeight AS WORD, frameCount AS WORD, hotX AS WORD, hotY AS WORD
-    
+
     ' Get animation info
     CALL Ani_GetAnimationInfo(animHandle, animWidth, animHeight, frameCount, hotX, hotY)
     IF frameCount = 0 THEN
         Sprite_CreateAnimated = 255
         EXIT FUNCTION
     END IF
-    
+
     ' Create sprite with animation dimensions
     spriteHandle = Sprite_Create(x, y, animWidth, animHeight, "")
     IF spriteHandle = 255 THEN
         Sprite_CreateAnimated = 255
         EXIT FUNCTION
     END IF
-    
+
     ' Set up animation
     Sprites(spriteHandle).AnimHandle = animHandle
     Sprites(spriteHandle).Flags = Sprites(spriteHandle).Flags OR %SPRITE_ANIMATED
-    
+
     ' Start animation
     CALL Ani_PlayAnimation(animHandle, x, y, 0)  ' Infinite loop, use timer
-    
+
     Sprite_CreateAnimated = spriteHandle
 END FUNCTION
 
@@ -214,7 +214,7 @@ END FUNCTION
 ' =============================================================================
 SUB Sprite_SetPosition(BYVAL spriteHandle AS BYTE, BYVAL x AS INTEGER, BYVAL y AS INTEGER)
     IF spriteHandle > 31 OR Sprites(spriteHandle).IsActive = 0 THEN EXIT SUB
-    
+
     Sprites(spriteHandle).LastX = Sprites(spriteHandle).X
     Sprites(spriteHandle).LastY = Sprites(spriteHandle).Y
     Sprites(spriteHandle).X = x
@@ -230,7 +230,7 @@ END SUB
 ' =============================================================================
 SUB Sprite_SetVelocity(BYVAL spriteHandle AS BYTE, BYVAL vx AS INTEGER, BYVAL vy AS INTEGER)
     IF spriteHandle > 31 OR Sprites(spriteHandle).IsActive = 0 THEN EXIT SUB
-    
+
     Sprites(spriteHandle).VelocityX = vx
     Sprites(spriteHandle).VelocityY = vy
 END SUB
@@ -245,7 +245,7 @@ END SUB
 ' =============================================================================
 SUB Sprite_SetBounds(BYVAL spriteHandle AS BYTE, BYVAL leftV AS INTEGER, BYVAL top AS INTEGER, BYVAL rightV AS INTEGER, BYVAL bottom AS INTEGER, BYVAL movementMode AS BYTE)
     IF spriteHandle > 31 OR Sprites(spriteHandle).IsActive = 0 THEN EXIT SUB
-    
+
     Sprites(spriteHandle).BoundsLeft = leftV
     Sprites(spriteHandle).BoundsTop = top
     Sprites(spriteHandle).BoundsRight = rightV
@@ -262,7 +262,7 @@ END SUB
 ' =============================================================================
 SUB Sprite_SetFlags(BYVAL spriteHandle AS BYTE, BYVAL flags AS WORD)
     IF spriteHandle > 31 OR Sprites(spriteHandle).IsActive = 0 THEN EXIT SUB
-    
+
     Sprites(spriteHandle).Flags = flags
 END SUB
 
@@ -275,7 +275,7 @@ END SUB
 ' =============================================================================
 SUB Sprite_SetPriority(BYVAL spriteHandle AS BYTE, BYVAL priority AS BYTE)
     IF spriteHandle > 31 OR Sprites(spriteHandle).IsActive = 0 THEN EXIT SUB
-    
+
     Sprites(spriteHandle).Priority = priority
 END SUB
 
@@ -287,15 +287,15 @@ END SUB
 ' =============================================================================
 SUB Sprite_Move(BYVAL spriteHandle AS BYTE)
     DIM newX AS INTEGER, newY AS INTEGER
-    
+
     IF spriteHandle > 31 OR Sprites(spriteHandle).IsActive = 0 THEN EXIT SUB
-    
+
     Sprites(spriteHandle).LastX = Sprites(spriteHandle).X
     Sprites(spriteHandle).LastY = Sprites(spriteHandle).Y
-    
+
     newX = Sprites(spriteHandle).X + Sprites(spriteHandle).VelocityX
     newY = Sprites(spriteHandle).Y + Sprites(spriteHandle).VelocityY
-    
+
     ' Handle boundary conditions
     SELECT CASE Sprites(spriteHandle).MovementMode
         CASE %MOVE_BOUNCE
@@ -308,7 +308,7 @@ SUB Sprite_Move(BYVAL spriteHandle AS BYTE)
                 Sprites(spriteHandle).VelocityY = -Sprites(spriteHandle).VelocityY
                 newY = Sprites(spriteHandle).Y + Sprites(spriteHandle).VelocityY
             END IF
-            
+
         CASE %MOVE_WRAP
             ' Wrap around boundaries
             IF newX < Sprites(spriteHandle).BoundsLeft THEN
@@ -321,7 +321,7 @@ SUB Sprite_Move(BYVAL spriteHandle AS BYTE)
             ELSEIF newY > Sprites(spriteHandle).BoundsBottom THEN
                 newY = Sprites(spriteHandle).BoundsTop
             END IF
-            
+
         CASE %MOVE_STOP
             ' Stop at boundaries
             IF newX < Sprites(spriteHandle).BoundsLeft THEN
@@ -339,7 +339,7 @@ SUB Sprite_Move(BYVAL spriteHandle AS BYTE)
                 Sprites(spriteHandle).VelocityY = 0
             END IF
     END SELECT
-    
+
     Sprites(spriteHandle).X = newX
     Sprites(spriteHandle).Y = newY
 END SUB
@@ -353,13 +353,13 @@ END SUB
 SUB Sprite_Draw(BYVAL spriteHandle AS BYTE)
     IF spriteHandle > 31 OR Sprites(spriteHandle).IsActive = 0 THEN EXIT SUB
     IF (Sprites(spriteHandle).Flags AND %SPRITE_VISIBLE) = 0 THEN EXIT SUB
-    
+
     ' Check if sprite is on screen
     IF Sprites(spriteHandle).X >= SVGAScreenContext.XRes THEN EXIT SUB
     IF Sprites(spriteHandle).Y >= SVGAScreenContext.YRes THEN EXIT SUB
     IF Sprites(spriteHandle).X + Sprites(spriteHandle).Wide <= 0 THEN EXIT SUB
     IF Sprites(spriteHandle).Y + Sprites(spriteHandle).Height <= 0 THEN EXIT SUB
-    
+
     ' Draw animated or static sprite
     IF (Sprites(spriteHandle).Flags AND %SPRITE_ANIMATED) AND Sprites(spriteHandle).AnimHandle <> 255 THEN
         ' Update animated sprite
@@ -387,9 +387,9 @@ SUB Sprite_DrawAll
     DIM spriteOrder(32) AS BYTE
     DIM orderCount AS BYTE
     DIM tempHandle AS BYTE
-    
+
     IF SpriteSystemInitialized = 0 THEN EXIT SUB
-    
+
     ' Build list of active sprites
     orderCount = 0
     FOR i = 0 TO 31
@@ -398,7 +398,7 @@ SUB Sprite_DrawAll
             orderCount = orderCount + 1
         END IF
     NEXT i
-    
+
     ' Sort by priority (simple bubble sort)
     FOR i = 0 TO orderCount - 2
         FOR j = i + 1 TO orderCount - 1
@@ -409,7 +409,7 @@ SUB Sprite_DrawAll
             END IF
         NEXT j
     NEXT i
-    
+
     ' Draw sprites in priority order
     FOR i = 0 TO orderCount - 1
         CALL Sprite_Draw(spriteOrder(i))
@@ -427,12 +427,12 @@ FUNCTION Sprite_CollisionRect(BYVAL spriteA AS BYTE, BYVAL spriteB AS BYTE) AS B
         Sprite_CollisionRect = 0
         EXIT FUNCTION
     END IF
-    
+
     IF Sprites(spriteA).IsActive = 0 OR Sprites(spriteB).IsActive = 0 THEN
         Sprite_CollisionRect = 0
         EXIT FUNCTION
     END IF
-    
+
     ' Check if rectangles overlap
     IF Sprites(spriteA).X < Sprites(spriteB).X + Sprites(spriteB).Wide AND _
        Sprites(spriteA).X + Sprites(spriteA).Wide > Sprites(spriteB).X AND _
@@ -455,28 +455,28 @@ FUNCTION Sprite_CollisionCircle(BYVAL spriteA AS BYTE, BYVAL spriteB AS BYTE) AS
     DIM centerBX AS INTEGER, centerBY AS INTEGER
     DIM deltaX AS INTEGER, deltaY AS INTEGER
     DIM distanceSquared AS LONG, radiusSum AS WORD
-    
+
     IF spriteA > 31 OR spriteB > 31 THEN
         Sprite_CollisionCircle = 0
         EXIT FUNCTION
     END IF
-    
+
     IF Sprites(spriteA).IsActive = 0 OR Sprites(spriteB).IsActive = 0 THEN
         Sprite_CollisionCircle = 0
         EXIT FUNCTION
     END IF
-    
+
     ' Calculate centers
     centerAX = Sprites(spriteA).X + Sprites(spriteA).Wide \ 2
     centerAY = Sprites(spriteA).Y + Sprites(spriteA).Height \ 2
     centerBX = Sprites(spriteB).X + Sprites(spriteB).Wide \ 2
     centerBY = Sprites(spriteB).Y + Sprites(spriteB).Height \ 2
-    
+
     ' Calculate distance
     deltaX = centerAX - centerBX
     deltaY = centerAY - centerBY
     distanceSquared = deltaX * deltaX + deltaY * deltaY
-    
+
     ' Compare with radius sum
     radiusSum = Sprites(spriteA).CollisionRadius + Sprites(spriteB).CollisionRadius
     IF distanceSquared <= radiusSum * radiusSum THEN
@@ -497,19 +497,19 @@ FUNCTION Sprite_Collision(BYVAL spriteA AS BYTE, BYVAL spriteB AS BYTE) AS BYTE
         Sprite_Collision = 0
         EXIT FUNCTION
     END IF
-    
+
     IF Sprites(spriteA).IsActive = 0 OR Sprites(spriteB).IsActive = 0 THEN
         Sprite_Collision = 0
         EXIT FUNCTION
     END IF
-    
+
     ' Check collision flags
     IF (Sprites(spriteA).Flags AND %SPRITE_COLLISION) = 0 OR _
        (Sprites(spriteB).Flags AND %SPRITE_COLLISION) = 0 THEN
         Sprite_Collision = 0
         EXIT FUNCTION
     END IF
-    
+
     ' Use appropriate collision detection method
     SELECT CASE Sprites(spriteA).CollisionType
         CASE %COLLISION_CIRCLE
@@ -526,18 +526,18 @@ END FUNCTION
 ' =============================================================================
 SUB Sprite_CheckAllCollisions
     DIM i AS BYTE, j AS BYTE
-    
+
     IF SpriteSystemInitialized = 0 THEN EXIT SUB
-    
+
     FOR i = 0 TO 31
         IF Sprites(i).IsActive = 0 THEN GOTO NextSpriteI
-        
+
         FOR j = i + 1 TO 31
             IF Sprites(j).IsActive = 0 THEN GOTO NextSpriteJ
-            
+
             ' Check if these sprites can collide
             IF CollisionMatrix(i, j) = 0 THEN GOTO NextSpriteJ
-            
+
             ' Perform collision detection
             IF Sprite_Collision(i, j) THEN
                 ' Call collision callback if defined
@@ -546,10 +546,10 @@ SUB Sprite_CheckAllCollisions
                     CALL SpriteCollisionCallback(i, j)
                 END IF
             END IF
-            
+
             NextSpriteJ:
         NEXT j
-        
+
         NextSpriteI:
     NEXT i
 END SUB
@@ -564,7 +564,7 @@ END SUB
 ' =============================================================================
 SUB Sprite_SetCollision(BYVAL spriteA AS BYTE, BYVAL spriteB AS BYTE, BYVAL enableCollision AS BYTE, BYVAL callbackFunction AS DWORD)
     IF spriteA > 31 OR spriteB > 31 THEN EXIT SUB
-    
+
     CollisionMatrix(spriteA, spriteB) = enableCollision
     CollisionMatrix(spriteB, spriteA) = enableCollision
     CollisionCallback(spriteA, spriteB) = callbackFunction
@@ -578,9 +578,9 @@ END SUB
 ' =============================================================================
 SUB Sprite_UpdateAll
     DIM i AS BYTE
-    
+
     IF SpriteSystemInitialized = 0 THEN EXIT SUB
-    
+
     FOR i = 0 TO 31
         IF Sprites(i).IsActive THEN
             ' Move sprite
@@ -589,7 +589,7 @@ SUB Sprite_UpdateAll
             END IF
         END IF
     NEXT i
-    
+
     ' Check for collisions after all sprites have moved
     CALL Sprite_CheckAllCollisions
 END SUB
@@ -602,19 +602,19 @@ END SUB
 ' =============================================================================
 SUB Sprite_Free(BYVAL spriteHandle AS BYTE)
     IF spriteHandle > 31 THEN EXIT SUB
-    
+
     IF Sprites(spriteHandle).IsActive THEN
         ' Stop animation if active
         IF Sprites(spriteHandle).AnimHandle <> 255 THEN
             CALL Ani_StopAnimation(Sprites(spriteHandle).AnimHandle)
         END IF
-        
+
         ' Clear sprite dataBuf
         Sprites(spriteHandle).IsActive = 0
         SpriteImageStore(spriteHandle) = ""
         SpriteMaskStore(spriteHandle) = ""
         SpriteBgStore(spriteHandle) = ""
-        
+
         SpriteCount = SpriteCount - 1
     END IF
 END SUB
@@ -626,11 +626,11 @@ END SUB
 ' =============================================================================
 SUB Sprite_Cleanup
     DIM i AS BYTE
-    
+
     FOR i = 0 TO 31
         CALL Sprite_Free(i)
     NEXT i
-    
+
     SpriteCount = 0
     SpriteSystemInitialized = 0
 END SUB
@@ -669,17 +669,17 @@ END SUB
 SUB SpriteCollisionCallback(BYVAL spriteA AS BYTE, BYVAL spriteB AS BYTE)
     ' Default behavior: bounce sprites off each other
     DIM tempVX AS INTEGER, tempVY AS INTEGER
-    
+
     ' Simple velocity exchange
     tempVX = Sprites(spriteA).VelocityX
     tempVY = Sprites(spriteA).VelocityY
-    
+
     Sprites(spriteA).VelocityX = Sprites(spriteB).VelocityX
     Sprites(spriteA).VelocityY = Sprites(spriteB).VelocityY
-    
+
     Sprites(spriteB).VelocityX = tempVX
     Sprites(spriteB).VelocityY = tempVY
-    
+
     ' Separate sprites to prevent sticking
     IF Sprites(spriteA).X < Sprites(spriteB).X THEN
         Sprites(spriteA).X = Sprites(spriteA).X - 1

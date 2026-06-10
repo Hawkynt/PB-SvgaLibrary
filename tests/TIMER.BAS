@@ -294,7 +294,7 @@ END SUB
 
 ' ==============================================================================
 ' Suite 7 — Timer_GetTimerFrequency
-' Bug: formula was 1820 \ IntervalTicks (100x too high); fixed to 18 \ IntervalTicks
+' frequency = 18 \ IntervalTicks (integer Hz of the 18.2 Hz system clock)
 ' ==============================================================================
 SUB Test_GetTimerFrequency_NotInstalledReturnsZero
     CALL Test_Case("Timer_GetTimerFrequency returns 0 when not installed")
@@ -307,7 +307,7 @@ SUB Test_GetTimerFrequency_OneTickInterval
     CALL ResetTimerState
     TimerInterrupt.IsInstalled = 1
     TimerInterrupt.IntervalTicks = 1
-    ' Fixed formula: 18 \ 1 = 18  (was 1820 -> 100x too high)
+    ' 18 \ 1 = 18
     CALL Assert_IsEqual(Timer_GetTimerFrequency, 18, "1 tick -> 18 Hz")
     TimerInterrupt.IsInstalled = 0
 END SUB
@@ -317,7 +317,7 @@ SUB Test_GetTimerFrequency_EighteenTickInterval
     CALL ResetTimerState
     TimerInterrupt.IsInstalled = 1
     TimerInterrupt.IntervalTicks = 18
-    ' Fixed formula: 18 \ 18 = 1  (was 1820 \ 18 = 101)
+    ' 18 \ 18 = 1
     CALL Assert_IsEqual(Timer_GetTimerFrequency, 1, "18 ticks -> 1 Hz")
     TimerInterrupt.IsInstalled = 0
 END SUB
@@ -327,7 +327,7 @@ SUB Test_GetTimerFrequency_NineTicks
     CALL ResetTimerState
     TimerInterrupt.IsInstalled = 1
     TimerInterrupt.IntervalTicks = 9
-    ' Fixed formula: 18 \ 9 = 2
+    ' 18 \ 9 = 2
     CALL Assert_IsEqual(Timer_GetTimerFrequency, 2, "9 ticks -> 2 Hz")
     TimerInterrupt.IsInstalled = 0
 END SUB

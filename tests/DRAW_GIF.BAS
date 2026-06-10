@@ -302,7 +302,7 @@ END SUB
 ' Given a valid 2x2 GIF87a (minCodeSize=3; pixels 0,1,2,3 top-left, top-right, bot-left, bot-right)
 ' When  DrawGif_Show("T.GIF", 10, 20) is called
 ' Then  screen pixels at (10,20)=0, (11,20)=1, (10,21)=2, (11,21)=3
-' Pixel values are colour indices (bug fixed: was using grayscale average)
+' Pixel values are colour indices
 ' =============================================================================
 SUB Test_Show_PixelIndices
     CALL Test_Case("Show renders correct palette indices for 2x2 GIF87a")

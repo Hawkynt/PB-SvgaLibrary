@@ -7,7 +7,7 @@ DIM zfptr AS SHARED DWORD
 ' Provides 10ms precision timing for animations and smooth graphics
 ' Uses system timer interrupt for accurate timing
 ' =============================================================================
-' Author: Hawkynt  
+' Author: Hawkynt
 ' License: LGPL 3.0
 ' =============================================================================
 
@@ -28,7 +28,7 @@ SUB Timer_Init
     TimerSystemContext.AnimTimer = 0
     TimerSystemContext.AnimDelay = 0
     TimerSystemContext.LastSystemTick = 0
-    
+
     ' Get initial system timer value
     DEF SEG = &H40
     TimerSystemContext.LastSystemTick = CVL(CHR$(PEEK(&H6C)) + CHR$(PEEK(&H6D)) + CHR$(PEEK(&H6E)) + CHR$(PEEK(&H6F)))
@@ -44,27 +44,27 @@ END SUB
 FUNCTION Timer_GetTimerTick AS LONG
     DIM CurrentSysTick AS LONG
     DIM TickDifference AS LONG
-    
+
     IF TimerSystemContext.IsInitialized = 0 THEN
         CALL Timer_Init
     END IF
-    
+
     ' Get current system timer
     DEF SEG = &H40
     CurrentSysTick = CVL(CHR$(PEEK(&H6C)) + CHR$(PEEK(&H6D)) + CHR$(PEEK(&H6E)) + CHR$(PEEK(&H6F)))
     DEF SEG
-    
+
     ' Calculate difference (handles midnight rollover)
     TickDifference = CurrentSysTick - TimerSystemContext.LastSystemTick
     IF TickDifference < 0 THEN
         TickDifference = TickDifference + 1573040  ' 24 hours in ticks
     END IF
-    
+
     ' Convert to 10ms ticks (18.2 Hz system clock = 54.9ms per tick)
     ' 54.9ms / 10ms = 5.49, so multiply by 549 and divide by 100
     TimerSystemContext.TickCount = TimerSystemContext.TickCount + (TickDifference * 549) \ 100
     TimerSystemContext.LastSystemTick = CurrentSysTick
-    
+
     Timer_GetTimerTick = TimerSystemContext.TickCount
 END FUNCTION
 
@@ -77,9 +77,9 @@ END FUNCTION
 ' =============================================================================
 SUB Timer_WaitTicks(BYVAL tickCount AS WORD)
     DIM StartTick AS LONG, CurrentTick AS LONG
-    
+
     IF TickCount = 0 THEN EXIT SUB
-    
+
     StartTick = Timer_GetTimerTick
     DO
         CurrentTick = Timer_GetTimerTick
@@ -106,12 +106,12 @@ END SUB
 ' =============================================================================
 FUNCTION Timer_AnimTimerReady AS BYTE
     DIM CurrentTick AS LONG
-    
+
     IF TimerSystemContext.AnimDelay = 0 THEN
         Timer_AnimTimerReady = 0
         EXIT FUNCTION
     END IF
-    
+
     CurrentTick = Timer_GetTimerTick
     IF CurrentTick >= TimerSystemContext.AnimTimer THEN
         ' Reset timer for next frame
@@ -151,7 +151,7 @@ END FUNCTION
 SUB Timer_Reset
     TimerSystemContext.TickCount = 0
     TimerSystemContext.AnimTimer = 0
-    
+
     ' Get current system timer
     DEF SEG = &H40
     TimerSystemContext.LastSystemTick = CVL(CHR$(PEEK(&H6C)) + CHR$(PEEK(&H6D)) + CHR$(PEEK(&H6E)) + CHR$(PEEK(&H6F)))
@@ -168,13 +168,13 @@ SUB Timer_Cleanup
     ' Disable interrupt timer if installed
     CALL Timer_OffTimer
     CALL Timer_Restore
-    
+
     ' Cleanup all named timers
     DIM I AS BYTE
     FOR I = 0 TO 7
         CALL Timer_Destroy(I)
     NEXT I
-    
+
     ' Reset context
     TimerSystemContext.IsInitialized = 0
     TimerSystemContext.TickCount = 0
@@ -197,7 +197,7 @@ END SUB
 ' =============================================================================
 SUB Timer_Create(BYVAL timerName AS BYTE, BYVAL delayTicks AS WORD)
     IF TimerName >= 8 THEN EXIT SUB
-    
+
     TimerSystemContext.NamedTimers(TimerName).DlyUnits = DelayTicks
     TimerSystemContext.NamedTimers(TimerName).NextTick = Timer_GetTimerTick + DelayTicks
     TimerSystemContext.NamedTimers(TimerName).Active = 1
@@ -211,17 +211,17 @@ END SUB
 ' =============================================================================
 FUNCTION Timer_IsTimerReady(BYVAL timerName AS BYTE) AS BYTE
     DIM CurrentTick AS LONG
-    
+
     IF TimerName >= 8 THEN
         Timer_IsTimerReady = 0
         EXIT FUNCTION
     END IF
-    
+
     IF TimerSystemContext.NamedTimers(TimerName).Active = 0 THEN
         Timer_IsTimerReady = 0
         EXIT FUNCTION
     END IF
-    
+
     CurrentTick = Timer_GetTimerTick
     IF CurrentTick >= TimerSystemContext.NamedTimers(TimerName).NextTick THEN
         ' Reset timer for next interval
@@ -240,7 +240,7 @@ END FUNCTION
 ' =============================================================================
 SUB Timer_Destroy(BYVAL timerName AS BYTE)
     IF TimerName >= 8 THEN EXIT SUB
-    
+
     TimerSystemContext.NamedTimers(TimerName).Active = 0
     TimerSystemContext.NamedTimers(TimerName).DlyUnits = 0
     TimerSystemContext.NamedTimers(TimerName).NextTick = 0
@@ -262,18 +262,18 @@ DIM TimerInterrupt AS SHARED TimerInterruptType
 ' =============================================================================
 FUNCTION Timer_OnTimer(BYVAL intervalMs AS WORD, BYVAL handlerRoutine AS DWORD) AS BYTE
     DIM InterruptMask AS BYTE
-    
+
     ' Remove existing timer if installed
     IF TimerInterrupt.IsInstalled THEN CALL Timer_OffTimer
-    
+
     ' Convert milliseconds to system timer ticks
     ' System timer runs at 18.2 Hz (54.945ms per tick)
     TimerInterrupt.IntervalTicks = (IntervalMS * 182) \ 10000
     IF TimerInterrupt.IntervalTicks = 0 THEN TimerInterrupt.IntervalTicks = 1
-    
+
     ' Store user routine address
     TimerInterrupt.UserRoutine = HandlerRoutine
-    
+
     ' Get current interrupt vector for INT 08h (timer)
     !PUSH ES
     !MOV AX, &H3508             ; Get interrupt vector service
@@ -282,10 +282,10 @@ FUNCTION Timer_OnTimer(BYVAL intervalMs AS WORD, BYVAL handlerRoutine AS DWORD) 
     !MOV zvSeg, ES
     !POP ES
     TimerInterrupt.OldVector = CVL(MKI$(zvOff) + MKI$(zvSeg))
-    
+
     ' Set our timer interrupt handler
     TimerInterrupt.HandlerAddress = CODEPTR(Timer_InterruptHandler)
-    
+
     zvOff = CVI(LEFT$(MKL$(TimerInterrupt.HandlerAddress), 2))
     zvSeg = CVI(RIGHT$(MKL$(TimerInterrupt.HandlerAddress), 2))
     !CLI                        ; Disable interrupts
@@ -296,7 +296,7 @@ FUNCTION Timer_OnTimer(BYVAL intervalMs AS WORD, BYVAL handlerRoutine AS DWORD) 
     !INT &H21                   ; DOS interrupt
     !POP DS
     !STI                        ; Re-enable interrupts
-    
+
     TimerInterrupt.IsInstalled = 1
     Timer_OnTimer = 1
 END FUNCTION
@@ -308,7 +308,7 @@ END FUNCTION
 ' =============================================================================
 SUB Timer_OffTimer
     IF TimerInterrupt.IsInstalled = 0 THEN EXIT SUB
-    
+
     ' Restore original interrupt vector
     zvOff = CVI(LEFT$(MKL$(TimerInterrupt.OldVector), 2))
     zvSeg = CVI(RIGHT$(MKL$(TimerInterrupt.OldVector), 2))
@@ -320,7 +320,7 @@ SUB Timer_OffTimer
     !INT &H21                   ; DOS interrupt
     !POP DS
     !STI                        ; Re-enable interrupts
-    
+
     TimerInterrupt.IsInstalled = 0
     TimerInterrupt.UserRoutine = 0
     TimerInterrupt.HandlerAddress = 0
@@ -334,14 +334,14 @@ END SUB
 ' Note: This is called by the system timer interrupt
 ' =============================================================================
 SUB Timer_InterruptHandler
-    
+
     ' Increment our tick counter
     TimerTickCounter = TimerTickCounter + 1
-    
+
     ' Check if it's time to call user routine
     IF TimerTickCounter >= TimerInterrupt.IntervalTicks THEN
         TimerTickCounter = 0
-        
+
         ' Call user routine if specified
         IF TimerInterrupt.UserRoutine <> 0 THEN
             !PUSH AX
@@ -353,11 +353,11 @@ SUB Timer_InterruptHandler
             !PUSH BP
             !PUSH DS
             !PUSH ES
-            
+
             ' Call user routine
             zfptr = TimerInterrupt.UserRoutine
             !CALL DWORD PTR zfptr
-            
+
             !POP ES
             !POP DS
             !POP BP
@@ -369,7 +369,7 @@ SUB Timer_InterruptHandler
             !POP AX
         END IF
     END IF
-    
+
     ' Chain to original timer interrupt
     !PUSHF                      ; Push flags to simulate INT call
     zfptr = TimerInterrupt.OldVector
@@ -383,7 +383,7 @@ END SUB
 ' Note: Uses 8086 instructions only (no PUSHAD/POPAD)
 ' =============================================================================
 SUB Timer_InterruptHandler8086
-    
+
     ' Save registers manually (8086 compatible)
     !PUSH AX
     !PUSH BX
@@ -393,21 +393,21 @@ SUB Timer_InterruptHandler8086
     !PUSH DI
     !PUSH DS
     !PUSH ES
-    
+
     ' Increment our tick counter
     TimerTickCounter = TimerTickCounter + 1
-    
+
     ' Check if it's time to call user routine
     IF TimerTickCounter >= TimerInterrupt.IntervalTicks THEN
         TimerTickCounter = 0
-        
+
         ' Call user routine if specified
         IF TimerInterrupt.UserRoutine <> 0 THEN
             zfptr = TimerInterrupt.UserRoutine
             !CALL DWORD PTR zfptr
         END IF
     END IF
-    
+
     ' Restore registers
     !POP ES
     !POP DS
@@ -417,7 +417,7 @@ SUB Timer_InterruptHandler8086
     !POP CX
     !POP BX
     !POP AX
-    
+
     ' Chain to original timer interrupt
     !PUSHF                      ; Push flags to simulate INT call
     zfptr = TimerInterrupt.OldVector
@@ -434,28 +434,28 @@ END SUB
 ' =============================================================================
 FUNCTION Timer_HrTimer(BYVAL frequencyHz AS WORD, BYVAL handlerRoutine AS DWORD) AS BYTE
     DIM CounterValue AS WORD
-    
+
     ' Remove existing timer
     IF TimerInterrupt.IsInstalled THEN CALL Timer_OffTimer
-    
+
     ' Calculate PIT counter value (1,193,180 Hz / desired frequency)
     CounterValue = 1193180 \ FrequencyHz
     IF CounterValue = 0 THEN CounterValue = 1
-    
+
     ' Program PIT channel 0 for square wave mode
     !MOV AL, &H36               ; Channel 0, LSB/MSB, square wave, binary
     !OUT &H43, AL               ; Write to mode register
-    
+
     ' Set counter value
     !MOV AX, CounterValue
     !OUT &H40, AL               ; LSB
     !MOV AL, AH
     !OUT &H40, AL               ; MSB
-    
+
     ' Install interrupt handler
     TimerInterrupt.UserRoutine = HandlerRoutine
     TimerInterrupt.IntervalTicks = 1  ' Every interrupt
-    
+
     ' Install INT 08h handler
     !PUSH ES
     !MOV AX, &H3508             ; Get interrupt vector
@@ -464,9 +464,9 @@ FUNCTION Timer_HrTimer(BYVAL frequencyHz AS WORD, BYVAL handlerRoutine AS DWORD)
     !MOV zvSeg, ES
     !POP ES
     TimerInterrupt.OldVector = CVL(MKI$(zvOff) + MKI$(zvSeg))
-    
+
     TimerInterrupt.HandlerAddress = CODEPTR(Timer_InterruptHandler8086)
-    
+
     zvOff = CVI(LEFT$(MKL$(TimerInterrupt.HandlerAddress), 2))
     zvSeg = CVI(RIGHT$(MKL$(TimerInterrupt.HandlerAddress), 2))
     !CLI
@@ -477,7 +477,7 @@ FUNCTION Timer_HrTimer(BYVAL frequencyHz AS WORD, BYVAL handlerRoutine AS DWORD)
     !INT &H21
     !POP DS
     !STI
-    
+
     TimerInterrupt.IsInstalled = 1
     Timer_HrTimer = 1
 END FUNCTION
@@ -491,7 +491,7 @@ END FUNCTION
 SUB Timer_Restore
     ' Remove our interrupt handler
     CALL Timer_OffTimer
-    
+
     ' Restore default PIT frequency (18.2 Hz)
     !MOV AL, &H36               ; Channel 0, LSB/MSB, square wave, binary
     !OUT &H43, AL
@@ -516,7 +516,7 @@ END FUNCTION
 
 ' =============================================================================
 ' Get timer interrupt frequency
-' Parameters: None  
+' Parameters: None
 ' Returns: Frequency in Hz (WORD)
 ' =============================================================================
 FUNCTION Timer_GetTimerFrequency AS WORD
@@ -537,11 +537,11 @@ END FUNCTION
 ' =============================================================================
 SUB Timer_SetPriority(BYVAL priority AS BYTE)
     DIM InterruptMask AS BYTE
-    
+
     ' Get current interrupt mask
     !IN AL, &H21                ; Read PIC mask register
     !MOV InterruptMask, AL
-    
+
     ' Modify timer interrupt bit (bit 0)
     IF Priority = 0 THEN
         ' Highest priority - enable timer interrupt
@@ -550,7 +550,7 @@ SUB Timer_SetPriority(BYVAL priority AS BYTE)
         ' Lower priority - disable timer interrupt temporarily
         InterruptMask = InterruptMask OR 1      ' Set bit 0
     END IF
-    
+
     ' Set new interrupt mask
     !MOV AL, InterruptMask
     !OUT &H21, AL               ; Write to PIC mask register

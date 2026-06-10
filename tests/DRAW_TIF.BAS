@@ -261,7 +261,7 @@ SUB Test_PackBits_RunLengthRepeat
 END SUB
 
 ' ---------------------------------------------------------------------------
-' DecompressPackBits — -128 (0x80) noop byte (bug fix verification)
+' DecompressPackBits — -128 (0x80) noop byte
 ' ---------------------------------------------------------------------------
 SUB Test_PackBits_NoopByte
     CALL Test_Case("DecompressPackBits treats 0x80 (-128) as a no-op per PackBits spec")
