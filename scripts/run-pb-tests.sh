@@ -30,21 +30,30 @@ command -v dosbox >/dev/null || { sudo apt-get update && sudo apt-get install -y
 
 rm -rf build && mkdir -p build
 cp ./*.SUB build/ 2>/dev/null || true
-cp tests/*.bas build/ 2>/dev/null || true
 cp pb/* build/
+# Copy each test to a short 8.3 name (T1.BAS, T2.BAS, ...) - DOSBox mangles long
+# names like test_mode16.bas, so PBC can't find them by their long name. Keep a
+# map so the log still shows the real test name.
+i=0; : > build/TESTMAP.txt
+for t in tests/*.bas; do
+  [ -e "$t" ] || continue
+  i=$((i+1)); cp "$t" "build/T$i.BAS"; echo "T$i.BAS  $(basename "$t")" >> build/TESTMAP.txt
+done
+echo "=== test map ==="; cat build/TESTMAP.txt
 
 # One DOSBox session: compile each test to .EXE, then run it (writes UNITTEST.LOG).
 {
-  echo "[sdl]"; echo "output=surface"
+  echo "[cpu]"; echo "core=dynamic"; echo "cycles=max"   # fast compiles; no [sdl] output=surface (it makes the dummy-video headless DOSBox bail before running anything)
   echo "[autoexec]"
   echo "mount c \"$(pwd)/build\""
   echo "c:"
-  for t in build/*.bas; do
+  n=0
+  for t in tests/*.bas; do
     [ -e "$t" ] || continue
-    n=$(basename "$t"); base=$(echo "${n%.*}" | tr 'a-z' 'A-Z')
-    echo "echo === compiling $n === >> PBCOUT.TXT"
-    echo "PBC.EXE -FNPX -G386 -ODV -OZF+ -CE -ES -EB -LB -LG $n >> PBCOUT.TXT"
-    echo "$base.EXE"
+    n=$((n+1))
+    echo "echo === compiling $(basename "$t") (T$n.BAS) === >> PBCOUT.TXT"
+    echo "PBC.EXE -FNPX -G386 -ODV -OZF+ -CE -ES -EB -LB -LG T$n.BAS >> PBCOUT.TXT"
+    echo "T$n.EXE"
   done
   echo "EXIT"
 } > build/dosbox.conf
