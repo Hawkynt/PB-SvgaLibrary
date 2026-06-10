@@ -619,3 +619,6 @@ SUB Svga_FillCircleGeneric(centerX AS WORD, centerY AS WORD, radius AS WORD, col
         CALL Svga_HLine(centerX - X, centerX + X, centerY - Y, colorVal)
     END IF
 END SUB
+$INCLUDE "TRIANGLE.SUB"   ' Triangle rasteriser (outline/filled/textured)
+$INCLUDE "FLOOD.SUB"      ' Scanline flood fill (bounded memory)
+$INCLUDE "TEXTURE.SUB"    ' Textured rectangles and circles

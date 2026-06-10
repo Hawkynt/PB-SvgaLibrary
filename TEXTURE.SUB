@@ -1,0 +1,137 @@
+' =============================================================================
+' TEXTURE.SUB - Textured Primitive Drawing Functions
+' =============================================================================
+' Fills rectangles and circles by tiling a palette-indexed texture string.
+' Texture data is stored row-major: offset = v * texW + u (0-based, 1-indexed
+' in MID$ by adding 1). transparentIdx = -1 disables transparency.
+' =============================================================================
+
+' Per-row half-span scratch for TexCircle (clamped to r <= 600).
+DIM TexCircleSpans(0 TO 600) AS SHARED WORD
+
+' =============================================================================
+' Fill a rectangle with a tiled texture.
+' Parameters:
+'   x1, y1 - Top-left corner (BYVAL)
+'   x2, y2 - Bottom-right corner (BYVAL)
+'   texData - Palette-index bytes, row-major (texW * texH)
+'   texW, texH - Texture dimensions (BYVAL)
+'   transparentIdx - Color index to skip (-1 = fully opaque) (BYVAL)
+' =============================================================================
+SUB Graphics_TexRect (BYVAL x1 AS WORD, BYVAL y1 AS WORD, BYVAL x2 AS WORD, BYVAL y2 AS WORD, texData AS STRING, BYVAL texW AS WORD, BYVAL texH AS WORD, BYVAL transparentIdx AS INTEGER)
+    DIM x AS WORD, y AS WORD
+    DIM u AS WORD, v AS WORD
+    DIM rowBase AS WORD
+    DIM colorIdx AS BYTE
+    DIM colorTemp AS INTEGER
+
+    IF y2 < y1 THEN SWAP y1, y2
+    IF x2 < x1 THEN SWAP x1, x2
+
+    v = (y1 - y1) MOD texH          ' always 0 for the first row; v advances below
+    v = 0
+    FOR y = y1 TO y2
+        rowBase = v * texW
+        u = 0
+        FOR x = x1 TO x2
+            colorIdx = ASC(MID$(texData, rowBase + u + 1, 1))
+            IF transparentIdx = -1 THEN
+                CALL Svga_PutPixel(x, y, colorIdx)
+            ELSE
+                colorTemp = colorIdx
+                IF colorTemp <> transparentIdx THEN
+                    CALL Svga_PutPixel(x, y, colorIdx)
+                END IF
+            END IF
+            u = u + 1
+            IF u = texW THEN u = 0
+        NEXT x
+        v = v + 1
+        IF v = texH THEN v = 0
+    NEXT y
+END SUB
+
+' =============================================================================
+' Fill a circle with a tiled texture.
+' Parameters:
+'   cx, cy - Centre coordinates (BYVAL)
+'   r      - Radius (BYVAL, clamped to 600)
+'   texData - Palette-index bytes, row-major (texW * texH)
+'   texW, texH - Texture dimensions (BYVAL)
+'   transparentIdx - Color index to skip (-1 = fully opaque) (BYVAL)
+' Texture is anchored to the bounding box: u = x-(cx-r), v = y-(cy-r).
+' =============================================================================
+SUB Graphics_TexCircle (BYVAL cx AS WORD, BYVAL cy AS WORD, BYVAL r AS WORD, texData AS STRING, BYVAL texW AS WORD, BYVAL texH AS WORD, BYVAL transparentIdx AS INTEGER)
+    DIM rr AS LONG, xx AS LONG, xxsq AS LONG, dysq AS LONG
+    DIM dy AS INTEGER, row AS INTEGER
+    DIM halfw AS WORD
+    DIM x AS WORD, y AS WORD
+    DIM u AS WORD, v AS WORD, uStart AS WORD
+    DIM rowBase AS WORD
+    DIM colorIdx AS BYTE
+    DIM colorTemp AS INTEGER
+    DIM bbLeft AS WORD, bbTop AS WORD
+    DIM spanX1 AS WORD, spanX2 AS WORD
+
+    IF r > 600 THEN r = 600
+
+    ' Pass 1: build integer half-span table (incremental squares, no FPU).
+    ' Mirrors the FillCircle algorithm in VESAOPT.TEMPLATE.BAS.
+    rr = r : rr = rr * rr
+    xx = r : xxsq = rr : dysq = 0
+    FOR dy = 0 TO r
+        DO WHILE xxsq + dysq > rr
+            xxsq = xxsq - xx - xx + 1
+            xx = xx - 1
+        LOOP
+        TexCircleSpans(dy) = xx
+        dysq = dysq + dy + dy + 1
+    NEXT dy
+
+    ' Bounding-box anchor for texture coordinates.
+    ' Guard against WORD underflow when cx < r.
+    IF cx >= r THEN
+        bbLeft = cx - r
+    ELSE
+        bbLeft = 0
+    END IF
+    IF cy >= r THEN
+        bbTop = cy - r
+    ELSE
+        bbTop = 0
+    END IF
+
+    ' Pass 2: sweep rows top to bottom, plot only pixels inside dx^2+dy^2 <= r^2.
+    FOR row = -r TO r
+        dy = row : IF dy < 0 THEN dy = -dy
+        halfw = TexCircleSpans(dy)
+
+        y = cy + row
+
+        ' Compute texture v for this row.
+        v = (y - bbTop) MOD texH
+        rowBase = v * texW
+
+        ' Span in X.
+        spanX1 = cx - halfw
+        spanX2 = cx + halfw
+
+        ' Starting u for the leftmost pixel of this span.
+        uStart = (spanX1 - bbLeft) MOD texW
+
+        u = uStart
+        FOR x = spanX1 TO spanX2
+            colorIdx = ASC(MID$(texData, rowBase + u + 1, 1))
+            IF transparentIdx = -1 THEN
+                CALL Svga_PutPixel(x, y, colorIdx)
+            ELSE
+                colorTemp = colorIdx
+                IF colorTemp <> transparentIdx THEN
+                    CALL Svga_PutPixel(x, y, colorIdx)
+                END IF
+            END IF
+            u = u + 1
+            IF u = texW THEN u = 0
+        NEXT x
+    NEXT row
+END SUB

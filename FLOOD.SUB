@@ -1,0 +1,139 @@
+' =============================================================================
+' FLOOD.SUB - Scanline Flood Fill
+' =============================================================================
+' Boundary-safe iterative flood fill using an explicit span stack.
+' No recursion; bounded memory: at most 512 stack entries (one per span).
+' =============================================================================
+
+' --- module-level span stack (SHARED: PB 3.5 local arrays are segment-limited) ---
+' 512 entries handle any single-connected region in a 1600x1200 frame because
+' the scanline algorithm pushes exactly one entry per contiguous span edge found,
+' never one per pixel.
+DIM FloodStackX(0 TO 511) AS SHARED WORD
+DIM FloodStackY(0 TO 511) AS SHARED WORD
+DIM FloodStackTop         AS SHARED INTEGER   ' index of next free slot (0 = empty)
+DIM FloodDropCount        AS SHARED INTEGER   ' pushes silently dropped when stack full
+
+' =============================================================================
+' Flood fill the connected region containing (x, y) with fillColor.
+' Parameters:
+'   x, y      - Seed coordinates (BYVAL)
+'   fillColor - Replacement colour (BYVAL)
+' Returns: Nothing
+' Invariant: if the pixel at (x, y) already equals fillColor the call is a
+'            safe no-op; this also prevents the degenerate infinite-fill loop.
+' =============================================================================
+SUB Graphics_FloodFill (BYVAL x AS WORD, BYVAL y AS WORD, BYVAL fillColor AS BYTE)
+    DIM targetColor AS BYTE
+    DIM px AS INTEGER, py AS INTEGER
+    DIM spanL AS INTEGER, spanR AS INTEGER
+    DIM nx AS INTEGER
+    DIM c AS BYTE
+    DIM wx AS WORD, wy AS WORD, wc AS BYTE
+    DIM maxX AS INTEGER, maxY AS INTEGER
+
+    maxX = SVGAScreenContext.XRes - 1
+    maxY = SVGAScreenContext.YRes - 1
+
+    ' Guard: seed outside screen
+    IF x > maxX OR y > maxY THEN EXIT SUB
+
+    targetColor = Svga_GetPixel(x, y)
+    IF targetColor = fillColor THEN EXIT SUB   ' already the right colour — nothing to do
+
+    ' Initialise stack
+    FloodStackTop = 0
+    FloodDropCount = 0
+
+    ' Push seed
+    FloodStackX(0) = x
+    FloodStackY(0) = y
+    FloodStackTop = 1
+
+    DO WHILE FloodStackTop > 0
+        ' Pop
+        FloodStackTop = FloodStackTop - 1
+        px = FloodStackX(FloodStackTop)
+        py = FloodStackY(FloodStackTop)
+
+        ' The popped pixel may already have been painted by an earlier span
+        ' that covered this position — skip if so.
+        wx = px : wy = py
+        IF Svga_GetPixel(wx, wy) <> targetColor THEN
+            ' already filled or a boundary — move on
+        ELSE
+            ' ---- expand left from seed ----
+            ' Walk left while in bounds and pixel matches targetColor.
+            ' px is INTEGER so px-1 never wraps; guard py from WORD domain.
+            spanL = px
+            DO WHILE spanL > 0
+                wx = spanL - 1 : wy = py
+                IF Svga_GetPixel(wx, wy) <> targetColor THEN EXIT DO
+                spanL = spanL - 1
+            LOOP
+
+            ' ---- expand right from seed ----
+            spanR = px
+            DO WHILE spanR < maxX
+                wx = spanR + 1 : wy = py
+                IF Svga_GetPixel(wx, wy) <> targetColor THEN EXIT DO
+                spanR = spanR + 1
+            LOOP
+
+            ' ---- fill the entire horizontal span in one call ----
+            DIM wxR AS WORD
+            wx = spanL : wxR = spanR : wy = py : wc = fillColor
+            CALL Svga_HLine(wx, wxR, wy, wc)
+
+            ' ---- scan the row above for new spans to push ----
+            IF py > 0 THEN
+                nx = spanL
+                DO WHILE nx <= spanR
+                    wx = nx : wy = py - 1
+                    c = Svga_GetPixel(wx, wy)
+                    IF c = targetColor THEN
+                        ' start of a new contiguous run — push it
+                        IF FloodStackTop < 512 THEN
+                            FloodStackX(FloodStackTop) = nx
+                            FloodStackY(FloodStackTop) = py - 1
+                            FloodStackTop = FloodStackTop + 1
+                        ELSE
+                            FloodDropCount = FloodDropCount + 1
+                        END IF
+                        ' skip the rest of this run so we do not push duplicates
+                        DO WHILE nx < spanR
+                            nx = nx + 1
+                            wx = nx : wy = py - 1
+                            IF Svga_GetPixel(wx, wy) <> targetColor THEN EXIT DO
+                        LOOP
+                    END IF
+                    nx = nx + 1
+                LOOP
+            END IF
+
+            ' ---- scan the row below for new spans to push ----
+            IF py < maxY THEN
+                nx = spanL
+                DO WHILE nx <= spanR
+                    wx = nx : wy = py + 1
+                    c = Svga_GetPixel(wx, wy)
+                    IF c = targetColor THEN
+                        IF FloodStackTop < 512 THEN
+                            FloodStackX(FloodStackTop) = nx
+                            FloodStackY(FloodStackTop) = py + 1
+                            FloodStackTop = FloodStackTop + 1
+                        ELSE
+                            FloodDropCount = FloodDropCount + 1
+                        END IF
+                        DO WHILE nx < spanR
+                            nx = nx + 1
+                            wx = nx : wy = py + 1
+                            IF Svga_GetPixel(wx, wy) <> targetColor THEN EXIT DO
+                        LOOP
+                    END IF
+                    nx = nx + 1
+                LOOP
+            END IF
+        END IF
+    LOOP
+END SUB

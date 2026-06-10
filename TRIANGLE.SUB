@@ -1,0 +1,362 @@
+' =============================================================================
+' TRIANGLE.SUB - Triangle Rasterization Functions
+' =============================================================================
+' Provides wireframe, filled, and affine-textured triangle rendering.
+' All rasterization is integer-only with 16.16 fixed-point edge walking.
+' =============================================================================
+
+' =============================================================================
+' Draw a triangle outline via three line segments
+' Parameters:
+'   x1, y1 - First vertex (BYVAL)
+'   x2, y2 - Second vertex (BYVAL)
+'   x3, y3 - Third vertex (BYVAL)
+'   colorVal - Line colour (BYVAL)
+' Returns: Nothing
+' =============================================================================
+SUB Graphics_DrawTriangle (BYVAL x1 AS WORD, BYVAL y1 AS WORD, BYVAL x2 AS WORD, BYVAL y2 AS WORD, BYVAL x3 AS WORD, BYVAL y3 AS WORD, BYVAL colorVal AS BYTE)
+    CALL Svga_LineDraw(x1, y1, x2, y2, colorVal)
+    CALL Svga_LineDraw(x2, y2, x3, y3, colorVal)
+    CALL Svga_LineDraw(x3, y3, x1, y1, colorVal)
+END SUB
+
+' =============================================================================
+' Draw a solid filled triangle using 16.16 fixed-point edge walking.
+' Vertices are sorted by Y so the rasterizer always walks top-to-bottom.
+' A general triangle is split at the middle vertex into a flat-bottom half
+' and a flat-top half; each half requires only two active edges.
+' Slope (dx per scanline) is stored as a signed LONG in 16.16 format:
+'   slope = (dx SHL 16) \ dy   (integer division; dy<>0 is guaranteed)
+' The integer X position per scanline is (accumulator SHR 16).
+' Parameters:
+'   x1, y1 - First vertex (BYVAL)
+'   x2, y2 - Second vertex (BYVAL)
+'   x3, y3 - Third vertex (BYVAL)
+'   colorVal - Fill colour (BYVAL)
+' Returns: Nothing
+' =============================================================================
+SUB Graphics_FillTriangle (BYVAL x1 AS WORD, BYVAL y1 AS WORD, BYVAL x2 AS WORD, BYVAL y2 AS WORD, BYVAL x3 AS WORD, BYVAL y3 AS WORD, BYVAL colorVal AS BYTE)
+    ' Use signed INTEGER/LONG locals for all arithmetic to avoid WORD underflow.
+    DIM ax AS INTEGER, ay AS INTEGER
+    DIM bx AS INTEGER, by AS INTEGER
+    DIM cx AS INTEGER, cy AS INTEGER
+    DIM tmp AS INTEGER
+    DIM scanY AS INTEGER
+    DIM lx AS LONG, rx AS LONG
+    DIM lSlope AS LONG, rSlope AS LONG
+    DIM dy AS INTEGER, dx AS LONG
+    DIM lxi AS INTEGER, rxi AS INTEGER
+    DIM midX AS INTEGER
+    DIM hx1 AS WORD, hx2 AS WORD, hy AS WORD
+
+    ax = x1 : ay = y1
+    bx = x2 : by = y2
+    cx = x3 : cy = y3
+
+    ' Sort vertices by Y: ay <= by <= cy
+    IF by < ay THEN
+        tmp = ax : ax = bx : bx = tmp
+        tmp = ay : ay = by : by = tmp
+    END IF
+    IF cy < ay THEN
+        tmp = ax : ax = cx : cx = tmp
+        tmp = ay : ay = cy : cy = tmp
+    END IF
+    IF cy < by THEN
+        tmp = bx : bx = cx : cx = tmp
+        tmp = by : by = cy : cy = tmp
+    END IF
+
+    ' Degenerate: single point or flat line -> draw one HLine and exit
+    IF cy = ay THEN
+        ' All three on the same scanline
+        lxi = ax : IF bx < lxi THEN lxi = bx : IF cx < lxi THEN lxi = cx
+        rxi = ax : IF bx > rxi THEN rxi = bx : IF cx > rxi THEN rxi = cx
+        hx1 = lxi : hx2 = rxi : hy = ay
+        CALL Svga_HLine(hx1, hx2, hy, colorVal)
+        EXIT SUB
+    END IF
+
+    ' -------------------------------------------------------------------------
+    ' Flat-bottom half: top vertex (ax,ay) to bottom edge (bx,by)
+    '   left edge: A->B,   right edge: A->C (the long edge)
+    ' -------------------------------------------------------------------------
+    IF by > ay THEN
+        dy = by - ay
+        dx = bx - ax : SHIFT LEFT dx, 16 : lSlope = dx \ dy
+        dy = cy - ay
+        dx = cx - ax : SHIFT LEFT dx, 16 : rSlope = dx \ dy
+        lx = ax : SHIFT LEFT lx, 16
+        rx = ax : SHIFT LEFT rx, 16
+        ' Ensure left is actually on the left
+        IF lSlope > rSlope THEN
+            tmp = 0
+            dx = lSlope : lSlope = rSlope : rSlope = dx   ' swap LONGs via dx
+        END IF
+        FOR scanY = ay TO by - 1
+            lxi = lx \ 65536& : rxi = rx \ 65536&
+            hx1 = lxi : hx2 = rxi : hy = scanY
+            CALL Svga_HLine(hx1, hx2, hy, colorVal)
+            lx = lx + lSlope
+            rx = rx + rSlope
+        NEXT scanY
+    END IF
+
+    ' -------------------------------------------------------------------------
+    ' Flat-top half: from scanline by down to cy
+    '   left edge: B->C,   right edge: A->C (long edge, continue accumulator)
+    ' -------------------------------------------------------------------------
+    IF cy > by THEN
+        ' Recompute the long-edge accumulator position at y=by
+        dy = cy - ay
+        dx = cx - ax : SHIFT LEFT dx, 16 : rSlope = dx \ dy
+        rx = ax : SHIFT LEFT rx, 16
+        rx = rx + rSlope * (by - ay)
+
+        dy = cy - by
+        dx = cx - bx : SHIFT LEFT dx, 16 : lSlope = dx \ dy
+        lx = bx : SHIFT LEFT lx, 16
+
+        ' Ensure left is on the left for this half too
+        lxi = lx \ 65536&
+        rxi = rx \ 65536&
+        IF lxi > rxi THEN
+            ' swap the two accumulators and slopes
+            dx = lx : lx = rx : rx = dx
+            dx = lSlope : lSlope = rSlope : rSlope = dx
+        END IF
+
+        FOR scanY = by TO cy
+            lxi = lx \ 65536& : rxi = rx \ 65536&
+            hx1 = lxi : hx2 = rxi : hy = scanY
+            CALL Svga_HLine(hx1, hx2, hy, colorVal)
+            lx = lx + lSlope
+            rx = rx + rSlope
+        NEXT scanY
+    ELSE
+        ' Flat-bottom triangle: draw the last scanline (by = cy)
+        lxi = bx : rxi = cx
+        IF lxi > rxi THEN tmp = lxi : lxi = rxi : rxi = tmp
+        hx1 = lxi : hx2 = rxi : hy = by
+        CALL Svga_HLine(hx1, hx2, hy, colorVal)
+    END IF
+END SUB
+
+' =============================================================================
+' Draw an affine-textured triangle.
+' U,V texture coordinates are interpolated down the edges in 16.16 fixed point.
+' Per scanline, du and dv per pixel are computed once (one division per scanline
+' pair involving a span width > 0); pixels are then plotted with Svga_PutPixel,
+' skipping texels equal to transparentIdx.
+' Texel fetch: ASC(MID$(texData, (vInt * texW) + xInt + 1, 1))
+' Row base (vInt * texW + 1) is recomputed only when vInt changes.
+' Parameters:
+'   x1, y1, u1, v1 - First vertex position and UV (BYVAL)
+'   x2, y2, u2, v2 - Second vertex position and UV (BYVAL)
+'   x3, y3, u3, v3 - Third vertex position and UV (BYVAL)
+'   texData - Raw texture byte string, row-major (passed by reference)
+'   texW    - Texture width in texels (BYVAL)
+'   texH    - Texture height in texels (BYVAL)
+'   transparentIdx - Colour index to skip (-1 = draw all) (BYVAL)
+' Returns: Nothing
+' =============================================================================
+SUB Graphics_TexTriangle (BYVAL x1 AS WORD, BYVAL y1 AS WORD, BYVAL u1 AS WORD, BYVAL v1 AS WORD, _
+                          BYVAL x2 AS WORD, BYVAL y2 AS WORD, BYVAL u2 AS WORD, BYVAL v2 AS WORD, _
+                          BYVAL x3 AS WORD, BYVAL y3 AS WORD, BYVAL u3 AS WORD, BYVAL v3 AS WORD, _
+                          texData AS STRING, BYVAL texW AS WORD, BYVAL texH AS WORD, BYVAL transparentIdx AS INTEGER)
+    DIM ax AS INTEGER, ay AS INTEGER, au AS INTEGER, av AS INTEGER
+    DIM bx AS INTEGER, by AS INTEGER, bu AS INTEGER, bv AS INTEGER
+    DIM cx AS INTEGER, cy AS INTEGER, cu AS INTEGER, cv AS INTEGER
+    DIM tmp AS INTEGER
+    DIM scanY AS INTEGER
+    DIM lx AS LONG, rx AS LONG
+    DIM lu AS LONG, ru AS LONG
+    DIM lv AS LONG, rv AS LONG
+    DIM lxSlope AS LONG, rxSlope AS LONG
+    DIM luSlope AS LONG, ruSlope AS LONG
+    DIM lvSlope AS LONG, rvSlope AS LONG
+    DIM dy AS INTEGER, dx AS LONG
+    DIM lxi AS INTEGER, rxi AS INTEGER
+    DIM uAcc AS LONG, vAcc AS LONG
+    DIM duStep AS LONG, dvStep AS LONG
+    DIM spanW AS INTEGER
+    DIM uInt AS INTEGER, vInt AS INTEGER
+    DIM rowBase AS INTEGER
+    DIM prevV AS INTEGER
+    DIM texel AS INTEGER
+    DIM px AS WORD, py AS WORD, pc AS BYTE
+
+    ax = x1 : ay = y1 : au = u1 : av = v1
+    bx = x2 : by = y2 : bu = u2 : bv = v2
+    cx = x3 : cy = y3 : cu = u3 : cv = v3
+
+    ' Sort by Y: ay <= by <= cy, keeping U,V paired with X,Y
+    IF by < ay THEN
+        tmp = ax : ax = bx : bx = tmp
+        tmp = ay : ay = by : by = tmp
+        tmp = au : au = bu : bu = tmp
+        tmp = av : av = bv : bv = tmp
+    END IF
+    IF cy < ay THEN
+        tmp = ax : ax = cx : cx = tmp
+        tmp = ay : ay = cy : cy = tmp
+        tmp = au : au = cu : cu = tmp
+        tmp = av : av = cv : cv = tmp
+    END IF
+    IF cy < by THEN
+        tmp = bx : bx = cx : cx = tmp
+        tmp = by : by = cy : cy = tmp
+        tmp = bu : bu = cu : cu = tmp
+        tmp = bv : bv = cv : cv = tmp
+    END IF
+
+    IF cy = ay THEN EXIT SUB    ' Zero-height triangle: skip
+
+    ' Helper macro: compute slopes for A->B and A->C (long edge)
+    ' Flat-bottom half: ay..by-1
+    IF by > ay THEN
+        dy = by - ay
+        dx = bx - ax : SHIFT LEFT dx, 16 : lxSlope = dx \ dy
+        dx = bu - au : SHIFT LEFT dx, 16 : luSlope = dx \ dy
+        dx = bv - av : SHIFT LEFT dx, 16 : lvSlope = dx \ dy
+
+        dy = cy - ay
+        dx = cx - ax : SHIFT LEFT dx, 16 : rxSlope = dx \ dy
+        dx = cu - au : SHIFT LEFT dx, 16 : ruSlope = dx \ dy
+        dx = cv - av : SHIFT LEFT dx, 16 : rvSlope = dx \ dy
+
+        lx = ax : SHIFT LEFT lx, 16
+        rx = lx
+        lu = au : SHIFT LEFT lu, 16
+        ru = lu
+        lv = av : SHIFT LEFT lv, 16
+        rv = lv
+
+        ' Ensure left edge is on left
+        lxi = lx \ 65536& : rxi = rx \ 65536&
+        IF lxSlope > rxSlope THEN
+            dx = lxSlope : lxSlope = rxSlope : rxSlope = dx
+            dx = luSlope : luSlope = ruSlope : ruSlope = dx
+            dx = lvSlope : lvSlope = rvSlope : rvSlope = dx
+            dx = lu : lu = ru : ru = dx
+            dx = lv : lv = rv : rv = dx
+        END IF
+
+        prevV = -1
+        rowBase = 0
+        FOR scanY = ay TO by - 1
+            lxi = lx \ 65536& : rxi = rx \ 65536&
+            spanW = rxi - lxi
+            IF spanW >= 0 THEN
+                IF spanW > 0 THEN
+                    duStep = (ru - lu) \ spanW
+                    dvStep = (rv - lv) \ spanW
+                ELSE
+                    duStep = 0 : dvStep = 0
+                END IF
+                uAcc = lu : vAcc = lv
+                DIM xi AS INTEGER
+                FOR xi = lxi TO rxi
+                    uInt = uAcc \ 65536&
+                    vInt = vAcc \ 65536&
+                    IF uInt < 0 THEN uInt = 0
+                    IF vInt < 0 THEN vInt = 0
+                    IF uInt >= texW THEN uInt = texW - 1
+                    IF vInt >= texH THEN vInt = texH - 1
+                    IF vInt <> prevV THEN
+                        rowBase = vInt * texW
+                        prevV = vInt
+                    END IF
+                    texel = ASC(MID$(texData, rowBase + uInt + 1, 1))
+                    IF texel <> transparentIdx THEN
+                        px = xi : py = scanY : pc = texel
+                        CALL Svga_PutPixel(px, py, pc)
+                    END IF
+                    uAcc = uAcc + duStep
+                    vAcc = vAcc + dvStep
+                NEXT xi
+            END IF
+            lx = lx + lxSlope : rx = rx + rxSlope
+            lu = lu + luSlope : ru = ru + ruSlope
+            lv = lv + lvSlope : rv = rv + rvSlope
+        NEXT scanY
+    END IF
+
+    ' Flat-top half: by..cy
+    IF cy >= by THEN
+        ' Long edge A->C: recompute accumulator at y=by
+        dy = cy - ay
+        dx = cx - ax : SHIFT LEFT dx, 16 : rxSlope = dx \ dy
+        dx = cu - au : SHIFT LEFT dx, 16 : ruSlope = dx \ dy
+        dx = cv - av : SHIFT LEFT dx, 16 : rvSlope = dx \ dy
+        rx = ax : SHIFT LEFT rx, 16
+        ru = au : SHIFT LEFT ru, 16
+        rv = av : SHIFT LEFT rv, 16
+        rx = rx + rxSlope * (by - ay)
+        ru = ru + ruSlope * (by - ay)
+        rv = rv + rvSlope * (by - ay)
+
+        ' Short edge B->C
+        IF cy > by THEN
+            dy = cy - by
+            dx = cx - bx : SHIFT LEFT dx, 16 : lxSlope = dx \ dy
+            dx = cu - bu : SHIFT LEFT dx, 16 : luSlope = dx \ dy
+            dx = cv - bv : SHIFT LEFT dx, 16 : lvSlope = dx \ dy
+        ELSE
+            lxSlope = 0 : luSlope = 0 : lvSlope = 0
+        END IF
+        lx = bx : SHIFT LEFT lx, 16
+        lu = bu : SHIFT LEFT lu, 16
+        lv = bv : SHIFT LEFT lv, 16
+
+        ' Ensure left/right orientation
+        lxi = lx \ 65536& : rxi = rx \ 65536&
+        IF lxi > rxi THEN
+            dx = lx : lx = rx : rx = dx
+            dx = lu : lu = ru : ru = dx
+            dx = lv : lv = rv : rv = dx
+            dx = lxSlope : lxSlope = rxSlope : rxSlope = dx
+            dx = luSlope : luSlope = ruSlope : ruSlope = dx
+            dx = lvSlope : lvSlope = rvSlope : rvSlope = dx
+        END IF
+
+        prevV = -1
+        rowBase = 0
+        DIM xi2 AS INTEGER
+        FOR scanY = by TO cy
+            lxi = lx \ 65536& : rxi = rx \ 65536&
+            spanW = rxi - lxi
+            IF spanW >= 0 THEN
+                IF spanW > 0 THEN
+                    duStep = (ru - lu) \ spanW
+                    dvStep = (rv - lv) \ spanW
+                ELSE
+                    duStep = 0 : dvStep = 0
+                END IF
+                uAcc = lu : vAcc = lv
+                FOR xi2 = lxi TO rxi
+                    uInt = uAcc \ 65536&
+                    vInt = vAcc \ 65536&
+                    IF uInt < 0 THEN uInt = 0
+                    IF vInt < 0 THEN vInt = 0
+                    IF uInt >= texW THEN uInt = texW - 1
+                    IF vInt >= texH THEN vInt = texH - 1
+                    IF vInt <> prevV THEN
+                        rowBase = vInt * texW
+                        prevV = vInt
+                    END IF
+                    texel = ASC(MID$(texData, rowBase + uInt + 1, 1))
+                    IF texel <> transparentIdx THEN
+                        px = xi2 : py = scanY : pc = texel
+                        CALL Svga_PutPixel(px, py, pc)
+                    END IF
+                    uAcc = uAcc + duStep
+                    vAcc = vAcc + dvStep
+                NEXT xi2
+            END IF
+            lx = lx + lxSlope : rx = rx + rxSlope
+            lu = lu + luSlope : ru = ru + ruSlope
+            lv = lv + lvSlope : rv = rv + rvSlope
+        NEXT scanY
+    END IF
+END SUB
