@@ -68,9 +68,20 @@ for l in glob_lines:
     if arr: continue
     iface_globals.append((name, 'DIM %s AS %s' % (name, typ)))
 
+def logical_lines(text):
+    # join trailing-underscore continuation lines so multi-line headers scan whole
+    out, buf = [], ''
+    for line in text.replace('\r\n', '\n').split('\n'):
+        if line.rstrip().endswith('_'):
+            buf += line.rstrip()[:-1]
+            continue
+        out.append(buf + line)
+        buf = ''
+    return out
+
 defs = {}
 for m in modules:
-    for line in RAW[m].split('\r\n'):
+    for line in logical_lines(RAW[m]):
         mm = re.match(r'^(SUB|FUNCTION)\s+([A-Za-z_0-9]+)\s*(\([^\r\n]*\))?(\s+AS\s+[A-Za-z_0-9]+)?\s*$', line)
         if mm: defs[mm.group(2)] = (mm.group(1), bool(mm.group(3)), mm.group(3) or '', (mm.group(4) or '').strip(), m)
 # no-param procs can't be DECLAREd (Error 426) and can't be called cross-unit
@@ -82,11 +93,26 @@ for m in modules:
 DUMMY = set(n for n, (k, hp, p, r, dm) in defs.items() if not hp and n not in codeptr)
 DUMMYARG = '(BYVAL pbLink AS INTEGER)'
 
+def wrap_decl(d):
+    # PB 3.5 caps source lines around 250 chars: wrap long DECLAREs with _
+    if len(d) <= 230:
+        return d
+    parts = d.split(', ')
+    lines, cur = [], parts[0]
+    for part in parts[1:]:
+        if len(cur) + len(part) + 2 > 220:
+            lines.append(cur + ', _')
+            cur = '    ' + part
+        else:
+            cur += ', ' + part
+    lines.append(cur)
+    return '\r\n'.join(lines)
+
 declares = []
 for n, (k, hp, p, r, dm) in sorted(defs.items()):
     if not hp and n not in DUMMY: continue
     pp = p if hp else DUMMYARG
-    declares.append('DECLARE SUB %s%s' % (n, pp) if k == 'SUB' else 'DECLARE FUNCTION %s%s %s' % (n, pp, r))
+    declares.append(wrap_decl('DECLARE SUB %s%s' % (n, pp) if k == 'SUB' else 'DECLARE FUNCTION %s%s %s' % (n, pp, r)))
 
 wr('SVGATYPE.BI', '\r\n'.join(const_lines) + '\r\n\r\n' + '\r\n\r\n'.join(type_blocks) + '\r\n')
 wr('SVGADECL.BI', '\r\n'.join(declares) + '\r\n')
@@ -105,21 +131,35 @@ def apply_dummy(body):
     return body
 
 def mark_public(text):
-    out = []
-    for line in text.replace('\r\n', '\n').split('\n'):
-        if re.match(r'^SUB\s+[A-Za-z_0-9]+', line) and ' PUBLIC' not in line:
-            line = re.sub(r'^(SUB\s+[A-Za-z_0-9]+(\([^\n]*\))?)[ \t]*$', r'\1 PUBLIC', line)
-        elif re.match(r'^FUNCTION\s+[A-Za-z_0-9]+', line) and ' PUBLIC' not in line:
-            line = re.sub(r'^(FUNCTION\s+.*?)(\s+AS\s+[A-Za-z_0-9]+)[ \t]*$', r'\1 PUBLIC\2', line)
-        out.append(line)
+    # PUBLIC belongs at the end of the (possibly _-continued) header; for a
+    # FUNCTION it slots in before the trailing return type
+    lines = text.replace('\r\n', '\n').split('\n')
+    out, i = [], 0
+    while i < len(lines):
+        line = lines[i]
+        m = re.match(r'^(SUB|FUNCTION)\s+[A-Za-z_0-9]+', line)
+        if not m:
+            out.append(line); i += 1; continue
+        j = i
+        while lines[j].rstrip().endswith('_'):
+            out.append(lines[j]); j += 1
+        last = lines[j]
+        header = ' '.join(l for l in lines[i:j + 1])
+        if ' PUBLIC' not in header:
+            if m.group(1) == 'FUNCTION':
+                last = re.sub(r'(\s+AS\s+[A-Za-z_0-9]+)[ \t]*$', r' PUBLIC\1', last)
+            else:
+                last = last.rstrip() + ' PUBLIC'
+        out.append(last)
+        i = j + 1
     return '\n'.join(out)
 
 # bin-pack units into <=64k $CODE SEG groups (total code ~141k -> 3 segments of
 # ~47k each, greedy-packed from the measured per-unit code sizes of 2026-06-10).
 # Re-pack if a future change pushes a segment over 64k (the build will Error 408).
 GROUPS = [['VOPT320', 'VOPT640', 'VOPT800', 'VOPT1024', 'VOPT1280', 'VOPT1600', 'VESAOPT', 'DRAW_GIF', 'DRAW_TIF', 'CURSOR', 'DRAW_PCX', 'MODE16', 'MEMORY', 'MODEY', 'TYPES'],
-          ['MODEX', 'VESA', 'DRAW_CUR', 'SCROLL', 'VGA', 'SVGA', 'TIMER', 'FILEUTIL', 'VIRTUAL', 'MODEZ', 'PORTGLUE'],
-          ['DRAW_ANI', 'SPRITE', 'DRAW_TGA', 'DRAW_ICO', 'DRAW_ICL', 'DRAW_BMP', 'FONTS', 'GRAPHICS', 'MODETEXT']]
+          ['MODEX', 'VESA', 'DRAW_CUR', 'SCROLL', 'VGA', 'SVGA', 'TIMER', 'FILEUTIL', 'VIRTUAL', 'MODEZ', 'PORTGLUE', 'TRIANGLE'],
+          ['DRAW_ANI', 'SPRITE', 'DRAW_TGA', 'DRAW_ICO', 'DRAW_ICL', 'DRAW_BMP', 'FONTS', 'GRAPHICS', 'MODETEXT', 'FLOOD', 'TEXTURE']]
 SEGGROUP = {u: 'SEG%d' % i for i, g in enumerate(GROUPS) for u in g}
 
 units = []
