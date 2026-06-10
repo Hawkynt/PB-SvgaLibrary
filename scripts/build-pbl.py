@@ -117,7 +117,7 @@ def mark_public(text):
 # bin-pack units into <=64k $CODE SEG groups (total code ~141k -> 3 segments of
 # ~47k each, greedy-packed from the measured per-unit code sizes of 2026-06-10).
 # Re-pack if a future change pushes a segment over 64k (the build will Error 408).
-GROUPS = [['VESAOPT', 'DRAW_GIF', 'DRAW_TIF', 'CURSOR', 'DRAW_PCX', 'MODE16', 'MEMORY', 'MODEY', 'TYPES'],
+GROUPS = [['VOPT320', 'VOPT640', 'VOPT800', 'VOPT1024', 'VOPT1280', 'VOPT1600', 'VESAOPT', 'DRAW_GIF', 'DRAW_TIF', 'CURSOR', 'DRAW_PCX', 'MODE16', 'MEMORY', 'MODEY', 'TYPES'],
           ['MODEX', 'VESA', 'DRAW_CUR', 'SCROLL', 'VGA', 'SVGA', 'TIMER', 'FILEUTIL', 'VIRTUAL', 'MODEZ', 'PORTGLUE'],
           ['DRAW_ANI', 'SPRITE', 'DRAW_TGA', 'DRAW_ICO', 'DRAW_ICL', 'DRAW_BMP', 'FONTS', 'GRAPHICS', 'MODETEXT']]
 SEGGROUP = {u: 'SEG%d' % i for i, g in enumerate(GROUPS) for u in g}

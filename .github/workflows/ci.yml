@@ -28,6 +28,8 @@ jobs:
           node-version: '22'
       - name: Structural syntax check (all BASIC sources)
         run: node .github/workflows/scripts/check-basic.mjs .
+      - name: Generated VESA fast paths match the template
+        run: python3 scripts/gen-vesaopt.py --check
 
   # Advisory: real compilation under DOSBox via the reusable build workflow.
   # Fails-soft without the toolchain (or while the library is still being ported

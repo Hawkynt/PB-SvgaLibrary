@@ -37,6 +37,15 @@ performs a structural syntax check instead of a compile.
 3. **Wait for CI** and fix until green. A pushed change isn't done while the
    workflow it triggered is red.
 
+## Generated code
+
+The per-width VESA fast-path families (`VOPT320.SUB` ... `VOPT1600.SUB`), the
+dispatch wiring (`VESAOPT.SUB`) and their aggregate (`VESAOPT.INC`) are
+**generated** from `VESAOPT.TEMPLATE.BAS` by `scripts/gen-vesaopt.py` - never
+edit them directly. Change the template (or the mode list in the tool), rerun
+`python3 scripts/gen-vesaopt.py`, and commit template + outputs together; CI
+fails on any drift between them (`gen-vesaopt.py --check`).
+
 ## Syntax & style
 
 - PowerBASIC 3.5 dialect: `BYVAL` parameters, `WORD`/`BYTE`/`DWORD` types,

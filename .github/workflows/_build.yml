@@ -108,7 +108,7 @@ jobs:
           # anyone who prefers to $INCLUDE individual modules.
           mkdir -p dist/svga
           cp build/SVGA.PBL build/SVGA.BI build/SVGATYPE.BI build/SVGADECL.BI dist/svga/
-          cp *.SUB README.md LICENSE dist/svga/
+          cp *.SUB *.INC README.md LICENSE dist/svga/
           (cd dist/svga && zip -r ../svga-library.zip .)
           ls -l dist dist/svga
 

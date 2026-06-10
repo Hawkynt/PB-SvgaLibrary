@@ -40,6 +40,7 @@ command -v dosbox >/dev/null || { sudo apt-get update && sudo apt-get install -y
 
 rm -rf build && mkdir -p build
 cp ./*.SUB build/ 2>/dev/null || true
+cp ./*.INC build/ 2>/dev/null || true
 cp tests/*.BI build/ 2>/dev/null || true
 # Engine-only view of SVGA.SUB (which is the umbrella that $INCLUDEs the whole
 # library) so tests/SVGA.BAS can exercise the Svga_* dispatch engine in isolation

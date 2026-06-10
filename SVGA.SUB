@@ -18,7 +18,7 @@ $INCLUDE "MODEX.SUB"      ' Mode-X graphics functions
 $INCLUDE "MODEY.SUB"      ' Mode-Y (320x200 unchained planar)
 $INCLUDE "MODEZ.SUB"      ' Mode-Z (320x400 unchained planar)
 $INCLUDE "VESA.SUB"       ' VESA graphics mode management
-$INCLUDE "VESAOPT.SUB"    ' width-specialized VESA fast paths
+$INCLUDE "VESAOPT.INC"    ' width-specialized VESA fast paths (generated)
 $INCLUDE "MODE16.SUB"     ' 800x600 16-colour bit-planed mode
 $INCLUDE "MODETEXT.SUB"   ' text-mode half-block framebuffer
 $INCLUDE "VIRTUAL.SUB"    ' Virtual coordinate system management
