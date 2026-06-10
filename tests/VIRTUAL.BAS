@@ -105,17 +105,3 @@ SUB Test_GetViewport_GetDimensions
     CALL Assert_IsEqual(vw, 160, "virtual width = XScaleMax")
     CALL Assert_IsEqual(vh, 100, "virtual height = YScaleMax")
 END SUB
-
-' === entry point (no video mode needed - pure coordinate logic) ===
-CALL Test_BeginSuite("VIRTUAL")
-CALL Test_Reset_GivesIdentity
-CALL Test_SetScale_UpdatesMax
-CALL Test_GetScale_BadTypeDefaultsToOne
-CALL Test_ToPhysical_Identity
-CALL Test_ToPhysical_Scaled
-CALL Test_RoundTrip_PhysicalVirtual
-CALL Test_Offset_RoundTrip
-CALL Test_Viewport_Clipping
-CALL Test_GetViewport_GetDimensions
-CALL Test_EndSuite("VIRTUAL")
-END

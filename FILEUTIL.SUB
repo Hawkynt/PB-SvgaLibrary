@@ -137,8 +137,10 @@ FUNCTION FileUtil_Seek(BYVAL fileHandle AS INTEGER, BYVAL position AS LONG) AS B
         FileUtil_Seek = 0
         EXIT FUNCTION
     END IF
-    
-    SEEK fileHandle, position
+
+    ' PB 3.5 BINARY positions are 0-based (offset 0 = first byte), but this
+    ' helper exposes a 1-based position to callers, so convert.
+    SEEK fileHandle, position - 1
     FileUtil_Seek = 1
     EXIT FUNCTION
     
@@ -172,10 +174,14 @@ FUNCTION FileUtil_CanRead(BYVAL fileHandle AS INTEGER, BYVAL numBytes AS WORD) A
     DIM currentPos AS LONG, fileSize AS LONG
     
     ON ERROR GOTO CanReadError
-    currentPos = SEEK(fileHandle)
+    currentPos = SEEK(fileHandle)      ' 0-based offset of the next byte
     fileSize = LOF(fileHandle)
-    
-    FileUtil_CanRead = ((currentPos + numBytes - 1) <= fileSize)
+
+    IF (currentPos + numBytes) <= fileSize THEN
+        FileUtil_CanRead = 1
+    ELSE
+        FileUtil_CanRead = 0
+    END IF
     EXIT FUNCTION
     
 CanReadError:
@@ -263,18 +269,22 @@ FUNCTION FileUtil_ValidateSignature(BYVAL fileHandle AS INTEGER, BYVAL expectedS
     ' Save current position
     originalPos = SEEK(fileHandle)
     
-    ' Read signature from beginning of file
-    SEEK fileHandle, 1
+    ' Read signature from beginning of file (offset 0 - PB 3.5 BINARY is 0-based)
+    SEEK fileHandle, 0
     IF FileUtil_ReadBytes(fileHandle, LEN(expectedSignature), actualSignature) = 0 THEN
         FileUtil_ValidateSignature = 0
         SEEK fileHandle, originalPos
         EXIT FUNCTION
     END IF
-    
+
     ' Restore position
     SEEK fileHandle, originalPos
-    
-    FileUtil_ValidateSignature = (actualSignature = expectedSignature)
+
+    IF actualSignature = expectedSignature THEN
+        FileUtil_ValidateSignature = 1
+    ELSE
+        FileUtil_ValidateSignature = 0
+    END IF
 END FUNCTION
 
 ' =============================================================================

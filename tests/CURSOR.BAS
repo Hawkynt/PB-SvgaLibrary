@@ -107,14 +107,7 @@ SUB Test_ShowHide_BackgroundRoundTrip
     !INT &H10
 END SUB
 
-' === entry point ===
+SUB Test_Setup
 SVGAScreenContext.XRes = 320
 SVGAScreenContext.YRes = 200
-CALL Test_BeginSuite("CURSOR")
-Test_Init_Defaults
-Test_SetGetPos_NoHotspot
-Test_GetPos_Hotspot
-Test_IsVisible_Tracks
-Test_ShowHide_BackgroundRoundTrip
-CALL Test_EndSuite("CURSOR")
-END
+END SUB

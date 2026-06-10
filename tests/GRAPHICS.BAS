@@ -99,19 +99,13 @@ SUB Test_CircleDraw_Filled
     CALL Assert_IsEqual(GetP(200, 134), 0, "outside the circle above")
 END SUB
 
-' === entry point ===
+SUB Test_Setup
 !MOV AX, &H0013
 !INT &H10
 VESASystemContext.CurrentMode = %SVGA_MODE13      ' force the generic Svga_LineDraw path
-CALL Test_BeginSuite("GRAPHICS")
-CALL Test_Bar_FillAndBorder
-CALL Test_Bar_SwappedCorners
-CALL Test_Box_SolidFill
-CALL Test_Frame_HollowOutline
-CALL Test_Bar3d_FaceAndBorder
-CALL Test_CircleDraw_Outline
-CALL Test_CircleDraw_Filled
-CALL Test_EndSuite("GRAPHICS")
+END SUB
+
+SUB Test_Teardown
 !MOV AX, &H0003
 !INT &H10
-END
+END SUB

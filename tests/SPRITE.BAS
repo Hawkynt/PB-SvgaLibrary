@@ -150,19 +150,7 @@ SUB Test_Free
     CALL Assert_IsEqual(GFL(h), 0, "GetInfo reports inactive (flags=0)")
 END SUB
 
-' === entry point ===
+SUB Test_Setup
 SVGAScreenContext.XRes = 320
 SVGAScreenContext.YRes = 200
-CALL Test_BeginSuite("SPRITE")
-Test_Create_HappyPath
-Test_Create_MultipleHandles
-Test_SetPosition
-Test_Move_Bounce
-Test_Move_Wrap
-Test_Move_Stop
-Test_CollisionRect
-Test_CollisionCircle
-Test_Collision_RespectsFlagAndHandle
-Test_Free
-CALL Test_EndSuite("SPRITE")
-END
+END SUB

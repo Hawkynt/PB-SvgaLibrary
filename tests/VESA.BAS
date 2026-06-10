@@ -102,16 +102,11 @@ SUB Test_GetMode_Lookup
     CALL Assert_IsEqual(m, 0, "an impossible resolution returns 0")
 END SUB
 
-' === entry point ===
+SUB Test_Setup
 CALL EnterMode640
-CALL Test_BeginSuite("VESA")
-CALL Test_PutGet_AcrossBank
-CALL Test_PutGet_Corners
-CALL Test_HLine_AcrossBankBoundary
-CALL Test_VLine
-CALL Test_FillRect
-CALL Test_GetMode_Lookup
-CALL Test_EndSuite("VESA")
+END SUB
+
+SUB Test_Teardown
 !MOV AX, &H0003
 !INT &H10
-END
+END SUB

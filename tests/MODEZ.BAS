@@ -52,14 +52,12 @@ SUB Test_PutGet_TallBoundary
     CALL Assert_IsEqual(GetP(319, 399), 200, "bottom-right of 320x400")
 END SUB
 
-' === entry point ===
+SUB Test_Setup
 CALL ModeX_InitTables
 CALL ModeZ_SetMode
-CALL Test_BeginSuite("MODEZ")
-CALL Test_SetMode_ConfiguresContext
-CALL Test_PutGet_Planes
-CALL Test_PutGet_TallBoundary
-CALL Test_EndSuite("MODEZ")
+END SUB
+
+SUB Test_Teardown
 !MOV AX, &H0003
 !INT &H10
-END
+END SUB

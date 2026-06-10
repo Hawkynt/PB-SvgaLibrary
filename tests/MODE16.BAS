@@ -84,16 +84,11 @@ SUB Test_Corner
     CALL Assert_IsEqual(GetP(799, 599), 14, "bottom-right pixel")
 END SUB
 
-' === entry point ===
+SUB Test_Setup
 CALL Mode16_SetMode
-CALL Test_BeginSuite("MODE16")
-CALL Test_PutGet_AdjacentBits
-CALL Test_PutGet_AllColors
-CALL Test_HLine_CrossesBytes
-CALL Test_VLine
-CALL Test_FillRect
-CALL Test_Corner
-CALL Test_EndSuite("MODE16")
+END SUB
+
+SUB Test_Teardown
 !MOV AX, &H0003
 !INT &H10
-END
+END SUB

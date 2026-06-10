@@ -156,21 +156,12 @@ SUB Test_LineDraw_Diagonal
     CALL Assert_IsEqual(bad, 0, "all 11 diagonal pixels set")
 END SUB
 
-' === entry point ===
+SUB Test_Setup
 !MOV AX, &H0013
 !INT &H10
-CALL Test_BeginSuite("VGA")
-CALL Test_PutGet_HappyPath
-CALL Test_PutGet_Boundary
-CALL Test_PutGet_AllColors
-CALL Test_ClearScreen_HappyPath
-CALL Test_HLine_HappyPath
-CALL Test_HLine_SwapAndSingle
-CALL Test_VLine_HappyPath
-CALL Test_FillRect_HappyAndDegenerate
-CALL Test_DrawRect_Outline
-CALL Test_LineDraw_Diagonal
-CALL Test_EndSuite("VGA")
+END SUB
+
+SUB Test_Teardown
 !MOV AX, &H0003
 !INT &H10
-END
+END SUB

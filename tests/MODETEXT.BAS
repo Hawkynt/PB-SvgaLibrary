@@ -79,16 +79,11 @@ SUB Test_Boundary
     CALL Assert_IsEqual(GetP(79, 99), 13, "last pixel addresses correctly")
 END SUB
 
-' === entry point ===
+SUB Test_Setup
 CALL ModeText_SetMode(50)          ' 80x50 text -> 80x100 pixels
-CALL Test_BeginSuite("MODETEXT")
-CALL Test_HalfBlock_Independence
-CALL Test_AllColors
-CALL Test_HLine
-CALL Test_VLine_SpansCells
-CALL Test_FillRect
-CALL Test_Boundary
-CALL Test_EndSuite("MODETEXT")
+END SUB
+
+SUB Test_Teardown
 !MOV AX, &H0003
 !INT &H10
-END
+END SUB

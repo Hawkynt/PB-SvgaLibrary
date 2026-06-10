@@ -11,6 +11,12 @@
 '     [FAIL] <case> :: <assertion> (expected=.. actual=..)
 '   [RESULT] <name> assertions=N failed=M
 '
+' A suite normally needs NO manual entry point: scripts/run-pb-tests.sh scans the
+' file for SUB Test_* and generates the driver (suite name = file name), running
+' an optional SUB Test_Setup first and SUB Test_Teardown last. A suite that wants
+' full control can still write its own top-level driver - if it calls
+' Test_BeginSuite the runner leaves it untouched (e.g. VESAOPT.BAS).
+'
 ' Lifecycle:  Test_BeginSuite -> (Test_Case + Assert_*)* -> Test_EndSuite
 ' Assertions: Assert_IsTrue / Assert_IsFalse / Assert_IsEqual / Assert_AreNotEqual
 '             Assert_IsZero / Assert_IsNotZero

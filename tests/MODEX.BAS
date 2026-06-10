@@ -105,19 +105,12 @@ SUB Test_ClearScreen
     CALL Assert_IsEqual(GetP(318, 239), 33, "far area cleared")
 END SUB
 
-' === entry point ===
+SUB Test_Setup
 CALL ModeX_InitTables
 CALL ModeX_SetMode(0)              ' 0 = 320x240
-CALL Test_BeginSuite("MODEX")
-CALL Test_PutGet_AcrossPlanes
-CALL Test_PutGet_Boundary
-CALL Test_HLine
-CALL Test_VLine
-CALL Test_FillRect
-CALL Test_DrawRect
-CALL Test_LineDraw
-CALL Test_ClearScreen
-CALL Test_EndSuite("MODEX")
+END SUB
+
+SUB Test_Teardown
 !MOV AX, &H0003
 !INT &H10
-END
+END SUB

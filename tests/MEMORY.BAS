@@ -79,14 +79,3 @@ SUB Test_SetVesaWindow_UpdatesContext
     CALL Memory_SetVesaWindow(7)
     CALL Assert_IsEqual(VESASystemContext.VWnd, 7, "VWnd updated even without a VESA BIOS")
 END SUB
-
-' === entry point ===
-CALL Test_BeginSuite("MEMORY")
-CALL Test_MemCopy_HappyPath
-CALL Test_MemCopy_Partial
-CALL Test_MemCopy_ZeroCount
-CALL Test_MemSwap_HappyPath
-CALL Test_ClearVideoMemory
-CALL Test_SetVesaWindow_UpdatesContext
-CALL Test_EndSuite("MEMORY")
-END

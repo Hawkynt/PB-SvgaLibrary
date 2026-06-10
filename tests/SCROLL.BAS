@@ -127,18 +127,7 @@ SUB Test_ScreenShake_ZeroIntensity
     CALL Assert_IsZero(shakeActive, "shake finished")
 END SUB
 
-' === entry point ===
+SUB Test_Setup
 SVGAScreenContext.XRes = 320
 SVGAScreenContext.YRes = 200
-CALL Test_BeginSuite("SCROLL")
-Test_SetVirtualScreen
-Test_SetPosition_Clamp
-Test_Screen_Relative
-Test_Direction
-Test_Wrap_Mode
-Test_SmoothTo
-Test_SmoothTo_Inactive
-Test_Parallax_CreateFree
-Test_ScreenShake_ZeroIntensity
-CALL Test_EndSuite("SCROLL")
-END
+END SUB

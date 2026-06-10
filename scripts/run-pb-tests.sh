@@ -53,6 +53,24 @@ i=0
 battery_start=$(date +%s.%N)
 for t in "${tests[@]}"; do
   i=$((i+1)); name=$(basename "$t"); cp "$t" "build/T$i.BAS"
+  # Auto-generate the entry-point driver from the suite's SUB Test_* names unless
+  # it wires its own (presence of Test_BeginSuite). Test_Setup/Test_Teardown, if
+  # defined, run first/last. PB needs CRLF, so emit \r\n.
+  if ! grep -qi 'Test_BeginSuite' "build/T$i.BAS"; then
+    suite="${name%.*}"
+    {
+      printf "\r\n' === auto-generated test driver ===\r\n"
+      grep -qiE '^[[:space:]]*SUB[[:space:]]+Test_Setup[[:space:]]*$' "build/T$i.BAS" && printf 'CALL Test_Setup\r\n'
+      printf 'CALL Test_BeginSuite("%s")\r\n' "$suite"
+      grep -oiE '^[[:space:]]*SUB[[:space:]]+Test_[A-Za-z0-9_]+' "build/T$i.BAS" \
+        | sed -E 's/^[[:space:]]*[Ss][Uu][Bb][[:space:]]+//' \
+        | grep -viE '^Test_(Setup|Teardown)$' \
+        | while read -r fn; do printf 'CALL %s\r\n' "$fn"; done
+      printf 'CALL Test_EndSuite("%s")\r\n' "$suite"
+      grep -qiE '^[[:space:]]*SUB[[:space:]]+Test_Teardown[[:space:]]*$' "build/T$i.BAS" && printf 'CALL Test_Teardown\r\n'
+      printf 'END\r\n'
+    } >> "build/T$i.BAS"
+  fi
   {
     echo "[cpu]"; echo "core=dynamic"; echo "cycles=max"
     echo "[autoexec]"
