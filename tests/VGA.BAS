@@ -156,6 +156,49 @@ SUB Test_LineDraw_Diagonal
     CALL Assert_IsEqual(bad, 0, "all 11 diagonal pixels set")
 END SUB
 
+SUB Test_PatternFill_SingleByte
+    CALL Test_Case("PatternFill with 1-byte pattern fills uniformly")
+    DIM p AS STRING, a AS WORD, b AS WORD, cc AS WORD, d AS WORD
+    CALL ClrScr(0)
+    p = CHR$(7)
+    a = 10 : b = 40 : cc = 15 : d = 42
+    CALL Vga_PatternFill(a, b, cc, d, p)
+    CALL Assert_IsEqual(GetP(10, 40), 7, "top-left corner = pattern byte")
+    CALL Assert_IsEqual(GetP(15, 42), 7, "bottom-right corner = pattern byte")
+    CALL Assert_IsEqual(GetP(12, 41), 7, "interior = pattern byte")
+    CALL Assert_IsEqual(GetP(9,  40), 0, "no bleed left")
+    CALL Assert_IsEqual(GetP(16, 40), 0, "no bleed right")
+END SUB
+
+SUB Test_PatternFill_MultiBytePattern
+    CALL Test_Case("PatternFill tiles a multi-byte pattern correctly")
+    DIM p AS STRING, a AS WORD, b AS WORD, cc AS WORD, d AS WORD
+    CALL ClrScr(0)
+    ' Two-byte pattern: [3, 5, 3, 5, ...]
+    p = CHR$(3) + CHR$(5)
+    a = 20 : b = 80 : cc = 25 : d = 82
+    CALL Vga_PatternFill(a, b, cc, d, p)
+    ' x=20 -> pattern[0]=3, x=21 -> pattern[1]=5, x=22 -> pattern[0]=3
+    CALL Assert_IsEqual(GetP(20, 80), 3, "col0 = pattern[0]")
+    CALL Assert_IsEqual(GetP(21, 80), 5, "col1 = pattern[1]")
+    CALL Assert_IsEqual(GetP(22, 80), 3, "col2 = pattern[0] (wrap)")
+    CALL Assert_IsEqual(GetP(23, 80), 5, "col3 = pattern[1] (wrap)")
+    ' Each row restarts pattern from index 0
+    CALL Assert_IsEqual(GetP(20, 81), 3, "row1 col0 = pattern[0]")
+    CALL Assert_IsEqual(GetP(21, 81), 5, "row1 col1 = pattern[1]")
+END SUB
+
+SUB Test_PatternFill_EmptyPatternDefault
+    CALL Test_Case("PatternFill with empty string defaults to CHR$(0) fill")
+    DIM p AS STRING, a AS WORD, b AS WORD, cc AS WORD, d AS WORD
+    CALL ClrScr(99)
+    p = ""
+    a = 30 : b = 90 : cc = 35 : d = 92
+    CALL Vga_PatternFill(a, b, cc, d, p)
+    CALL Assert_IsEqual(GetP(30, 90), 0, "empty pattern -> CHR$(0) fill")
+    CALL Assert_IsEqual(GetP(35, 92), 0, "corner also zero")
+END SUB
+
 SUB Test_Setup
 !MOV AX, &H0013
 !INT &H10

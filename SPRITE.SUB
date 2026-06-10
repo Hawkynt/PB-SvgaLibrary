@@ -349,31 +349,187 @@ END SUB
 ' Parameters:
 '   SpriteHandle - Sprite handle (BYVAL)
 ' Returns: Nothing
+' -----------------------------------------------------------------------------
+' Image format: SpriteImageStore(handle) holds Wide*Height bytes, row-major.
+' Transparency convention: colour index 0 is transparent (not drawn); all
+' other colour values (1-255) are opaque and blitted to the screen.
+' Clipping is performed against SVGAScreenContext.XRes/YRes on all four sides;
+' negative sprite X/Y are handled correctly (left/top clip).
 ' =============================================================================
 SUB Sprite_Draw(BYVAL spriteHandle AS BYTE)
+    DIM sprW AS WORD, sprH AS WORD
+    DIM sprX AS INTEGER, sprY AS INTEGER
+    DIM clipX1 AS INTEGER, clipY1 AS INTEGER
+    DIM clipX2 AS INTEGER, clipY2 AS INTEGER
+    DIM rowY AS INTEGER, rowStart AS INTEGER
+    DIM imgOffset AS LONG
+    DIM rowData AS STRING
+    DIM col AS BYTE, runColor AS BYTE
+    DIM cx AS INTEGER, runStart AS INTEGER, runLen AS INTEGER
+    DIM screenW AS INTEGER, screenH AS INTEGER
+    DIM vramOff AS WORD, rowVramBase AS WORD
+    DIM rowBytes AS WORD
+
     IF spriteHandle > 31 OR Sprites(spriteHandle).IsActive = 0 THEN EXIT SUB
     IF (Sprites(spriteHandle).Flags AND %SPRITE_VISIBLE) = 0 THEN EXIT SUB
 
-    ' Check if sprite is on screen
-    IF Sprites(spriteHandle).X >= SVGAScreenContext.XRes THEN EXIT SUB
-    IF Sprites(spriteHandle).Y >= SVGAScreenContext.YRes THEN EXIT SUB
-    IF Sprites(spriteHandle).X + Sprites(spriteHandle).Wide <= 0 THEN EXIT SUB
-    IF Sprites(spriteHandle).Y + Sprites(spriteHandle).Height <= 0 THEN EXIT SUB
+    sprX = Sprites(spriteHandle).X
+    sprY = Sprites(spriteHandle).Y
+    sprW = Sprites(spriteHandle).Wide
+    sprH = Sprites(spriteHandle).Height
+    screenW = SVGAScreenContext.XRes
+    screenH = SVGAScreenContext.YRes
 
-    ' Draw animated or static sprite
+    ' Coarse visibility check
+    IF sprX >= screenW THEN EXIT SUB
+    IF sprY >= screenH THEN EXIT SUB
+    IF sprX + sprW <= 0 THEN EXIT SUB
+    IF sprY + sprH <= 0 THEN EXIT SUB
+
+    ' Animated sprite path
     IF (Sprites(spriteHandle).Flags AND %SPRITE_ANIMATED) AND Sprites(spriteHandle).AnimHandle <> 255 THEN
-        ' Update animated sprite
-        CALL Ani_ShowFrame(Sprites(spriteHandle).AnimHandle, Sprites(spriteHandle).X, Sprites(spriteHandle).Y, 0)
+        CALL Ani_ShowFrame(Sprites(spriteHandle).AnimHandle, sprX, sprY, 0)
+        EXIT SUB
+    END IF
+
+    ' Static sprite: need image data
+    IF LEN(SpriteImageStore(spriteHandle)) = 0 THEN EXIT SUB
+
+    ' Compute visible row/column ranges (clip)
+    IF sprX < 0 THEN clipX1 = -sprX ELSE clipX1 = 0
+    IF sprY < 0 THEN clipY1 = -sprY ELSE clipY1 = 0
+    IF sprX + sprW > screenW THEN
+        clipX2 = screenW - sprX - 1
     ELSE
-        ' Draw static sprite (simplified - would need full image drawing)
-        IF LEN(SpriteImageStore(spriteHandle)) > 0 THEN
-            ' For now, draw a colored rectangle representing the sprite
-            DIM spriteColor AS BYTE
-            spriteColor = (spriteHandle * 32) MOD 256
-            CALL Svga_FillRect(Sprites(spriteHandle).X, Sprites(spriteHandle).Y, _
-                         Sprites(spriteHandle).X + Sprites(spriteHandle).Wide - 1, _
-                         Sprites(spriteHandle).Y + Sprites(spriteHandle).Height - 1, spriteColor)
-        END IF
+        clipX2 = sprW - 1
+    END IF
+    IF sprY + sprH > screenH THEN
+        clipY2 = screenH - sprY - 1
+    ELSE
+        clipY2 = sprH - 1
+    END IF
+
+    ' Mode 13h fast path: direct VRAM blit per row using inline asm
+    IF VESASystemContext.CurrentMode = %SVGA_MODE13 THEN
+
+        FOR rowY = clipY1 TO clipY2
+            ' Extract visible portion of sprite row into a local string
+            imgOffset = CLNG(rowY) * sprW + clipX1 + 1
+            rowBytes = clipX2 - clipX1 + 1
+            rowData = MID$(SpriteImageStore(spriteHandle), imgOffset, rowBytes)
+
+            ' VRAM destination: (sprY + rowY) * 320 + (sprX + clipX1)
+            vramOff = (sprY + rowY) * 320 + (sprX + clipX1)
+
+            ' Pre-load all values into locals before touching segment registers
+            DIM segPtr AS WORD, offPtr AS WORD, lenCX AS WORD
+            segPtr = STRSEG(rowData)
+            offPtr = STRPTR(rowData)
+            lenCX = rowBytes
+
+            ' Transparent-skip blit: LODSB each byte; if non-zero write to ES:[DI]
+            !PUSH DS
+            !PUSH ES
+            !PUSH SI
+            !PUSH DI
+            !MOV AX, segPtr
+            !MOV DS, AX
+            !MOV SI, offPtr
+            !MOV DI, vramOff
+            !MOV BX, &HA000
+            !MOV ES, BX
+            !MOV CX, lenCX
+            !CLD
+            SprM13Row:
+            !LODSB
+            !TEST AL, AL
+            !JZ SprM13Skip
+            !MOV ES:[DI], AL
+            SprM13Skip:
+            !INC DI
+            !LOOP SprM13Row
+            !POP DI
+            !POP SI
+            !POP ES
+            !POP DS
+        NEXT rowY
+
+    ELSE
+        ' Generic path: walk each visible row and coalesce opaque runs
+        ' Consecutive pixels of the same colour are batched into HLine calls
+        ' when the run length exceeds 2 (overhead break-even vs PutPixel).
+
+        FOR rowY = clipY1 TO clipY2
+            imgOffset = CLNG(rowY) * sprW + clipX1 + 1
+            rowBytes = clipX2 - clipX1 + 1
+            rowData = MID$(SpriteImageStore(spriteHandle), imgOffset, rowBytes)
+
+            runStart = -1 : runColor = 0 : runLen = 0
+
+            FOR cx = 1 TO rowBytes
+                col = ASC(MID$(rowData, cx, 1))
+                DIM screenCX AS INTEGER
+                screenCX = sprX + clipX1 + cx - 1
+
+                IF col = 0 THEN
+                    ' Flush any pending run then skip this pixel
+                    IF runLen > 0 THEN
+                        IF runLen > 2 THEN
+                            DIM hlY AS WORD, hlX1 AS WORD, hlX2 AS WORD
+                            hlY  = sprY + rowY
+                            hlX1 = runStart
+                            hlX2 = runStart + runLen - 1
+                            CALL Svga_HLine(hlX1, hlX2, hlY, runColor)
+                        ELSE
+                            DIM pi AS INTEGER
+                            FOR pi = 0 TO runLen - 1
+                                DIM ppX AS WORD, ppY AS WORD
+                                ppX = runStart + pi : ppY = sprY + rowY
+                                CALL Svga_PutPixel(ppX, ppY, runColor)
+                            NEXT pi
+                        END IF
+                        runLen = 0 : runStart = -1
+                    END IF
+                ELSE
+                    ' Opaque pixel
+                    IF runLen = 0 THEN
+                        runStart = screenCX : runColor = col : runLen = 1
+                    ELSEIF col = runColor THEN
+                        runLen = runLen + 1
+                    ELSE
+                        ' Colour changed - flush previous run
+                        IF runLen > 2 THEN
+                            hlY  = sprY + rowY
+                            hlX1 = runStart
+                            hlX2 = runStart + runLen - 1
+                            CALL Svga_HLine(hlX1, hlX2, hlY, runColor)
+                        ELSE
+                            FOR pi = 0 TO runLen - 1
+                                ppX = runStart + pi : ppY = sprY + rowY
+                                CALL Svga_PutPixel(ppX, ppY, runColor)
+                            NEXT pi
+                        END IF
+                        runStart = screenCX : runColor = col : runLen = 1
+                    END IF
+                END IF
+            NEXT cx
+
+            ' Flush any remaining run at end of row
+            IF runLen > 0 THEN
+                IF runLen > 2 THEN
+                    hlY  = sprY + rowY
+                    hlX1 = runStart
+                    hlX2 = runStart + runLen - 1
+                    CALL Svga_HLine(hlX1, hlX2, hlY, runColor)
+                ELSE
+                    FOR pi = 0 TO runLen - 1
+                        ppX = runStart + pi : ppY = sprY + rowY
+                        CALL Svga_PutPixel(ppX, ppY, runColor)
+                    NEXT pi
+                END IF
+            END IF
+
+        NEXT rowY
     END IF
 END SUB
 
