@@ -299,7 +299,7 @@ SUB Cursor_SaveCursorBackground
             IF ScreenX < 0 THEN GOTO NextSaveX
             
             ' Get pixel from screen
-            PixelColor = GETPIXEL(ScreenX, ScreenY)
+            CALL Svga_GetPixel(ScreenX, ScreenY, PixelColor)
             
             ' Store in background buffer
             BackgroundIndex = Y * CursorSystemContext.Wide + X + 1
@@ -409,7 +409,7 @@ FUNCTION Cursor_IsVisible AS BYTE
     IF CursorSystemContext.IsInitialized = 0 THEN
         Cursor_IsVisible = 0
     ELSE
-        Cursor_IsCursorVisible = CursorSystemContext.IsVisible
+        Cursor_IsVisible = CursorSystemContext.IsVisible
     END IF
 END FUNCTION
 
