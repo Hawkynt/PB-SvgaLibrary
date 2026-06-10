@@ -29,7 +29,7 @@ SUB CheckWidth(BYVAL wid AS WORD, BYVAL hgt AS WORD, nm AS STRING)
     hp = SVGADispatch.HLine : vp = SVGADispatch.VLine
 
     ' full-height vertical line at x = wid\2 (multi-bank run for the wide modes)
-    CALL TCase(nm + ": full-height VLine (inlined offset + bank runs)")
+    CALL Test_Case(nm + ": full-height VLine (inlined offset + bank runs)")
     a = wid \ 2 : b = 0 : yy = hgt - 1 : c = 9
     CALL DWORD vp BDECL (a, b, yy, c)
     bad = 0
@@ -38,10 +38,10 @@ SUB CheckWidth(BYVAL wid AS WORD, BYVAL hgt AS WORD, nm AS STRING)
         CALL DWORD gp BDECL (a, b, got)
         IF got <> 9 THEN bad = bad + 1
     NEXT i
-    CALL TChkEq(bad, 0, "every scanline of the column reads back")
+    CALL Assert_IsEqual(bad, 0, "every scanline of the column reads back")
 
     ' full-width horizontal line on the row straddling the first 64k boundary
-    CALL TCase(nm + ": full-width HLine across the 64k bank boundary")
+    CALL Test_Case(nm + ": full-width HLine across the 64k bank boundary")
     yc = 65536 \ wid
     IF yc >= hgt THEN yc = hgt \ 2
     a = 0 : b = wid - 1 : c = 13
@@ -54,19 +54,19 @@ SUB CheckWidth(BYVAL wid AS WORD, BYVAL hgt AS WORD, nm AS STRING)
         CALL DWORD gp BDECL (xs, b, got)
         IF got <> 13 THEN bad = bad + 1
     NEXT i
-    CALL TChkEq(bad, 0, "5 sample points along the span read back")
+    CALL Assert_IsEqual(bad, 0, "5 sample points along the span read back")
 
     ' far corner round-trip
-    CALL TCase(nm + ": far-corner pixel round-trip")
+    CALL Test_Case(nm + ": far-corner pixel round-trip")
     a = wid - 1 : b = hgt - 1 : c = 6
     CALL DWORD pp BDECL (a, b, c)
     a = wid - 1 : b = hgt - 1 : got = 0
     CALL DWORD gp BDECL (a, b, got)
-    CALL TChkEq(got, 6, "bottom-right pixel")
+    CALL Assert_IsEqual(got, 6, "bottom-right pixel")
 END SUB
 
 ' === entry point ===
-CALL TBeginSuite("VESAOPT")
+CALL Test_BeginSuite("VESAOPT")
 !MOV AX, &H0013
 !INT &H10
 CALL CheckWidth(320, 200, "320 (mode 13h)")
@@ -88,5 +88,5 @@ CALL CheckWidth(1024, 768, "1024 (VBE 0x105)")
 CALL CheckWidth(1280, 1024, "1280 (VBE 0x107)")
 !MOV AX, &H0003
 !INT &H10
-CALL TEndSuite("VESAOPT")
+CALL Test_EndSuite("VESAOPT")
 END

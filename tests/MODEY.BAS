@@ -26,40 +26,40 @@ FUNCTION GetP(BYVAL x AS WORD, BYVAL y AS WORD) AS INTEGER
 END FUNCTION
 
 SUB Test_SetMode_ConfiguresContext
-    CALL TCase("SetMode programs 320x200 unchained-planar context")
-    CALL TChkEq(SVGAScreenContext.XRes, 320, "XRes = 320")
-    CALL TChkEq(SVGAScreenContext.YRes, 200, "YRes = 200")
-    CALL TChkEq(ModeXSystemContext.LogicalWidth, 80, "logical width = 80 bytes/line")
-    CALL TChkEq(ModeXSystemContext.PlanarMode, 1, "planar mode flagged")
-    CALL TChkEq(VESASystemContext.CurrentMode, %SVGA_MODEY, "current mode tag")
+    CALL Test_Case("SetMode programs 320x200 unchained-planar context")
+    CALL Assert_IsEqual(SVGAScreenContext.XRes, 320, "XRes = 320")
+    CALL Assert_IsEqual(SVGAScreenContext.YRes, 200, "YRes = 200")
+    CALL Assert_IsEqual(ModeXSystemContext.LogicalWidth, 80, "logical width = 80 bytes/line")
+    CALL Assert_IsEqual(ModeXSystemContext.PlanarMode, 1, "planar mode flagged")
+    CALL Assert_IsEqual(VESASystemContext.CurrentMode, %SVGA_MODEY, "current mode tag")
 END SUB
 
 SUB Test_PutGet_Planes
-    CALL TCase("PutPixel/GetPixel round-trips across planes")
+    CALL Test_Case("PutPixel/GetPixel round-trips across planes")
     DIM i AS INTEGER, bad AS INTEGER
     FOR i = 0 TO 7 : CALL PutP(i, 10, 40 + i) : NEXT i
     bad = 0
     FOR i = 0 TO 7 : IF GetP(i, 10) <> 40 + i THEN bad = bad + 1
     NEXT i
-    CALL TChkEq(bad, 0, "8 adjacent pixels round-trip")
+    CALL Assert_IsEqual(bad, 0, "8 adjacent pixels round-trip")
 END SUB
 
 SUB Test_PutGet_TallBoundary
-    CALL TCase("PutPixel/GetPixel at the bottom scanline (y=199)")
+    CALL Test_Case("PutPixel/GetPixel at the bottom scanline (y=199)")
     CALL PutP(0, 0, 5)
-    CALL TChkEq(GetP(0, 0), 5, "top-left")
+    CALL Assert_IsEqual(GetP(0, 0), 5, "top-left")
     CALL PutP(319, 199, 200)
-    CALL TChkEq(GetP(319, 199), 200, "bottom-right of 320x200")
+    CALL Assert_IsEqual(GetP(319, 199), 200, "bottom-right of 320x200")
 END SUB
 
 ' === entry point ===
 CALL ModeX_InitTables
 CALL ModeY_SetMode
-CALL TBeginSuite("MODEY")
+CALL Test_BeginSuite("MODEY")
 CALL Test_SetMode_ConfiguresContext
 CALL Test_PutGet_Planes
 CALL Test_PutGet_TallBoundary
-CALL TEndSuite("MODEY")
+CALL Test_EndSuite("MODEY")
 !MOV AX, &H0003
 !INT &H10
 END
