@@ -524,7 +524,7 @@ FUNCTION Timer_GetTimerFrequency AS WORD
         Timer_GetTimerFrequency = 0
     ELSE
         ' Calculate frequency from interval ticks
-        Timer_GetTimerFrequency = 1820 \ TimerInterrupt.IntervalTicks  ' 18.2 * 100
+        Timer_GetTimerFrequency = 18 \ TimerInterrupt.IntervalTicks  ' 18.2 Hz system clock; integer Hz = 18 \ ticks
     END IF
 END FUNCTION
 
