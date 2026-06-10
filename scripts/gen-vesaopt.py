@@ -38,6 +38,32 @@ def offset_chain(var, width, indent):
     return lines
 
 
+def shift_divisions(lines, width):
+    # a 386 divides a LONG in dozens of cycles but shifts in a few: turn the
+    # hot /65536 bank splits (every width) and /width row math (power-of-two
+    # widths only) into SHIFT RIGHT
+    out = []
+    wbits = (width & (width - 1)) == 0
+    k = width.bit_length() - 1
+    for line in lines:
+        m = re.match(r'^(\s*)(\w+) = (\w+) \\ 65536$', line)
+        if m:
+            i, dst, src = m.groups()
+            out.append('%st = %s : SHIFT RIGHT t, 16 : %s = t' % (i, src, dst))
+            continue
+        if wbits:
+            m = re.match(r'^(\s*)(\w+) = \(([^()]+)\) \\ %d( \+ 1)?$' % width, line)
+            if m:
+                i, dst, expr, plus1 = m.groups()
+                rep = '%s%s = %s : SHIFT RIGHT %s, %d' % (i, dst, expr, dst, k)
+                if plus1:
+                    rep += ' : %s = %s + 1' % (dst, dst)
+                out.append(rep)
+                continue
+        out.append(line)
+    return out
+
+
 def expand_family(template_lines, width, height):
     single = (width * height) <= 65536
     out, mode, depth = [], 'keep', 0
@@ -62,7 +88,7 @@ def expand_family(template_lines, width, height):
                    .replace('{SPANS}', 'V%dSpans' % width)
                    .replace('{MAXR}', str(height // 2)))
         out.append(line)
-    return out
+    return shift_divisions(out, width)
 
 
 def family_source(width, height):

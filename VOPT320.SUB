@@ -23,7 +23,7 @@ SUB Vesa320_PutPixel(x_a AS WORD, y_a AS WORD, c_a AS BYTE)
     t = y : SHIFT LEFT t, 8 : o = t
     t = y : SHIFT LEFT t, 6 : o = o + t
     o = o + x
-    bank = o \ 65536
+    t = o : SHIFT RIGHT t, 16 : bank = t
     IF bank <> VESASystemContext.VWnd THEN CALL Memory_SetVesaWindow(bank)
     winOff = o AND &HFFFF
     DEF SEG = &HA000 : POKE winOff, c : DEF SEG
@@ -35,7 +35,7 @@ SUB Vesa320_GetPixel(x_a AS WORD, y_a AS WORD, resultVal AS BYTE)
     t = y : SHIFT LEFT t, 8 : o = t
     t = y : SHIFT LEFT t, 6 : o = o + t
     o = o + x
-    bank = o \ 65536
+    t = o : SHIFT RIGHT t, 16 : bank = t
     IF bank <> VESASystemContext.VWnd THEN CALL Memory_SetVesaWindow(bank)
     winOff = o AND &HFFFF
     DEF SEG = &HA000 : resultVal = PEEK(winOff) : DEF SEG
@@ -50,7 +50,7 @@ SUB Vesa320_HLine(x1_a AS WORD, x2_a AS WORD, y_a AS WORD, c_a AS BYTE)
     t = y : SHIFT LEFT t, 6 : o = o + t
     o = o + x1
     runLen = x2 - x1 + 1
-    bank = o \ 65536
+    t = o : SHIFT RIGHT t, 16 : bank = t
     IF bank <> VESASystemContext.VWnd THEN CALL Memory_SetVesaWindow(bank)
     winOff = o AND &HFFFF
     toEnd = 65536 - winOff
@@ -124,7 +124,7 @@ END SUB
 SUB Vesa320_VLine(x_a AS WORD, y1_a AS WORD, y2_a AS WORD, c_a AS BYTE)
     DIM x AS WORD, y1 AS WORD, y2 AS WORD, c AS BYTE
     DIM o AS LONG, t AS LONG, endO AS LONG, toEndRows AS LONG
-    DIM rowsLeft AS WORD, rowsThis AS WORD, bank AS WORD, winOff AS WORD
+    DIM rowsLeft AS WORD, rowsThis AS WORD, bank AS WORD, endBank AS WORD, winOff AS WORD
     x = x_a : y1 = y1_a : y2 = y2_a : c = c_a
     IF y1 > y2 THEN SWAP y1, y2
     t = y1 : SHIFT LEFT t, 8 : o = t
@@ -132,9 +132,10 @@ SUB Vesa320_VLine(x_a AS WORD, y1_a AS WORD, y2_a AS WORD, c_a AS BYTE)
     o = o + x
     rowsLeft = y2 - y1 + 1
     endO = o + (rowsLeft - 1) * 320&
-    IF (o \ 65536) = (endO \ 65536) THEN
+    t = o : SHIFT RIGHT t, 16 : bank = t
+    t = endO : SHIFT RIGHT t, 16 : endBank = t
+    IF bank = endBank THEN
         ' whole column in one bank - no per-row checks
-        bank = o \ 65536
         IF bank <> VESASystemContext.VWnd THEN CALL Memory_SetVesaWindow(bank)
         winOff = o AND &HFFFF
         !PUSH ES
@@ -153,7 +154,7 @@ SUB Vesa320_VLine(x_a AS WORD, y1_a AS WORD, y2_a AS WORD, c_a AS BYTE)
         !POP ES
     ELSE
         DO WHILE rowsLeft > 0
-            bank = o \ 65536
+            t = o : SHIFT RIGHT t, 16 : bank = t
             IF bank <> VESASystemContext.VWnd THEN CALL Memory_SetVesaWindow(bank)
             winOff = o AND &HFFFF
             toEndRows = (65536 - winOff) \ 320

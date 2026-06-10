@@ -136,16 +136,17 @@ END SUB
 SUB Vesa{W}_VLine(x_a AS WORD, y1_a AS WORD, y2_a AS WORD, c_a AS BYTE)
     DIM x AS WORD, y1 AS WORD, y2 AS WORD, c AS BYTE
     DIM o AS LONG, t AS LONG, endO AS LONG, toEndRows AS LONG
-    DIM rowsLeft AS WORD, rowsThis AS WORD, bank AS WORD, winOff AS WORD
+    DIM rowsLeft AS WORD, rowsThis AS WORD, bank AS WORD, endBank AS WORD, winOff AS WORD
     x = x_a : y1 = y1_a : y2 = y2_a : c = c_a
     IF y1 > y2 THEN SWAP y1, y2
     {OFFSET:y1}
     o = o + x
     rowsLeft = y2 - y1 + 1
     endO = o + (rowsLeft - 1) * {W}&
-    IF (o \ 65536) = (endO \ 65536) THEN
+    bank = o \ 65536
+    endBank = endO \ 65536
+    IF bank = endBank THEN
         ' whole column in one bank - no per-row checks
-        bank = o \ 65536
         IF bank <> VESASystemContext.VWnd THEN CALL Memory_SetVesaWindow(bank)
         winOff = o AND &HFFFF
         !PUSH ES
