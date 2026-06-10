@@ -38,7 +38,7 @@ SUB DrawPcx_Show(BYVAL fileName AS STRING, BYVAL x AS WORD, BYVAL y AS WORD)
     ImageSystemContext.BitsPerPixel = 8
     
     ' Read and display image dataBuf with RLE decompression
-    SEEK fileHandle, 129  ' PCX dataBuf starts at byte 128
+    SEEK fileHandle, 128  ' PCX data starts at byte 128 (0-based); was 129 (off by one)
     
     FOR pixelY = 0 TO imageHeight - 1
         CALL DrawPcx_ReadScanline(fileHandle, scanlineData, imageWidth)
@@ -60,7 +60,7 @@ SUB DrawPcx_ReadHeader(BYVAL fileHandle AS INTEGER, imageWidth AS WORD, imageHei
     DIM XMin AS WORD, YMin AS WORD, XMax AS WORD, YMax AS WORD
     
     ' Read bounding box (bytes 4-11)
-    SEEK FileHandle, 5
+    SEEK FileHandle, 4  ' 0-based; was 5 (off by one, skipped XMin low byte)
     GET$ FileHandle, 8, HeaderData
     
     XMin = ASC(MID$(HeaderData, 1, 1)) + 256 * ASC(MID$(HeaderData, 2, 1))
@@ -81,7 +81,7 @@ SUB DrawPcx_LoadPalette(BYVAL fileHandle AS INTEGER)
     
     ' Get file size and seek to paletteV
     FileSize = LOF(FileHandle)
-    SEEK FileHandle, FileSize - 768  ' paletteV is last 768 bytes
+    SEEK FileHandle, FileSize - 769  ' 0-based: marker byte is at offset FileSize-769; was FileSize-768 (skipped marker)
     
     ' Check for paletteV marker (should be 12)
     GET$ FileHandle, 1, PaletteData
@@ -138,7 +138,7 @@ END SUB
 ' =============================================================================
 SUB DrawPcx_DrawScanline(BYVAL scanlineData AS STRING, BYVAL x AS WORD, BYVAL y AS WORD, BYVAL widthVal AS WORD)
     ' Use the same optimized scanline drawing as BMP
-    CALL BMP_DrawScanline(ScanlineData, X, Y, widthVal, 8)
+    CALL DrawBmp_DrawScanline(ScanlineData, X, Y, widthVal, 8)  ' was BMP_DrawScanline (wrong name, silently no-ops)
 END SUB
 
 ' =============================================================================
@@ -159,14 +159,18 @@ SUB DrawPcx_GetSize(BYVAL fileName AS STRING, widthVal AS WORD, height AS WORD)
     FileHandle = FREEFILE
     OPEN FileName FOR BINARY AS #FileHandle
     
-    ' Read image dimensions from header
-    SEEK FileHandle, &H12
-    GET$ FileHandle, 4, HeaderData
-    ImageWidth = ASC(MID$(HeaderData, 1, 1)) + 256& * ASC(MID$(HeaderData, 2, 1)) + 65536& * ASC(MID$(HeaderData, 3, 1)) + 16777216& * ASC(MID$(HeaderData, 4, 1))
-    
-    GET$ FileHandle, 4, HeaderData
-    ImageHeight = ASC(MID$(HeaderData, 1, 1)) + 256& * ASC(MID$(HeaderData, 2, 1)) + 65536& * ASC(MID$(HeaderData, 3, 1)) + 16777216& * ASC(MID$(HeaderData, 4, 1))
-    
+    ' Read image dimensions from PCX bounding box (bytes 4-11, 0-based)
+    ' was: SEEK &H12 + 4-byte DWORD reads (BMP format, wrong for PCX)
+    DIM XMin AS LONG, YMin AS LONG, XMax AS LONG, YMax AS LONG
+    SEEK FileHandle, 4
+    GET$ FileHandle, 8, HeaderData
+    XMin = ASC(MID$(HeaderData, 1, 1)) + 256& * ASC(MID$(HeaderData, 2, 1))
+    YMin = ASC(MID$(HeaderData, 3, 1)) + 256& * ASC(MID$(HeaderData, 4, 1))
+    XMax = ASC(MID$(HeaderData, 5, 1)) + 256& * ASC(MID$(HeaderData, 6, 1))
+    YMax = ASC(MID$(HeaderData, 7, 1)) + 256& * ASC(MID$(HeaderData, 8, 1))
+    ImageWidth  = XMax - XMin + 1
+    ImageHeight = YMax - YMin + 1
+
     widthVal = ImageWidth
     Height = ImageHeight
     
