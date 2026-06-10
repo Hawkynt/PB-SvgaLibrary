@@ -9,6 +9,54 @@
 ' =============================================================================
 
 ' =============================================================================
+' Internal: read a LE16 WORD from open binary file at current position
+' =============================================================================
+FUNCTION DrawIco_ReadWord(BYVAL fh AS INTEGER) AS WORD
+    DIM s AS STRING
+    GET$ fh, 2, s
+    IF LEN(s) = 2 THEN
+        DrawIco_ReadWord = ASC(MID$(s, 1, 1)) + 256 * ASC(MID$(s, 2, 1))
+    END IF
+END FUNCTION
+
+' =============================================================================
+' Internal: read a LE32 LONG from open binary file at current position
+' =============================================================================
+FUNCTION DrawIco_ReadLong(BYVAL fh AS INTEGER) AS LONG
+    DIM s AS STRING
+    GET$ fh, 4, s
+    IF LEN(s) = 4 THEN
+        DrawIco_ReadLong = ASC(MID$(s, 1, 1)) + 256& * ASC(MID$(s, 2, 1)) + 65536& * ASC(MID$(s, 3, 1)) + 16777216& * ASC(MID$(s, 4, 1))
+    END IF
+END FUNCTION
+
+' =============================================================================
+' Internal: read a single BYTE from open binary file at current position
+' =============================================================================
+FUNCTION DrawIco_ReadByte(BYVAL fh AS INTEGER) AS BYTE
+    DIM s AS STRING
+    GET$ fh, 1, s
+    IF LEN(s) = 1 THEN
+        DrawIco_ReadByte = ASC(s)
+    END IF
+END FUNCTION
+
+' =============================================================================
+' Internal: read ICONDIRENTRY fields from current file position
+' Bug fix: replaced typed GET (unsupported in PB 3.5 BINARY mode) with GET$
+' =============================================================================
+SUB DrawIco_ReadEntry(BYVAL fh AS INTEGER, iconEntry AS IconDirEntryType)
+    iconEntry.Wide       = DrawIco_ReadByte(fh)  ' Bug fix: was GET fh,,iconEntry.Wide (typed GET silently reads 0)
+    iconEntry.Height     = DrawIco_ReadByte(fh)
+    iconEntry.ColorCount = DrawIco_ReadByte(fh)
+    iconEntry.Reserved   = DrawIco_ReadByte(fh)
+    iconEntry.Planes     = DrawIco_ReadWord(fh)
+    iconEntry.BitCount   = DrawIco_ReadWord(fh)
+    iconEntry.BytesInRes = DrawIco_ReadLong(fh)
+    iconEntry.ImageOffset = DrawIco_ReadLong(fh)
+END SUB
+
+' =============================================================================
 ' Display specific icon from ICO file
 ' Parameters:
 '   FileName - ICO file name (BYVAL)
@@ -19,36 +67,37 @@
 ' =============================================================================
 SUB DrawIco_Show(BYVAL fileName AS STRING, BYVAL x AS WORD, BYVAL y AS WORD, BYVAL iconIndex AS WORD)
     DIM fileHandle AS INTEGER
-    DIM iconHeader AS IconHeaderType
+    DIM resWord AS WORD, kindWord AS WORD, countWord AS WORD
     DIM iconEntry AS IconDirEntryType
     DIM iconData AS STRING, maskData AS STRING
-    
+
     ' Open icon file
     fileHandle = FREEFILE
-    OPEN fileName FOR BINARY ACCESS READ AS fileHandle
+    OPEN fileName FOR BINARY AS #fileHandle
     IF LOF(fileHandle) < 6 THEN
         CLOSE fileHandle
         EXIT SUB
     END IF
-    
-    ' Read ICO header
-    GET fileHandle, 1, iconHeader.Reserved
-    GET fileHandle, , iconHeader.Kind
-    GET fileHandle, , iconHeader.Count
-    
+
+    ' Read ICO header (6 bytes, all sequential from position 0)
+    ' Bug fix: was GET fh,1,var (typed GET reads 0 in PB3.5 BINARY mode; position 1 also skips first byte)
+    resWord   = DrawIco_ReadWord(fileHandle)
+    kindWord  = DrawIco_ReadWord(fileHandle)
+    countWord = DrawIco_ReadWord(fileHandle)
+
     ' Validate header and type
-    IF iconHeader.Reserved <> 0 OR iconHeader.Kind <> 1 OR iconHeader.Count = 0 THEN
+    IF resWord <> 0 OR kindWord <> 1 OR countWord = 0 THEN
         CLOSE fileHandle
         EXIT SUB
     END IF
-    
+
     ' Validate icon index
-    IF iconIndex >= iconHeader.Count THEN iconIndex = 0
-    
+    IF iconIndex >= countWord THEN iconIndex = 0
+
     ' Read specified icon
     CALL DrawIco_ReadIconData(fileHandle, iconIndex, iconEntry, iconData, maskData)
     CLOSE fileHandle
-    
+
     ' Display icon with transparency
     CALL DrawIco_DrawIconWithMask(iconData, maskData, iconEntry, x, y)
 END SUB
@@ -61,25 +110,25 @@ END SUB
 ' =============================================================================
 FUNCTION DrawIco_GetCount(BYVAL fileName AS STRING) AS WORD
     DIM fileHandle AS INTEGER
-    DIM iconHeader AS IconHeaderType
-    
+    DIM resWord AS WORD, kindWord AS WORD, countWord AS WORD
+
     fileHandle = FREEFILE
-    OPEN fileName FOR BINARY ACCESS READ AS fileHandle
+    OPEN fileName FOR BINARY AS #fileHandle
     IF LOF(fileHandle) < 6 THEN
         CLOSE fileHandle
         DrawIco_GetCount = 0
         EXIT FUNCTION
     END IF
-    
-    ' Read header
-    GET fileHandle, 1, iconHeader.Reserved
-    GET fileHandle, , iconHeader.Kind
-    GET fileHandle, , iconHeader.Count
+
+    ' Read header (Bug fix: was typed GET which returns 0 in PB3.5 BINARY mode)
+    resWord   = DrawIco_ReadWord(fileHandle)
+    kindWord  = DrawIco_ReadWord(fileHandle)
+    countWord = DrawIco_ReadWord(fileHandle)
     CLOSE fileHandle
-    
+
     ' Return count if valid header
-    IF iconHeader.Reserved = 0 AND iconHeader.Kind = 1 AND iconHeader.Count > 0 THEN
-        DrawIco_GetCount = iconHeader.Count
+    IF resWord = 0 AND kindWord = 1 AND countWord > 0 THEN
+        DrawIco_GetCount = countWord
     ELSE
         DrawIco_GetCount = 0
     END IF
@@ -108,59 +157,53 @@ END SUB
 ' =============================================================================
 SUB DrawIco_GetInfo(BYVAL fileName AS STRING, BYVAL iconIndex AS WORD, widthVal AS WORD, height AS WORD, colorDepth AS WORD)
     DIM fileHandle AS INTEGER
-    DIM iconHeader AS IconHeaderType
+    DIM resWord AS WORD, kindWord AS WORD, countWord AS WORD
     DIM iconEntry AS IconDirEntryType
-    
+
     ' Initialize return values
     widthVal = 0
     height = 0
     colorDepth = 0
-    
+
     fileHandle = FREEFILE
-    OPEN fileName FOR BINARY ACCESS READ AS fileHandle
+    OPEN fileName FOR BINARY AS #fileHandle
     IF LOF(fileHandle) < 6 THEN
         CLOSE fileHandle
         EXIT SUB
     END IF
-    
-    ' Read header
-    GET fileHandle, 1, iconHeader.Reserved
-    GET fileHandle, , iconHeader.Kind
-    GET fileHandle, , iconHeader.Count
-    
+
+    ' Read header (Bug fix: was typed GET which returns 0 in PB3.5 BINARY mode)
+    resWord   = DrawIco_ReadWord(fileHandle)
+    kindWord  = DrawIco_ReadWord(fileHandle)
+    countWord = DrawIco_ReadWord(fileHandle)
+
     ' Validate header
-    IF iconHeader.Reserved <> 0 OR iconHeader.Kind <> 1 OR iconHeader.Count = 0 THEN
+    IF resWord <> 0 OR kindWord <> 1 OR countWord = 0 THEN
         CLOSE fileHandle
         EXIT SUB
     END IF
-    
+
     ' Validate icon index
-    IF iconIndex >= iconHeader.Count THEN
+    IF iconIndex >= countWord THEN
         CLOSE fileHandle
         EXIT SUB
     END IF
-    
-    ' Seek to icon entry
-    SEEK fileHandle, 7 + (iconIndex * 16)
-    
-    ' Read icon entry
-    GET fileHandle, , iconEntry.Wide
-    GET fileHandle, , iconEntry.Height
-    GET fileHandle, , iconEntry.ColorCount
-    GET fileHandle, , iconEntry.Reserved
-    GET fileHandle, , iconEntry.Planes
-    GET fileHandle, , iconEntry.BitCount
-    GET fileHandle, , iconEntry.BytesInRes
-    GET fileHandle, , iconEntry.ImageOffset
-    
+
+    ' Seek to icon entry (0-based: ICONDIR=6 bytes, each entry=16 bytes)
+    ' Bug fix: was SEEK fh, 7 + (index*16) — off by one (7 vs 6 for 0-based)
+    SEEK fileHandle, 6 + (iconIndex * 16)
+
+    ' Read icon entry (Bug fix: was typed GET which returns 0 in PB3.5 BINARY mode)
+    CALL DrawIco_ReadEntry(fileHandle, iconEntry)
+
     CLOSE fileHandle
-    
+
     ' Return icon information
     widthVal = iconEntry.Wide
     height = iconEntry.Height
     IF widthVal = 0 THEN widthVal = 256
     IF height = 0 THEN height = 256
-    
+
     ' Determine colorVal depth
     IF iconEntry.BitCount > 0 THEN
         colorDepth = iconEntry.BitCount
@@ -181,63 +224,55 @@ END SUB
 ' Load icon paletteV from ICO file
 ' Parameters:
 '   FileName - ICO file name (BYVAL)
-'   IconIndex - Icon index (BYVAL)
 '   paletteV - 256-colorVal paletteV array (BYREF)
+'   colorDepth - colour depth (BYVAL)
 ' Returns: Nothing (paletteV returned via parameter)
 ' =============================================================================
 SUB DrawIco_GetPalette(BYVAL fileName AS STRING, paletteV() AS BYTE, BYVAL colorDepth AS BYTE)
     DIM fileHandle AS INTEGER
-    DIM iconHeader AS IconHeaderType
+    DIM resWord AS WORD, kindWord AS WORD, countWord AS WORD
     DIM iconEntry AS IconDirEntryType
-    DIM paletteSize AS WORD, i AS WORD
-    DIM r AS BYTE, g AS BYTE, b AS BYTE, reserved AS BYTE
-    
+    DIM paletteSize AS WORD
+    DIM i AS INTEGER
+    DIM r AS BYTE, g AS BYTE, b AS BYTE, rsv AS BYTE
+
     ' Initialize paletteV to grayscale
     FOR i = 0 TO 255
         paletteV(i * 3) = i
-        paletteV(i * 3 + 1) = i  
+        paletteV(i * 3 + 1) = i
         paletteV(i * 3 + 2) = i
     NEXT i
-    
+
     fileHandle = FREEFILE
-    OPEN fileName FOR BINARY ACCESS READ AS fileHandle
+    OPEN fileName FOR BINARY AS #fileHandle
     IF LOF(fileHandle) < 6 THEN
         CLOSE fileHandle
         EXIT SUB
     END IF
-    
-    ' Read and validate header
-    GET fileHandle, 1, iconHeader.Reserved
-    GET fileHandle, , iconHeader.Kind
-    GET fileHandle, , iconHeader.Count
-    
-    IF iconHeader.Reserved <> 0 OR iconHeader.Kind <> 1 OR iconHeader.Count = 0 THEN
+
+    ' Read and validate header (Bug fix: was typed GET which returns 0 in PB3.5 BINARY mode)
+    resWord   = DrawIco_ReadWord(fileHandle)
+    kindWord  = DrawIco_ReadWord(fileHandle)
+    countWord = DrawIco_ReadWord(fileHandle)
+
+    IF resWord <> 0 OR kindWord <> 1 OR countWord = 0 THEN
         CLOSE fileHandle
         EXIT SUB
     END IF
-    
-    DIM iconIndex AS WORD
-    iconIndex = 0  ' Use first icon for paletteV
-    
-    IF iconIndex >= iconHeader.Count THEN iconIndex = 0
-    
-    ' Read icon entry
-    SEEK fileHandle, 7 + (iconIndex * 16)
-    GET fileHandle, , iconEntry.Wide
-    GET fileHandle, , iconEntry.Height
-    GET fileHandle, , iconEntry.ColorCount
-    GET fileHandle, , iconEntry.Reserved
-    GET fileHandle, , iconEntry.Planes
-    GET fileHandle, , iconEntry.BitCount
-    GET fileHandle, , iconEntry.BytesInRes
-    GET fileHandle, , iconEntry.ImageOffset
-    
+
+    ' Use first icon for palette
+    ' Seek to first icon entry (Bug fix: was SEEK fh,7 — off by one for 0-based SEEK)
+    SEEK fileHandle, 6
+
+    ' Read icon entry (Bug fix: was typed GET which returns 0 in PB3.5 BINARY mode)
+    CALL DrawIco_ReadEntry(fileHandle, iconEntry)
+
     ' Only read paletteV for <= 8-bit icons
     IF iconEntry.BitCount > 8 THEN
         CLOSE fileHandle
         EXIT SUB
     END IF
-    
+
     ' Calculate paletteV size
     IF iconEntry.BitCount <= 8 THEN
         paletteSize = 2 ^ iconEntry.BitCount
@@ -245,23 +280,24 @@ SUB DrawIco_GetPalette(BYVAL fileName AS STRING, paletteV() AS BYTE, BYVAL color
         CLOSE fileHandle
         EXIT SUB
     END IF
-    
-    ' Seek to paletteV dataBuf (after BITMAPINFOHEADER)
-    SEEK fileHandle, iconEntry.ImageOffset + 40 + 1
-    
+
+    ' Seek to paletteV data (after BITMAPINFOHEADER, 0-based)
+    ' Bug fix: was SEEK fh, imageOffset+40+1 — the +1 was wrong for 0-based SEEK
+    SEEK fileHandle, iconEntry.ImageOffset + 40
+
     ' Read paletteV entries (BGRA format)
     FOR i = 0 TO paletteSize - 1
-        GET fileHandle, , b
-        GET fileHandle, , g
-        GET fileHandle, , r
-        GET fileHandle, , reserved
-        
+        b   = DrawIco_ReadByte(fileHandle)  ' Bug fix: was GET fh,,b (typed GET reads 0)
+        g   = DrawIco_ReadByte(fileHandle)
+        r   = DrawIco_ReadByte(fileHandle)
+        rsv = DrawIco_ReadByte(fileHandle)
+
         ' Convert to RGB format
-        paletteV(i * 3) = r
+        paletteV(i * 3)     = r
         paletteV(i * 3 + 1) = g
         paletteV(i * 3 + 2) = b
     NEXT i
-    
+
     CLOSE fileHandle
 END SUB
 
@@ -269,7 +305,7 @@ END SUB
 ' Internal function to read icon dataBuf from ICO file
 ' Parameters:
 '   FileHandle - Open file handle (BYVAL)
-'   IconIndex - Icon index to read (BYVAL)  
+'   IconIndex - Icon index to read (BYVAL)
 '   IconEntry - Icon directory entry (BYREF)
 '   IconData - Icon pixel dataBuf (BYREF)
 '   MaskData - Icon mask dataBuf (BYREF)
@@ -279,48 +315,43 @@ SUB DrawIco_ReadIconData(BYVAL fileHandle AS INTEGER, BYVAL iconIndex AS WORD, i
     DIM widthVal AS WORD, height AS WORD
     DIM scanlineWidth AS WORD, maskScanlineWidth AS WORD
     DIM paletteSize AS WORD, dataOffset AS LONG
-    
-    ' Seek to icon entry
-    SEEK fileHandle, 7 + (iconIndex * 16)
-    
-    ' Read icon directory entry
-    GET fileHandle, , iconEntry.Wide
-    GET fileHandle, , iconEntry.Height
-    GET fileHandle, , iconEntry.ColorCount
-    GET fileHandle, , iconEntry.Reserved
-    GET fileHandle, , iconEntry.Planes
-    GET fileHandle, , iconEntry.BitCount
-    GET fileHandle, , iconEntry.BytesInRes
-    GET fileHandle, , iconEntry.ImageOffset
-    
+
+    ' Seek to icon entry (0-based)
+    ' Bug fix: was SEEK fh, 7+(index*16) — position 7 is one past byte 6 (first entry) for 0-based SEEK
+    SEEK fileHandle, 6 + (iconIndex * 16)
+
+    ' Read icon directory entry (Bug fix: was typed GET which returns 0 in PB3.5 BINARY mode)
+    CALL DrawIco_ReadEntry(fileHandle, iconEntry)
+
     ' Handle 0 dimensions (means 256)
     widthVal = iconEntry.Wide
     height = iconEntry.Height
     IF widthVal = 0 THEN widthVal = 256
     IF height = 0 THEN height = 256
-    
+
     ' Calculate scanline widths (DWORD aligned)
     scanlineWidth = ((widthVal * iconEntry.BitCount + 31) \ 32) * 4
     maskScanlineWidth = ((widthVal + 31) \ 32) * 4
-    
+
     ' Calculate paletteV size
     IF iconEntry.BitCount <= 8 THEN
         paletteSize = (2 ^ iconEntry.BitCount) * 4
     ELSE
         paletteSize = 0
     END IF
-    
-    ' Seek to icon dataBuf (skip BITMAPINFOHEADER + paletteV)
-    dataOffset = iconEntry.ImageOffset + 40 + paletteSize + 1
+
+    ' Seek to icon data (skip BITMAPINFOHEADER + palette, 0-based)
+    ' Bug fix: was dataOffset = imageOffset+40+paletteSize+1 — the +1 was wrong for 0-based SEEK
+    dataOffset = iconEntry.ImageOffset + 40 + paletteSize
     SEEK fileHandle, dataOffset
-    
-    ' Read icon pixel dataBuf
+
+    ' Read icon pixel data
     iconData = SPACE$(scanlineWidth * height)
-    GET fileHandle, , iconData
-    
+    GET$ fileHandle, scanlineWidth * height, iconData  ' Bug fix: was GET fh,,iconData (typed GET reads 0)
+
     ' Read AND mask
     maskData = SPACE$(maskScanlineWidth * height)
-    GET fileHandle, , maskData
+    GET$ fileHandle, maskScanlineWidth * height, maskData  ' Bug fix: was GET fh,,maskData (typed GET reads 0)
 END SUB
 
 ' =============================================================================
@@ -336,36 +367,34 @@ SUB DrawIco_DrawIconWithMask(BYVAL iconData AS STRING, BYVAL maskData AS STRING,
     DIM widthVal AS WORD, height AS WORD
     DIM drawX AS WORD, drawY AS WORD
     DIM scanlineWidth AS WORD, maskScanlineWidth AS WORD
-    DIM pixelX AS WORD, pixelY AS WORD
+    DIM pixelX AS INTEGER, pixelY AS INTEGER
     DIM pixelOffset AS WORD, maskOffset AS WORD
     DIM pixelValue AS BYTE, maskByte AS BYTE, maskBit AS BYTE
-    
+
     ' Get actual dimensions
     widthVal = iconEntry.Wide
     height = iconEntry.Height
     IF widthVal = 0 THEN widthVal = 256
     IF height = 0 THEN height = 256
-    
+
     ' Calculate scanline widths
     scanlineWidth = ((widthVal * iconEntry.BitCount + 31) \ 32) * 4
     maskScanlineWidth = ((widthVal + 31) \ 32) * 4
-    
+
     ' Draw icon pixel by pixel
     FOR pixelY = 0 TO height - 1
         drawY = y + pixelY
         IF drawY >= SVGAScreenContext.YRes THEN EXIT FOR
-        IF drawY < 0 THEN GOTO NextIconY
-        
+
         FOR pixelX = 0 TO widthVal - 1
             drawX = x + pixelX
             IF drawX >= SVGAScreenContext.XRes THEN EXIT FOR
-            IF drawX < 0 THEN GOTO NextIconX
-            
+
             ' Get mask bit (AND mask)
             maskOffset = (height - 1 - pixelY) * maskScanlineWidth + (pixelX \ 8) + 1
             maskByte = ASC(MID$(maskData, maskOffset, 1))
             maskBit = (maskByte \ (2 ^ (7 - (pixelX AND 7)))) AND 1
-            
+
             ' Only draw pixel if mask bit is clear (0 = opaque, 1 = transparent)
             IF maskBit = 0 THEN
                 ' Get pixel value based on bit depth
@@ -375,7 +404,7 @@ SUB DrawIco_DrawIconWithMask(BYVAL iconData AS STRING, BYVAL maskData AS STRING,
                         pixelValue = ASC(MID$(iconData, pixelOffset, 1))
                         pixelValue = (pixelValue \ (2 ^ (7 - (pixelX AND 7)))) AND 1
                         pixelValue = pixelValue * 255  ' Convert to 8-bit
-                        
+
                     CASE 4
                         pixelOffset = (height - 1 - pixelY) * scanlineWidth + (pixelX \ 2) + 1
                         pixelValue = ASC(MID$(iconData, pixelOffset, 1))
@@ -384,22 +413,20 @@ SUB DrawIco_DrawIconWithMask(BYVAL iconData AS STRING, BYVAL maskData AS STRING,
                         ELSE
                             pixelValue = pixelValue AND 15  ' Lower nibble
                         END IF
-                        
+
                     CASE 8
                         pixelOffset = (height - 1 - pixelY) * scanlineWidth + pixelX + 1
                         pixelValue = ASC(MID$(iconData, pixelOffset, 1))
-                        
+
                     CASE ELSE
                         pixelValue = 0  ' Unsupported bit depth
                 END SELECT
-                
+
                 ' Draw the pixel
                 CALL Svga_PutPixel(drawX, drawY, pixelValue)
             END IF
-            
-            NextIconX:
+
         NEXT pixelX
-        NextIconY:
     NEXT pixelY
 END SUB
 
@@ -414,64 +441,64 @@ END SUB
 ' =============================================================================
 FUNCTION DrawIco_Extract(BYVAL fileName AS STRING, BYVAL iconIndex AS WORD, buffer AS STRING, widthVal AS WORD, height AS WORD) AS BYTE
     DIM fileHandle AS INTEGER
-    DIM iconHeader AS IconHeaderType
+    DIM resWord AS WORD, kindWord AS WORD, countWord AS WORD
     DIM iconEntry AS IconDirEntryType
     DIM iconData AS STRING, maskData AS STRING
-    DIM x AS WORD, y AS WORD, bufferOffset AS WORD
+    DIM x AS INTEGER, y AS INTEGER, bufferOffset AS WORD
     DIM pixelValue AS BYTE, maskBit AS BYTE, maskByte AS BYTE
     DIM scanlineWidth AS WORD, maskScanlineWidth AS WORD
     DIM pixelOffset AS WORD, maskOffset AS WORD
-    
+
     widthVal = 0
     height = 0
     DrawIco_Extract = 0
-    
+
     fileHandle = FREEFILE
-    OPEN fileName FOR BINARY ACCESS READ AS fileHandle
+    OPEN fileName FOR BINARY AS #fileHandle
     IF LOF(fileHandle) < 6 THEN
         CLOSE fileHandle
         EXIT FUNCTION
     END IF
-    
-    ' Read and validate header
-    GET fileHandle, 1, iconHeader.Reserved
-    GET fileHandle, , iconHeader.Kind
-    GET fileHandle, , iconHeader.Count
-    
-    IF iconHeader.Reserved <> 0 OR iconHeader.Kind <> 1 OR iconHeader.Count = 0 THEN
+
+    ' Read and validate header (Bug fix: was typed GET which returns 0 in PB3.5 BINARY mode)
+    resWord   = DrawIco_ReadWord(fileHandle)
+    kindWord  = DrawIco_ReadWord(fileHandle)
+    countWord = DrawIco_ReadWord(fileHandle)
+
+    IF resWord <> 0 OR kindWord <> 1 OR countWord = 0 THEN
         CLOSE fileHandle
         EXIT FUNCTION
     END IF
-    
-    IF iconIndex >= iconHeader.Count THEN iconIndex = 0
-    
-    ' Read icon dataBuf
+
+    IF iconIndex >= countWord THEN iconIndex = 0
+
+    ' Read icon data
     CALL DrawIco_ReadIconData(fileHandle, iconIndex, iconEntry, iconData, maskData)
     CLOSE fileHandle
-    
+
     ' Get dimensions
     widthVal = iconEntry.Wide
     height = iconEntry.Height
     IF widthVal = 0 THEN widthVal = 256
     IF height = 0 THEN height = 256
-    
+
     ' Allocate buffer
     buffer = SPACE$(widthVal * height)
-    
+
     ' Calculate scanline widths
     scanlineWidth = ((widthVal * iconEntry.BitCount + 31) \ 32) * 4
     maskScanlineWidth = ((widthVal + 31) \ 32) * 4
-    
+
     ' Extract pixels with transparency
     FOR y = 0 TO height - 1
         FOR x = 0 TO widthVal - 1
             bufferOffset = y * widthVal + x + 1
-            
+
             ' Get mask bit
             maskOffset = (height - 1 - y) * maskScanlineWidth + (x \ 8) + 1
             maskByte = ASC(MID$(maskData, maskOffset, 1))
             maskBit = (maskByte \ (2 ^ (7 - (x AND 7)))) AND 1
-            
+
             ' Extract pixel if not transparent
             IF maskBit = 0 THEN
                 SELECT CASE iconEntry.BitCount
@@ -480,7 +507,7 @@ FUNCTION DrawIco_Extract(BYVAL fileName AS STRING, BYVAL iconIndex AS WORD, buff
                         pixelValue = ASC(MID$(iconData, pixelOffset, 1))
                         pixelValue = (pixelValue \ (2 ^ (7 - (x AND 7)))) AND 1
                         pixelValue = pixelValue * 255
-                        
+
                     CASE 4
                         pixelOffset = (height - 1 - y) * scanlineWidth + (x \ 2) + 1
                         pixelValue = ASC(MID$(iconData, pixelOffset, 1))
@@ -489,21 +516,21 @@ FUNCTION DrawIco_Extract(BYVAL fileName AS STRING, BYVAL iconIndex AS WORD, buff
                         ELSE
                             pixelValue = pixelValue AND 15
                         END IF
-                        
+
                     CASE 8
                         pixelOffset = (height - 1 - y) * scanlineWidth + x + 1
                         pixelValue = ASC(MID$(iconData, pixelOffset, 1))
-                        
+
                     CASE ELSE
                         pixelValue = 0
                 END SELECT
             ELSE
                 pixelValue = 255  ' Transparent pixels as white
             END IF
-            
+
             MID$(buffer, bufferOffset, 1) = CHR$(pixelValue)
         NEXT x
     NEXT y
-    
+
     DrawIco_Extract = 1
 END FUNCTION
