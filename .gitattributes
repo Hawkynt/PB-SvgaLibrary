@@ -3,7 +3,9 @@
 *.BAS text eol=crlf
 *.bas text eol=crlf
 *.INC text eol=crlf
+*.BI  text eol=crlf
 *.tst text eol=crlf
+*.TST text eol=crlf
 *.bat text eol=crlf
 # Toolchain image / binaries
 *.gz binary
