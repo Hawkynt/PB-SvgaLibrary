@@ -41,6 +41,10 @@ command -v dosbox >/dev/null || { sudo apt-get update && sudo apt-get install -y
 rm -rf build && mkdir -p build
 cp ./*.SUB build/ 2>/dev/null || true
 cp tests/*.BI build/ 2>/dev/null || true
+# Engine-only view of SVGA.SUB (which is the umbrella that $INCLUDEs the whole
+# library) so tests/SVGA.BAS can exercise the Svga_* dispatch engine in isolation
+# without pulling in every module (that would blow PB's 64k-per-compile limit).
+python3 -c "d=open('SVGA.SUB','rb').read(); open('build/SVGAENG.SUB','wb').write(b''.join(l for l in d.splitlines(keepends=True) if not l.lstrip().startswith(b'\$INCLUDE')))"
 cp pb/* build/
 rm -f build/UNITTEST.LOG
 : > build/TIMING.txt
