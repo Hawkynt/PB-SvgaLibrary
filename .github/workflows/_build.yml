@@ -80,7 +80,7 @@ jobs:
           {
             echo "[cpu]"; echo "core=dynamic"; echo "cycles=max"
             echo "[autoexec]"; echo "mount c \"$(pwd)/build\""; echo "c:"
-            while read u; do echo "PBC.EXE -CU -G386 -FNPX $u.BAS >> CLOG.TXT"; done < build/UNITS.txt
+            for u in $(cat build/UNITS.txt); do echo "PBC.EXE -CU -G386 -FNPX $u.BAS >> CLOG.TXT"; done
             echo "PBLIB.EXE < PBLIB.IN"
             echo "PBC.EXE -CE -G386 -FNPX SELFTEST.BAS >> CLOG.TXT"
             echo "SELFTEST.EXE"
@@ -89,6 +89,8 @@ jobs:
           SDL_VIDEODRIVER=dummy timeout 600 dosbox -conf build/dosbox.conf -exit >/dev/null 2>&1 || true
           echo "=== compile/link log ==="; cat build/CLOG.TXT 2>/dev/null || true
           echo "=== link-and-run self-test ==="; cat build/O.TXT 2>/dev/null || true
+          expected=$(wc -l < build/UNITS.txt); actual=$(ls build/*.PBU 2>/dev/null | wc -l)
+          if [ "$actual" -ne "$expected" ]; then echo "::error::only $actual of $expected units compiled to .PBU - a unit was skipped or failed."; exit 1; fi
           if [ ! -f build/SVGA.PBL ]; then echo "::error::SVGA.PBL was not produced (see log)."; exit 1; fi
           if grep -qiE "Error [0-9]+:" build/CLOG.TXT 2>/dev/null; then echo "::error::a unit failed to compile or the .PBL failed to link - see log."; exit 1; fi
           if ! grep -q "PIXEL_ROUNDTRIP_OK" build/O.TXT 2>/dev/null; then echo "::error::SVGA.PBL link-and-run self-test did not round-trip a pixel."; exit 1; fi

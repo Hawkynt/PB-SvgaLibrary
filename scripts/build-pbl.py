@@ -156,5 +156,7 @@ END
 ''')
 # PBLIB librarian script (single-key O/A.../Q commands on stdin)
 wr('PBLIB.IN', 'OSVGA.PBL\r\n' + ''.join('A%s.PBU\r\n' % u for u in units) + 'Q')
-open(os.path.join(OUT, 'UNITS.txt'), 'w').write('\n'.join(units))
+# trailing newline matters: a shell `while read` drops a final unterminated
+# line, which silently skipped the last unit (VIRTUAL) in CI builds
+open(os.path.join(OUT, 'UNITS.txt'), 'w').write('\n'.join(units) + '\n')
 print('emitted %d units into %s (interface: SVGA.BI / SVGAINT.BI)' % (len(units), OUT))
