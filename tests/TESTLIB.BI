@@ -56,6 +56,14 @@ SUB Test_Record(BYVAL ok AS INTEGER, what AS STRING, detail AS STRING)
     CLOSE #9
 END SUB
 
+' record an honestly-skipped block (e.g. a video mode this emulator lacks);
+' the runner reports skips in the summary but does not fail on them
+SUB Test_Skip(what AS STRING)
+    OPEN "UNITTEST.LOG" FOR APPEND AS #9
+    PRINT #9, "  [SKIP] "; what
+    CLOSE #9
+END SUB
+
 SUB Test_EndSuite(suiteName AS STRING)
     OPEN "UNITTEST.LOG" FOR APPEND AS #9
     PRINT #9, "[RESULT] "; suiteName; " assertions="; tCount; " failed="; tFail

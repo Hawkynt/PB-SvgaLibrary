@@ -108,9 +108,10 @@ awk '
   /^\[SUITE\]/   { suite=substr($0,9); printf "\n%s\n", suite; next }
   /^  \[PASS\]/  { total++; next }
   /^  \[FAIL\]/  { total++; tfail++; printf "  FAIL %s\n", substr($0,10); next }
+  /^  \[SKIP\]/  { tskip++; printf "  SKIP %s\n", substr($0,10); next }
   END {
     printf "\n---------------------------------------------------------------\n"
-    printf "Total: %d   Passed: %d   Failed: %d\n", total, total-tfail, tfail
+    printf "Total: %d   Passed: %d   Failed: %d   Skipped: %d\n", total, total-tfail, tfail, tskip
   }
 ' "$log"
 echo
