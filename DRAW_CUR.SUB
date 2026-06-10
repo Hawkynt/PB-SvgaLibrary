@@ -25,26 +25,26 @@ SUB DrawCur_Show(BYVAL fileName AS STRING, BYVAL x AS WORD, BYVAL y AS WORD, BYV
     
     ' Open cursor file
     fileHandle = FREEFILE
-    OPEN fileName FOR BINARY ACCESS READ AS fileHandle
+    OPEN fileName FOR BINARY AS #fileHandle  ' Bug fix: PB3.5 does not support ACCESS READ modifier
     IF LOF(fileHandle) < 6 THEN
         CLOSE fileHandle
         EXIT SUB
     END IF
-    
+
     ' Read CUR header
-    GET fileHandle, 1, iconHeader.Reserved
+    GET fileHandle, 0, iconHeader.Reserved  ' Bug fix: PB3.5 BINARY is 0-based; was 1 (skipped first byte)
     GET fileHandle, , iconHeader.Kind
     GET fileHandle, , iconHeader.Count
-    
+
     ' Validate header and type
     IF iconHeader.Reserved <> 0 OR iconHeader.Kind <> 2 OR iconHeader.Count = 0 THEN
         CLOSE fileHandle
         EXIT SUB
     END IF
-    
+
     ' Validate cursor index
     IF cursorIndex >= iconHeader.Count THEN cursorIndex = 0
-    
+
     ' Read specified cursor
     CALL DrawCur_ReadCursorData(fileHandle, cursorIndex, iconEntry, iconData, maskData)
     CLOSE fileHandle
@@ -72,19 +72,19 @@ FUNCTION DrawCur_GetCount(BYVAL fileName AS STRING) AS WORD
     DIM iconHeader AS IconHeaderType
     
     fileHandle = FREEFILE
-    OPEN fileName FOR BINARY ACCESS READ AS fileHandle
+    OPEN fileName FOR BINARY AS #fileHandle  ' Bug fix: PB3.5 does not support ACCESS READ modifier
     IF LOF(fileHandle) < 6 THEN
         CLOSE fileHandle
         DrawCur_GetCount = 0
         EXIT FUNCTION
     END IF
-    
+
     ' Read header
-    GET fileHandle, 1, iconHeader.Reserved
+    GET fileHandle, 0, iconHeader.Reserved  ' Bug fix: PB3.5 BINARY is 0-based; was 1 (skipped first byte)
     GET fileHandle, , iconHeader.Kind
     GET fileHandle, , iconHeader.Count
     CLOSE fileHandle
-    
+
     ' Return count if valid CUR header
     IF iconHeader.Reserved = 0 AND iconHeader.Kind = 2 AND iconHeader.Count > 0 THEN
         DrawCur_GetCount = iconHeader.Count
@@ -111,35 +111,35 @@ SUB DrawCur_GetHotspot(BYVAL fileName AS STRING, BYVAL cursorIndex AS WORD, hotX
     hotY = 0
     
     fileHandle = FREEFILE
-    OPEN fileName FOR BINARY ACCESS READ AS fileHandle
+    OPEN fileName FOR BINARY AS #fileHandle  ' Bug fix: PB3.5 does not support ACCESS READ modifier
     IF LOF(fileHandle) < 6 THEN
         CLOSE fileHandle
         EXIT SUB
     END IF
-    
+
     ' Read header
-    GET fileHandle, 1, iconHeader.Reserved
+    GET fileHandle, 0, iconHeader.Reserved  ' Bug fix: PB3.5 BINARY is 0-based; was 1 (skipped first byte)
     GET fileHandle, , iconHeader.Kind
     GET fileHandle, , iconHeader.Count
-    
+
     ' Validate header and type
     IF iconHeader.Reserved <> 0 OR iconHeader.Kind <> 2 OR iconHeader.Count = 0 THEN
         CLOSE fileHandle
         EXIT SUB
     END IF
-    
+
     ' Validate cursor index
     IF cursorIndex >= iconHeader.Count THEN
         CLOSE fileHandle
         EXIT SUB
     END IF
-    
-    ' Seek to cursor entry
-    SEEK fileHandle, 7 + (cursorIndex * 16)
-    
+
+    ' Seek to cursor entry (header is 6 bytes at 0-5, entry 0 starts at 6)
+    SEEK fileHandle, 6 + (cursorIndex * 16)  ' Bug fix: was 7 (off-by-one, 0-based file positions)
+
     ' Skip widthVal, height, colors, reserved
-    SEEK fileHandle, POS(fileHandle) + 4
-    
+    SEEK fileHandle, SEEK(fileHandle) + 4  ' Bug fix: POS() returns text column; SEEK() returns file position
+
     ' Read hotspot (stored in Planes and BitCount fields for CUR files)
     GET fileHandle, , iconEntry.Planes    ' HotX
     GET fileHandle, , iconEntry.BitCount  ' HotY
@@ -185,32 +185,32 @@ SUB DrawCur_GetInfo(BYVAL fileName AS STRING, BYVAL cursorIndex AS WORD, widthVa
     hotY = 0
     
     fileHandle = FREEFILE
-    OPEN fileName FOR BINARY ACCESS READ AS fileHandle
+    OPEN fileName FOR BINARY AS #fileHandle  ' Bug fix: PB3.5 does not support ACCESS READ modifier
     IF LOF(fileHandle) < 6 THEN
         CLOSE fileHandle
         EXIT SUB
     END IF
-    
+
     ' Read header
-    GET fileHandle, 1, iconHeader.Reserved
+    GET fileHandle, 0, iconHeader.Reserved  ' Bug fix: PB3.5 BINARY is 0-based; was 1 (skipped first byte)
     GET fileHandle, , iconHeader.Kind
     GET fileHandle, , iconHeader.Count
-    
+
     ' Validate header
     IF iconHeader.Reserved <> 0 OR iconHeader.Kind <> 2 OR iconHeader.Count = 0 THEN
         CLOSE fileHandle
         EXIT SUB
     END IF
-    
+
     ' Validate cursor index
     IF cursorIndex >= iconHeader.Count THEN
         CLOSE fileHandle
         EXIT SUB
     END IF
-    
-    ' Seek to cursor entry
-    SEEK fileHandle, 7 + (cursorIndex * 16)
-    
+
+    ' Seek to cursor entry (header is 6 bytes at 0-5, entry 0 starts at 6)
+    SEEK fileHandle, 6 + (cursorIndex * 16)  ' Bug fix: was 7 (off-by-one, 0-based file positions)
+
     ' Read cursor entry
     GET fileHandle, , iconEntry.Wide
     GET fileHandle, , iconEntry.Height
@@ -276,14 +276,14 @@ FUNCTION DrawCur_LoadBitmap(BYVAL fileName AS STRING, BYVAL cursorIndex AS WORD,
     DrawCur_LoadBitmap = 0
     
     fileHandle = FREEFILE
-    OPEN fileName FOR BINARY ACCESS READ AS fileHandle
+    OPEN fileName FOR BINARY AS #fileHandle  ' Bug fix: PB3.5 does not support ACCESS READ modifier
     IF LOF(fileHandle) < 6 THEN
         CLOSE fileHandle
         EXIT FUNCTION
     END IF
-    
+
     ' Read and validate header
-    GET fileHandle, 1, iconHeader.Reserved
+    GET fileHandle, 0, iconHeader.Reserved  ' Bug fix: PB3.5 BINARY is 0-based; was 1 (skipped first byte)
     GET fileHandle, , iconHeader.Kind
     GET fileHandle, , iconHeader.Count
     
@@ -389,9 +389,9 @@ SUB DrawCur_ReadCursorData(BYVAL fileHandle AS INTEGER, BYVAL cursorIndex AS WOR
     DIM paletteSize AS WORD, dataOffset AS LONG
     DIM colorDepth AS WORD
     
-    ' Seek to cursor entry
-    SEEK fileHandle, 7 + (cursorIndex * 16)
-    
+    ' Seek to cursor entry (header is 6 bytes at 0-5, entry 0 starts at 6)
+    SEEK fileHandle, 6 + (cursorIndex * 16)  ' Bug fix: was 7 (off-by-one, 0-based file positions)
+
     ' Read cursor directory entry
     GET fileHandle, , iconEntry.Wide
     GET fileHandle, , iconEntry.Height
@@ -433,7 +433,8 @@ SUB DrawCur_ReadCursorData(BYVAL fileHandle AS INTEGER, BYVAL cursorIndex AS WOR
     END IF
     
     ' Seek to cursor dataBuf (skip BITMAPINFOHEADER + paletteV)
-    dataOffset = iconEntry.ImageOffset + 40 + paletteSize + 1
+    ' ImageOffset is 0-based in the file; no +1 needed (PB3.5 BINARY is 0-based)
+    dataOffset = iconEntry.ImageOffset + 40 + paletteSize  ' Bug fix: was +1 (off-by-one)
     SEEK fileHandle, dataOffset
     
     ' Read cursor pixel dataBuf
