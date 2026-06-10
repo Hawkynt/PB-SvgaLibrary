@@ -337,8 +337,11 @@ SUB Scroll_HardwareVertical(BYVAL lines AS WORD, BYVAL direction AS BYTE, BYVAL 
         NEXT y
         
     ELSE  ' Scroll down
-        ' Move screen dataBuf down (start from bottom)
-        FOR y = linesToMove - 1 TO 0 STEP -1
+        ' Move screen dataBuf down (start from bottom). The counter descends to 0,
+        ' so it MUST be signed - an unsigned WORD never runs this loop in PB 3.5.
+        DIM yi AS INTEGER
+        FOR yi = linesToMove - 1 TO 0 STEP -1
+            y = yi
             sourceLine = y * 320
             destLine = (y + lines) * 320
             
@@ -350,8 +353,8 @@ SUB Scroll_HardwareVertical(BYVAL lines AS WORD, BYVAL direction AS BYTE, BYVAL 
             !REP MOVSB
             !POP DI
             !POP SI
-        NEXT y
-        
+        NEXT yi
+
         ' Fill exposed top lines
         FOR y = 0 TO lines - 1
             destLine = y * 320

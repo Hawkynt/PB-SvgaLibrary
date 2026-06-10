@@ -16,7 +16,7 @@ SUB DrawBmp_Show(BYVAL fileName AS STRING, BYVAL x AS WORD, BYVAL y AS WORD)
     DIM fileHandle AS INTEGER, headerData AS STRING
     DIM dataOffset AS LONG, imageWidth AS LONG, imageHeight AS LONG
     DIM colorDepth AS WORD, numColors AS WORD
-    DIM scanlineData AS STRING, pixelX AS WORD, pixelY AS WORD
+    DIM scanlineData AS STRING, pixelX AS WORD, pixelY AS INTEGER   ' pixelY descends to 0 - MUST be signed
     DIM paletteIndex AS WORD, bytesPerLine AS WORD
     DIM physicalX AS WORD, physicalY AS WORD
     
@@ -52,13 +52,13 @@ SUB DrawBmp_Show(BYVAL fileName AS STRING, BYVAL x AS WORD, BYVAL y AS WORD)
     
     ' Read and display image dataBuf (BMPs are stored bottom-up)
     SEEK FileHandle, DataOffset
-    
+
     FOR PixelY = ImageHeight - 1 TO 0 STEP -1
         GET$ FileHandle, BytesPerLine, ScanlineData
-        
+
         ' Check if scanline is visible
         IF Virtual_IsVisible(X, Y + PixelY) THEN
-            CALL BMP_DrawScanline(ScanlineData, PhysicalX, PhysicalY + PixelY, ImageWidth, ColorDepth)
+            CALL DrawBmp_DrawScanline(ScanlineData, PhysicalX, PhysicalY + PixelY, ImageWidth, ColorDepth)
         END IF
     NEXT PixelY
     
@@ -99,8 +99,9 @@ SUB DrawBmp_LoadPalette(BYVAL fileHandle AS INTEGER, BYVAL numColors AS WORD)
     DIM PaletteData AS STRING, ColorIndex AS WORD
     DIM RedValue AS BYTE, GreenValue AS BYTE, BlueValue AS BYTE
     
-    ' Seek to paletteV location (after header)
-    SEEK FileHandle, 55  ' Standard BMP paletteV location
+    ' Seek to paletteV location (after the 14-byte file + 40-byte info header;
+    ' PB 3.5 BINARY is 0-based, so byte offset 54)
+    SEEK FileHandle, 54  ' Standard BMP paletteV location
     
     ' Read and set paletteV (BMP uses BGR format)
     FOR ColorIndex = 0 TO NumColors - 1
