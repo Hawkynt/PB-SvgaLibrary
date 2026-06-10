@@ -88,7 +88,7 @@ FUNCTION Ani_LoadAnimation(BYVAL fileName AS STRING) AS BYTE
     
     ' Open ANI file
     FileHandle = FREEFILE
-    OPEN fileName FOR BINARY ACCESS READ AS FileHandle
+    OPEN fileName FOR BINARY AS FileHandle  ' bug fix: PB 3.5 does not support ACCESS READ clause
     IF LOF(FileHandle) < 12 THEN
         CLOSE FileHandle
         Ani_LoadAnimation = 255
@@ -271,7 +271,7 @@ SUB Ani_ParseFrameList(BYVAL fileHandle AS INTEGER, BYVAL aniHandle AS BYTE, BYV
     IF ListType <> "fram" THEN EXIT SUB
     
     ' Parse individual frames (simplified) using global arrays
-    CurrentPos = POS(fileHandle)
+    CurrentPos = SEEK(fileHandle)  ' bug fix: POS() returns text-cursor column, not file offset; use SEEK()
     FOR I = 0 TO ANIAnimations(aniHandle).FrameCount - 1
         IF I < 100 THEN  ' Max 100 frames
             ANIFrameOffsets(aniHandle, I) = CurrentPos
@@ -413,7 +413,7 @@ FUNCTION Ani_IsPlaying(BYVAL animHandle AS BYTE) AS BYTE
     IF animHandle > 7 OR ANIAnimations(animHandle).IsLoaded = 0 THEN
         Ani_IsPlaying = 0
     ELSE
-        Ani_IsPlaying = (ANIAnimations(animHandle).LoopCount > 0 OR ANIAnimations(animHandle).TotalLoops = 0)
+        Ani_IsPlaying = (AnimationStates(animHandle) = %ANIM_STATE_PLAYING)  ' bug fix: TotalLoops=0 means both "infinite" and "stopped-with-0"; use AnimationStates to disambiguate
     END IF
 END FUNCTION
 
@@ -425,10 +425,11 @@ END FUNCTION
 ' =============================================================================
 SUB Ani_StopAnimation(BYVAL animHandle AS BYTE)
     IF animHandle > 7 OR ANIAnimations(animHandle).IsLoaded = 0 THEN EXIT SUB
-    
+
     ANIAnimations(animHandle).LoopCount = 0
     ANIAnimations(animHandle).TotalLoops = 0
     ANIAnimations(animHandle).CurrentFrame = 0
+    AnimationStates(animHandle) = %ANIM_STATE_STOPPED  ' bug fix: must mark stopped so Ani_IsPlaying sees TotalLoops=0 as "stopped" not "infinite"
 END SUB
 
 ' =============================================================================
