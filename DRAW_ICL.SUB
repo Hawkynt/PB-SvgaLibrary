@@ -115,7 +115,7 @@ FUNCTION DrawIcl_LoadIcoLib(BYVAL fileName AS STRING) AS BYTE
     
     ' Open library file
     fileHandle = FREEFILE
-    OPEN fileName FOR BINARY ACCESS READ AS fileHandle
+    OPEN fileName FOR BINARY AS #fileHandle  ' # fix: ACCESS READ unsupported; # required for OPEN in PB 3.5
     IF LOF(fileHandle) < 64 THEN
         CLOSE fileHandle
         DrawIcl_LoadIcoLib = 255
@@ -123,7 +123,7 @@ FUNCTION DrawIcl_LoadIcoLib(BYVAL fileName AS STRING) AS BYTE
     END IF
     
     ' Read DOS header
-    GET fileHandle, 1, dosHeader.Signature
+    GET fileHandle, 0, dosHeader.Signature  ' # fix: PB3.5 BINARY is 0-based; position 0 = first byte
     IF dosHeader.Signature <> &H5A4D THEN  ' "MZ"
         CLOSE fileHandle
         DrawIcl_LoadIcoLib = 255
@@ -133,7 +133,7 @@ FUNCTION DrawIcl_LoadIcoLib(BYVAL fileName AS STRING) AS BYTE
     ' Read rest of DOS header
     GET fileHandle, , dosHeader.BytesOnLastPage
     GET fileHandle, , dosHeader.PagesInFile
-    SEEK fileHandle, 61  ' Skip to AddressNewEXE field
+    SEEK fileHandle, 60  ' # fix: PB3.5 BINARY 0-based; AddressNewEXE at byte 60 (0x3C), not 61
     GET fileHandle, , dosHeader.AddressNewEXE
     
     ' Initialize context
@@ -146,7 +146,7 @@ FUNCTION DrawIcl_LoadIcoLib(BYVAL fileName AS STRING) AS BYTE
     
     ' Check for PE header
     IF dosHeader.AddressNewEXE > 0 AND dosHeader.AddressNewEXE < LOF(fileHandle) - 4 THEN
-        SEEK fileHandle, dosHeader.AddressNewEXE + 1
+        SEEK fileHandle, dosHeader.AddressNewEXE  ' # fix: PB3.5 BINARY 0-based; +1 was off by one
         GET fileHandle, , signature
         
         IF signature = &H00004550 THEN  ' "PE\0\0"
@@ -197,7 +197,7 @@ FUNCTION DrawIcl_ParsePEHeader(BYVAL fileHandle AS INTEGER, BYVAL libHandle AS B
     GET fileHandle, , peHeader.Characteristics
     
     ' Skip optional header
-    SEEK fileHandle, POS(fileHandle) + peHeader.SizeOfOptionalHeader
+    SEEK fileHandle, SEEK(fileHandle) + peHeader.SizeOfOptionalHeader  ' # fix: POS() is text cursor; use SEEK() for file position
     
     ' Search for resource section
     numberOfSections = peHeader.NumberOfSections
@@ -213,7 +213,7 @@ FUNCTION DrawIcl_ParsePEHeader(BYVAL fileHandle AS INTEGER, BYVAL libHandle AS B
         GET fileHandle, , pointerToRawData
         
         ' Skip remaining section header fields (16 bytes)
-        SEEK fileHandle, POS(fileHandle) + 16
+        SEEK fileHandle, SEEK(fileHandle) + 16  ' # fix: POS() is text cursor; use SEEK() for file position
         
         ' Check if this is the resource section
         IF LEFT$(sectionName, 8) = ".rsrc" + CHR$(0) + CHR$(0) + CHR$(0) THEN
@@ -254,7 +254,7 @@ SUB DrawIcl_ScanIconGroups(BYVAL fileHandle AS INTEGER, BYVAL libHandle AS BYTE)
     IF ICOLIBContexts(libHandle).ResourceSectionOffset = 0 THEN EXIT SUB
     
     ' Seek to resource section
-    SEEK fileHandle, ICOLIBContexts(libHandle).ResourceSectionOffset + 1
+    SEEK fileHandle, ICOLIBContexts(libHandle).ResourceSectionOffset  ' # fix: PB3.5 BINARY 0-based; +1 was off by one
     
     ' Read root resource directory
     GET fileHandle, , resourceDir.Characteristics
