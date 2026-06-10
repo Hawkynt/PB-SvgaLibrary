@@ -480,6 +480,7 @@ SUB Vga_CopyBlock(srcX_a AS WORD, srcY_a AS WORD, destX_a AS WORD, destY_a AS WO
     srcX = srcX_a : srcY = srcY_a : destX = destX_a : destY = destY_a : widthVal = widthVal_a : height = height_a
     DIM CurrentY AS WORD, SrcOffset AS WORD, DestOffset AS WORD
     DIM CopyDirection AS INTEGER
+    DIM SrcBase AS WORD, DestBase AS WORD
 
     ' Determine copy direction to handle overlapping regions
     IF srcY < destY OR (srcY = destY AND srcX < destX) THEN
@@ -492,6 +493,9 @@ SUB Vga_CopyBlock(srcX_a AS WORD, srcY_a AS WORD, destX_a AS WORD, destY_a AS WO
         CurrentY = 0
     END IF
 
+    SrcBase  = srcY  * 320 + srcX
+    DestBase = destY * 320 + destX
+
     !PUSH ES
     !PUSH DS
     !MOV AX, &HA000
@@ -501,8 +505,8 @@ SUB Vga_CopyBlock(srcX_a AS WORD, srcY_a AS WORD, destX_a AS WORD, destY_a AS WO
     IF CopyDirection = 1 THEN
         ' Forward copy
         DO WHILE CurrentY < height
-            SrcOffset = (srcY + CurrentY) * 320 + srcX
-            DestOffset = (destY + CurrentY) * 320 + destX
+            SrcOffset  = SrcBase  + CurrentY * 320
+            DestOffset = DestBase + CurrentY * 320
 
             !MOV SI, SrcOffset
             !MOV DI, DestOffset
@@ -520,8 +524,8 @@ SUB Vga_CopyBlock(srcX_a AS WORD, srcY_a AS WORD, destX_a AS WORD, destY_a AS WO
     ELSE
         ' Backward copy
         DO WHILE CurrentY >= 0
-            SrcOffset = (srcY + CurrentY) * 320 + srcX + widthVal - 1
-            DestOffset = (destY + CurrentY) * 320 + destX + widthVal - 1
+            SrcOffset  = SrcBase  + CurrentY * 320 + widthVal - 1
+            DestOffset = DestBase + CurrentY * 320 + widthVal - 1
 
             !MOV SI, SrcOffset
             !MOV DI, DestOffset
@@ -548,13 +552,17 @@ END SUB
 ' Parameters:
 '   X1, Y1 - Top-leftV corner (BYVAL)
 '   X2, Y2 - Bottom-rightV corner (BYVAL)
-'   Pattern - 8-byte pattern (STRING)
+'   Pattern - repeating pattern string (any length >= 1)
 ' Returns: Nothing
-' Note: Fills area with repeating 8-byte pattern
+' Note: Fills area with repeating pattern; each row is written as consecutive
+'       run segments so same-colour runs within the pattern become STOSB runs
+'       rather than per-pixel work.
 ' =============================================================================
 SUB Vga_PatternFill(BYVAL x1 AS WORD, BYVAL y1 AS WORD, BYVAL x2 AS WORD, BYVAL y2 AS WORD, pattern AS STRING)
-    DIM CurrentY AS WORD, CurrentX AS WORD, PatternIndex AS BYTE
-    DIM LineOffset AS WORD
+    DIM CurrentY AS WORD, runWidth AS WORD, patLen AS BYTE
+    DIM LineOffset AS WORD, runOff AS WORD
+    DIM patSeg AS WORD, patOff AS WORD
+    DIM pi AS BYTE, runCol AS BYTE, runLen AS WORD, pixLeft AS WORD
 
     ' Ensure coordinates are ordered
     IF x1 > x2 THEN SWAP x1, x2
@@ -562,19 +570,57 @@ SUB Vga_PatternFill(BYVAL x1 AS WORD, BYVAL y1 AS WORD, BYVAL x2 AS WORD, BYVAL 
 
     ' Ensure pattern is at least 1 byte
     IF LEN(pattern) = 0 THEN pattern = CHR$(0)
+    patLen = LEN(pattern)
+
+    runWidth = x2 - x1 + 1
+
+    patSeg = STRSEG(pattern)
+    patOff = STRPTR(pattern)
 
     FOR CurrentY = y1 TO y2
         LineOffset = CurrentY * 320 + x1
-        PatternIndex = 1
+        runOff = LineOffset
 
-        DEF SEG = &HA000
-        FOR CurrentX = x1 TO x2
-            POKE LineOffset, ASC(MID$(pattern, PatternIndex, 1))
-            LineOffset = LineOffset + 1
-            PatternIndex = PatternIndex + 1
-            IF PatternIndex > LEN(pattern) THEN PatternIndex = 1
-        NEXT CurrentX
-        DEF SEG
+        ' Walk the pattern left-to-right across the row, coalescing same-colour
+        ' runs into REP STOSB bursts to avoid per-pixel call overhead.
+        pixLeft = runWidth
+        pi = 0
+
+        DO WHILE pixLeft > 0
+            ' Identify how long the current run of identical bytes extends,
+            ' wrapping the pattern as needed.
+            DIM startPi AS BYTE
+            startPi = pi
+            runCol = ASC(MID$(pattern, pi + 1, 1))
+            runLen = 0
+
+            DO
+                runLen = runLen + 1
+                pixLeft = pixLeft - 1
+                pi = pi + 1
+                IF pi >= patLen THEN pi = 0
+                IF pixLeft = 0 THEN EXIT DO
+                IF ASC(MID$(pattern, pi + 1, 1)) <> runCol THEN EXIT DO
+            LOOP
+
+            ' Blit this run to VRAM with REP STOSB
+            DIM rl AS WORD
+            rl = runLen
+            !PUSH ES
+            !PUSH DI
+            !MOV AX, &HA000
+            !MOV ES, AX
+            !MOV DI, runOff
+            !MOV CX, rl
+            !MOV AL, runCol
+            !CLD
+            !REP STOSB
+            !POP DI
+            !POP ES
+
+            runOff = runOff + runLen
+        LOOP
+
     NEXT CurrentY
 END SUB
 

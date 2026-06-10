@@ -158,6 +158,7 @@ SUB ModeX_PutPixel(X_a AS WORD, Y_a AS WORD, colorVal_a AS BYTE)
     DIM X AS WORD, Y AS WORD, colorVal AS BYTE
     X = X_a : Y = Y_a : colorVal = colorVal_a
     DIM PlaneNumber AS BYTE, ByteOffset AS WORD, BitMask AS BYTE
+    DIM xDiv4 AS WORD
 
     ' Calculate which plane and byte offset using fast assembly
     PlaneNumber = X AND 3       ' Plane number (0-3)
@@ -166,9 +167,9 @@ SUB ModeX_PutPixel(X_a AS WORD, Y_a AS WORD, colorVal_a AS BYTE)
     !MOV AX, X
     !SHR AX, 1 ; Divide by 4 using rightV shift
     !SHR AX, 1
-    !MOV BX, AX             ; Store X/4 result
+    !MOV xDiv4, AX
 
-    ByteOffset = Y * ModeXSystemContext.LogicalWidth + (X \ 4)
+    ByteOffset = Y * ModeXSystemContext.LogicalWidth + xDiv4
     BitMask = PlaneMaskTable(PlaneNumber)
 
     ' Set plane select register
@@ -201,6 +202,7 @@ SUB ModeX_GetPixel(X_a AS WORD, Y_a AS WORD, resultVal AS BYTE)
     DIM X AS WORD, Y AS WORD
     X = X_a : Y = Y_a
     DIM PlaneNumber AS BYTE, ByteOffset AS WORD, PixelValue AS BYTE
+    DIM xDiv4 AS WORD
 
     ' Calculate which plane and byte offset using fast assembly
     PlaneNumber = X AND 3
@@ -209,9 +211,9 @@ SUB ModeX_GetPixel(X_a AS WORD, Y_a AS WORD, resultVal AS BYTE)
     !MOV AX, X
     !SHR AX, 1 ; Divide by 4 using rightV shift
     !SHR AX, 1
-    !MOV BX, AX             ; Store X/4 result
+    !MOV xDiv4, AX
 
-    ByteOffset = Y * ModeXSystemContext.LogicalWidth + (X \ 4)
+    ByteOffset = Y * ModeXSystemContext.LogicalWidth + xDiv4
 
     ' Set read plane register
     !MOV DX, &H3CE          ; Graphics Controller Address
@@ -248,9 +250,11 @@ SUB ModeX_HLine(X1_a AS WORD, X2_a AS WORD, Y_a AS WORD, colorVal_a AS BYTE)
     DIM p AS INTEGER, fAdj AS INTEGER, lAdj AS INTEGER
     DIM fx AS WORD, lx AS WORD, b0 AS WORD, b1 AS WORD
     DIM rowOff AS WORD, ByteOffset AS WORD, cnt AS WORD, planeMask AS BYTE
+    DIM logW AS WORD
 
     IF X1 > X2 THEN SWAP X1, X2
-    rowOff = Y * ModeXSystemContext.LogicalWidth
+    logW = ModeXSystemContext.LogicalWidth
+    rowOff = Y * logW
 
     ' One masked REP STOSB run per plane: every 4th pixel lives on the same
     ' plane and maps to consecutive bytes, so a plane's span is a flat byte fill.
@@ -260,8 +264,14 @@ SUB ModeX_HLine(X1_a AS WORD, X2_a AS WORD, Y_a AS WORD, colorVal_a AS BYTE)
         IF fx <= X2 THEN
             lAdj = ((X2 AND 3) - p + 4) AND 3    ' step from X2 down to plane p
             lx = X2 - lAdj
-            b0 = fx \ 4
-            b1 = lx \ 4
+            !MOV AX, fx
+            !SHR AX, 1
+            !SHR AX, 1
+            !MOV b0, AX
+            !MOV AX, lx
+            !SHR AX, 1
+            !SHR AX, 1
+            !MOV b1, AX
             cnt = b1 - b0 + 1
             planeMask = 1
             SHIFT LEFT planeMask, p
@@ -306,7 +316,10 @@ SUB ModeX_VLine(X_a AS WORD, Y1_a AS WORD, Y2_a AS WORD, colorVal_a AS BYTE)
     pl = X AND 3
     planeMask = 1
     SHIFT LEFT planeMask, pl
-    byteCol = X \ 4
+    !MOV AX, X
+    !SHR AX, 1
+    !SHR AX, 1
+    !MOV byteCol, AX
     w = ModeXSystemContext.LogicalWidth
     vofs = Y1 * w + byteCol
     rowCount = Y2 - Y1 + 1
@@ -403,10 +416,15 @@ SUB ModeX_CopyBlock(srcX_a AS WORD, srcY_a AS WORD, destX_a AS WORD, destY_a AS 
     !SHR AX, 1 ; DestX/4
     !SHR AX, 1
     !MOV DestStartByte, AX
-    ByteWidth = (widthVal + 3) \ 4  ' Round up to byte boundary
+    !MOV AX, widthVal
+    !ADD AX, 3
+    !SHR AX, 1 ; (widthVal+3)/4
+    !SHR AX, 1
+    !MOV ByteWidth, AX
 
     ' Process each plane separately for proper Mode-X copying
-    DIM PlaneNum AS BYTE
+    DIM PlaneNum AS BYTE, logW AS WORD
+    logW = ModeXSystemContext.LogicalWidth
     FOR PlaneNum = 0 TO 3
         ' Set read plane
         !MOV DX, &H3CE          ; Graphics Controller Address
@@ -428,8 +446,8 @@ SUB ModeX_CopyBlock(srcX_a AS WORD, srcY_a AS WORD, destX_a AS WORD, destY_a AS 
 
         ' Copy this plane
         FOR CurrentY = 0 TO Height - 1
-            SrcOffset = (SrcY + CurrentY) * ModeXSystemContext.LogicalWidth + SrcStartByte
-            DestOffset = (DestY + CurrentY) * ModeXSystemContext.LogicalWidth + DestStartByte
+            SrcOffset = (SrcY + CurrentY) * logW + SrcStartByte
+            DestOffset = (DestY + CurrentY) * logW + DestStartByte
 
             ' 8086-compatible block copy
             !PUSH ES
@@ -693,6 +711,7 @@ SUB ModeX_LineDraw(X1_a AS WORD, Y1_a AS WORD, X2_a AS WORD, Y2_a AS WORD, color
     DIM DeltaX AS INTEGER, DeltaY AS INTEGER, StepX AS INTEGER, StepY AS INTEGER
     DIM ErrorTerm AS INTEGER, CurrentX AS WORD, CurrentY AS WORD
     DIM PlaneNumber AS BYTE, ByteOffset AS WORD, BitMask AS BYTE
+    DIM cxDiv4 AS WORD, logW AS WORD
 
     ' Calculate deltas and step directions
     DeltaX = ABS(X2 - X1)
@@ -707,6 +726,7 @@ SUB ModeX_LineDraw(X1_a AS WORD, Y1_a AS WORD, X2_a AS WORD, Y2_a AS WORD, color
     ' Set starting position
     CurrentX = X1
     CurrentY = Y1
+    logW = ModeXSystemContext.LogicalWidth
 
     ' Draw line using Bresenham's algorithm with Mode-X optimizations
     DO
@@ -717,9 +737,9 @@ SUB ModeX_LineDraw(X1_a AS WORD, Y1_a AS WORD, X2_a AS WORD, Y2_a AS WORD, color
         !MOV AX, CurrentX
         !SHR AX, 1 ; Divide by 4
         !SHR AX, 1
-        !MOV BX, AX             ; Store CurrentX/4
+        !MOV cxDiv4, AX
 
-        ByteOffset = CurrentY * ModeXSystemContext.LogicalWidth + (CurrentX \ 4)
+        ByteOffset = CurrentY * logW + cxDiv4
         BitMask = PlaneMaskTable(PlaneNumber)
 
         ' Set plane select register
@@ -1137,7 +1157,7 @@ SUB ModeX_FastFill(BYVAL X1 AS WORD, BYVAL Y1 AS WORD, BYVAL X2 AS WORD, BYVAL Y
     !MOV AL, colorVal
 
     FOR CurrentY = Y1 TO Y2
-        LineOffset = CurrentY * ModeXSystemContext.LogicalWidth + StartByte
+        LineOffset = CurrentY * mxLogW + StartByte
 
         !MOV BX, LineOffset
         !MOV CX, ByteWidth

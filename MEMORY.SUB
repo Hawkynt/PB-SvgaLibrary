@@ -16,7 +16,10 @@ DIM emsPageFrame AS SHARED INTEGER
 SUB Memory_TakeEms(BYVAL sizeKb AS WORD, handle AS WORD)
     ' EMS Interrupt 67h, Function 43h - Allocate Pages
     REG 1, &H4300
-    REG 2, INT(SizeKB / 16) + 1  ' Convert KB to 16KB pages
+    DIM pages AS WORD
+    pages = sizeKb
+    SHIFT RIGHT pages, 4
+    REG 2, pages + 1  ' Convert KB to 16KB pages
     CALL INTERRUPT &H67
     handle = REG(4)
 

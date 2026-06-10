@@ -322,13 +322,15 @@ SUB VESA_PutPixel(X_a AS WORD, Y_a AS WORD, colorVal_a AS BYTE)
     DIM X AS WORD, Y AS WORD, colorVal AS BYTE
     X = X_a : Y = Y_a : colorVal = colorVal_a
     DIM ByteOffset AS LONG, WindowNumber AS WORD, PixelOffset AS WORD
+    DIM bpl AS WORD
 
     ' Calculate pixel address
     IF SVGAScreenContext.ColorDepth = 8 THEN
         ' 8-bit colorVal mode
-        ByteOffset = Y * SVGAScreenContext.BytesPerLine + X
+        bpl = SVGAScreenContext.BytesPerLine
+        ByteOffset = Y * bpl + X
         WindowNumber = ByteOffset \ 65536  ' 64K window size
-        PixelOffset = ByteOffset MOD 65536
+        PixelOffset = ByteOffset AND &HFFFF
 
         ' Switch VESA window if needed
         IF WindowNumber <> SVGAScreenContext.WindowNumber THEN
@@ -358,11 +360,13 @@ SUB VESA_GetPixel(X_a AS WORD, Y_a AS WORD, resultVal AS BYTE)
     DIM X AS WORD, Y AS WORD
     X = X_a : Y = Y_a
     DIM ByteOffset AS LONG, WindowNumber AS WORD, PixelOffset AS WORD
+    DIM bpl AS WORD
 
     IF SVGAScreenContext.ColorDepth = 8 THEN
-        ByteOffset = Y * SVGAScreenContext.BytesPerLine + X
+        bpl = SVGAScreenContext.BytesPerLine
+        ByteOffset = Y * bpl + X
         WindowNumber = ByteOffset \ 65536
-        PixelOffset = ByteOffset MOD 65536
+        PixelOffset = ByteOffset AND &HFFFF
 
         ' Switch VESA window if needed
         IF WindowNumber <> SVGAScreenContext.WindowNumber THEN
@@ -398,12 +402,14 @@ SUB VESA_HLine(X1_a AS WORD, X2_a AS WORD, Y_a AS WORD, colorVal_a AS BYTE)
     DIM CurrentWindow AS WORD, BytesInWindow AS LONG
     DIM LineLength AS WORD, CurrentX AS WORD
     DIM WindowOffset AS WORD
+    DIM bpl AS WORD
 
     ' Ensure X1 <= X2
     IF X1 > X2 THEN SWAP X1, X2
 
-    StartOffset = Y * SVGAScreenContext.BytesPerLine + X1
-    EndOffset = Y * SVGAScreenContext.BytesPerLine + X2
+    bpl = SVGAScreenContext.BytesPerLine
+    StartOffset = Y * bpl + X1
+    EndOffset = Y * bpl + X2
     LineLength = X2 - X1 + 1
     CurrentX = X1
 
@@ -720,7 +726,7 @@ SUB VESA_CopyBlock(srcX_a AS WORD, srcY_a AS WORD, destX_a AS WORD, destY_a AS W
         DestWindow = DestOffset \ 65536
 
         ' Check if we need to copy within same window (optimization opportunity)
-        IF SrcWindow = DestWindow AND widthVal <= (65536 - (SrcOffset MOD 65536)) THEN
+        IF SrcWindow = DestWindow AND widthVal <= (65536 - (SrcOffset AND &HFFFF)) THEN
             ' Source and destination are in same window - ultra-fast copy
             IF SrcWindow <> LastSrcWindow THEN
                 CALL Memory_SetVesaWindow(SrcWindow)
@@ -728,7 +734,7 @@ SUB VESA_CopyBlock(srcX_a AS WORD, srcY_a AS WORD, destX_a AS WORD, destY_a AS W
                 LastSrcWindow = SrcWindow
             END IF
 
-            SrcWindowOffset = SrcOffset AND &HFFFF
+            SrcWindowOffset  = SrcOffset  AND &HFFFF
             DestWindowOffset = DestOffset AND &HFFFF
 
             ' Fast intra-window block copy using assembly
@@ -765,13 +771,18 @@ SUB Vesa_CopyScanline(BYVAL srcX AS WORD, BYVAL srcY AS WORD, BYVAL destX AS WOR
     DIM SrcOffset AS LONG, DestOffset AS LONG
     DIM SrcWindow AS WORD, DestWindow AS WORD
     DIM LastSrcWindow AS WORD, LastDestWindow AS WORD
+    DIM bpl AS WORD, SrcBase AS LONG, DestBase AS LONG
 
     LastSrcWindow = -1
     LastDestWindow = -1
 
+    bpl = SVGAScreenContext.BytesPerLine
+    SrcBase  = SrcY  * bpl + SrcX
+    DestBase = DestY * bpl + DestX
+
     ' Optimized scanline copy with minimal window switches
     FOR CurrentX = 0 TO widthVal - 1
-        SrcOffset = SrcY * SVGAScreenContext.BytesPerLine + SrcX + CurrentX
+        SrcOffset = SrcBase + CurrentX
         SrcWindow = SrcOffset \ 65536
 
         ' Switch source window only when needed
@@ -792,7 +803,7 @@ SUB Vesa_CopyScanline(BYVAL srcX AS WORD, BYVAL srcY AS WORD, BYVAL destX AS WOR
         !POP ES
 
         ' Write pixel to destination
-        DestOffset = DestY * SVGAScreenContext.BytesPerLine + DestX + CurrentX
+        DestOffset = DestBase + CurrentX
         DestWindow = DestOffset \ 65536
 
         ' Switch destination window only when needed
