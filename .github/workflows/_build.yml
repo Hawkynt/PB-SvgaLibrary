@@ -103,12 +103,14 @@ jobs:
       - name: Bundle the linkable library
         if: steps.compile.outcome == 'success'
         run: |
-          # Ship the compiled SVGA.PBL + the interface a consumer $INCLUDEs
-          # ($INCLUDE "SVGA.BI" : $LINK "SVGA.PBL"), and the .SUB sources for
-          # anyone who prefers to $INCLUDE individual modules.
+          # The published package is exactly what a consumer needs and nothing
+          # more: the compiled SVGA.PBL, the interface it $INCLUDEs
+          # ($INCLUDE "SVGA.BI" : $LINK "SVGA.PBL" - SVGA.BI pulls in
+          # SVGATYPE.BI and SVGADECL.BI), the README and the LICENSE. Anyone
+          # wanting the sources uses the repository itself.
           mkdir -p dist/svga
           cp build/SVGA.PBL build/SVGA.BI build/SVGATYPE.BI build/SVGADECL.BI dist/svga/
-          cp *.SUB *.INC README.md LICENSE dist/svga/
+          cp README.md LICENSE dist/svga/
           (cd dist/svga && zip -r ../svga-library.zip .)
           ls -l dist dist/svga
 

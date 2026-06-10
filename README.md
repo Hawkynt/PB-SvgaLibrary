@@ -24,7 +24,7 @@ This library provides a comprehensive set of functions and subroutines for worki
 ## ✨ Features
 
 - **🎯 Micro-Optimized Assembly:** Hand-tuned x86 assembly for maximum performance
-- **📐 Graphics Primitives:** Hardware-accelerated lines, circles, rectangles, and 3D bars
+- **📐 Graphics Primitives:** Hardware-accelerated lines, circles, rectangles, 3D bars, filled/outlined/textured triangles, textured rectangles and circles, and a bounded-memory scanline flood fill
 - **🖼️ Multi-Format Image Support:** 
   - BMP (Windows Bitmap) - 4/8-bit color depths
   - PCX (ZSoft Paintbrush) - RLE compressed
@@ -43,14 +43,14 @@ This library provides a comprehensive set of functions and subroutines for worki
   - Mode-Y (320x200 unchained planar, 4 video pages for page flipping)
   - Mode-Z (320x400 unchained planar, 2 video pages)
   - 800x600 in 16 colours (VGA tweaked mode 6Ah, bit-planed — write-mode-2 + bit-mask)
-  - VESA (up to 1600x1200) — with width-specialized fast paths for 320/640/800/1024/1280: the scanline offset is computed by shift/add instead of a multiply, and the span primitives (HLine/VLine/FillRect/DrawRect) fill whole runs, switching the VESA bank only at 64 KB boundaries (never per pixel)
+  - VESA (up to 1600x1200) — with width-specialized fast paths for 320/640/800/1024/1280/1600, GENERATED from a single template (`VESAOPT.TEMPLATE.BAS` + `scripts/gen-vesaopt.py`): the scanline offset is computed by shift/add instead of a multiply, fills use `REP STOSW` word bursts with single-byte trails, FillRect batches whole row groups per 64 KB bank, and FillCircle sweeps a precomputed integer span table so the bank only ever advances
 
   All graphics primitives are dispatched through a per-mode function-pointer table (`SVGADispatch`), so each mode plugs in its own optimized handlers at set-up time and the hot drawing paths never branch on the mode.
 - **🪟 Virtual Coordinate System:** Viewport and scaling support
 - **💾 Memory Management:** EMS support for large graphics buffers with ultra-fast clearing
 - **⏰ High-Precision Timer System:** 10ms resolution interrupt-driven timers for smooth animations
 - **🏃 Advanced Cursor Management:** Automatic background backup/restore with transparency
-- **🎮 Sprite System:** Up to 32 sprites with collision detection and priority rendering
+- **🎮 Sprite System:** Up to 32 sprites with real transparent pixel blits (colour 0 = transparent, direct-VRAM fast path in mode 13h), collision detection and priority rendering
 - **📜 Scrolling Engine:** Hardware-accelerated scrolling with parallax layers and effects
 
 ## ⚡ Micro-Optimization Techniques
@@ -122,7 +122,7 @@ STOSW              ; Eliminates loop overhead
 
 ### Recommended: link the precompiled library (`SVGA.PBL`)
 
-The full library is larger than PowerBASIC/DOS's 64 KB-per-compilation-unit code limit, so the whole thing cannot be `$INCLUDE`d into one program. The build therefore ships a linkable **`SVGA.PBL`** (every module compiled as a separate `$COMPILE UNIT`, packed into ≤64 KB code segments) together with the **`SVGA.BI`** interface. Grab them from the [latest release](../../releases/latest) and:
+The full library is larger than PowerBASIC/DOS's 64 KB-per-compilation-unit code limit, so the whole thing cannot be `$INCLUDE`d into one program. The build therefore ships a linkable **`SVGA.PBL`** (every module compiled as a separate `$COMPILE UNIT`, packed into ≤64 KB code segments) together with the **`SVGA.BI`** interface. The release zip contains exactly what a consumer needs: `SVGA.PBL`, the `SVGA.BI` interface (plus the `SVGATYPE.BI`/`SVGADECL.BI` files it pulls in), this README and the LICENSE. Grab it from the [latest release](../../releases/latest) and:
 
 ```basic
 $INCLUDE "SVGA.BI"      ' types, globals and DECLAREs
@@ -275,6 +275,12 @@ For a small program you can `$INCLUDE` only the `.SUB` modules you actually need
 | `BOX(x1, y1, x2, y2, color)` | Filled box |
 | `CIRCLEDRAW(cx, cy, rx, ry, start, end, color, fill)` | Circle/ellipse/arc |
 | `FRAME(x1, y1, x2, y2, color)` | Rectangle frame |
+| `Graphics_DrawTriangle(x1, y1, x2, y2, x3, y3, color)` | Triangle outline |
+| `Graphics_FillTriangle(x1, y1, x2, y2, x3, y3, color)` | Filled triangle (fixed-point edge walker, one span per scanline) |
+| `Graphics_TexTriangle(x/y/u/v per vertex, tex, tw, th, transparent)` | Affine texture-mapped triangle |
+| `Graphics_TexRect(x1, y1, x2, y2, tex, tw, th, transparent)` | Textured (tiled) rectangle |
+| `Graphics_TexCircle(cx, cy, r, tex, tw, th, transparent)` | Textured filled circle |
+| `Graphics_FloodFill(x, y, color)` | Scanline flood fill (bounded span stack, never recurses) |
 | `Svga_PutPixel(x, y, color)` | Generic pixel plot |
 
 ### 🪟 Virtual Coordinate System
@@ -710,17 +716,16 @@ CALL DrawIcl_CloseLib(libHandle)
 - **Sound Integration:** MOD/S3M music playback with sample mixing
 - **Network Support:** IPX/TCP multiplayer game support  
 - **Compression:** LZ77/Huffman compression for sprites and images
-- **3D Graphics:** Basic 3D wireframe and filled polygon support
 - **Hardware Support:** Enhanced VGA features (unchained Mode-X variants)
 - **File Formats:** PNG support with proper alpha blending
 
 ## 🛠️ Building
 
-The library targets **PowerBASIC 3.5 for DOS**: `$INCLUDE "SVGA.SUB"` in your program and compile with `PB.EXE` (runs fine under [DOSBox](https://www.dosbox.com/)). There is nothing to pre-build in this repo itself — CI verifies every source structurally (balanced `SUB`/`FUNCTION`/`IF`/`FOR`/`DO`/`SELECT` blocks):
+The library targets **PowerBASIC 3.5 for DOS**: `$INCLUDE "SVGA.SUB"` in your program and compile with `PB.EXE` (runs fine under [DOSBox](https://www.dosbox.com/)).
 
-```bash
-node .github/workflows/scripts/check-basic.mjs .
-```
+- The per-width VESA fast paths (`VOPT*.SUB`, `VESAOPT.SUB`, `VESAOPT.INC`) are **generated** from `VESAOPT.TEMPLATE.BAS` by `scripts/gen-vesaopt.py` — edit the template, rerun the tool, commit both (CI fails on drift).
+- CI verifies every source structurally (balanced `SUB`/`FUNCTION`/`IF`/`FOR`/`DO`/`SELECT` blocks) via `node .github/workflows/scripts/check-basic.mjs .` and runs the full xUnit-style test battery (`tests/*.BAS`, one suite per module) with the real PB 3.5 compiler under DOSBox via `scripts/run-pb-tests.sh`.
+- The nightly/release builds compile every module as a `$COMPILE UNIT`, assemble **`SVGA.PBL`** with PBLIB, link and run a pixel round-trip self-test, and publish the minimal consumer zip.
 
 ## ❤️ Support
 
