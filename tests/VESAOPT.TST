@@ -1,18 +1,14 @@
 ' =============================================================================
-' test_vesa_widths.bas - unit tests for the width-specialized VESA fast paths
+' VESAOPT.TST - tests for VESAOPT.SUB (width-specialized VESA fast paths)
 ' =============================================================================
-' Given each common width set in a real mode (320 -> mode 13h, 640/800/1024/1280
-' -> VBE 0x101/0x103/0x105/0x107), wired via Svga_WireVesaOptimized,
-' When a full-height VLine, a wide HLine and a corner pixel are dispatched,
-' Then every pixel reads back - exercising the inlined offset, the loop-free
-' HLine (with its one bank switch) and the VLine fast-path / multi-bank runs.
-' Provides the fixed Memory_SetVesaWindow locally.
-' =============================================================================
+' Svga_WireVesaOptimized wires width-specific primitives (320/640/800/1024/1280)
+' into SVGADispatch with the offset inlined and bank switches precomputed. Each
+' width is set in a real mode (320 -> 13h, others -> VBE 0x101/3/5/7) and a
+' full-height VLine, a full-width HLine across a 64k bank boundary, and the far
+' corner are round-tripped through the dispatch table.
+$INCLUDE "TESTLIB.BI"
 $INCLUDE "TYPES.SUB"
 $INCLUDE "VESAOPT.SUB"
-
-DIM fail AS SHARED INTEGER
-fail = 0
 
 SUB Memory_SetVesaWindow(BYVAL windowNumber AS WORD)
     !MOV AX, &H4F05
@@ -28,72 +24,69 @@ SUB CheckWidth(BYVAL wid AS WORD, BYVAL hgt AS WORD, nm AS STRING)
     VESASystemContext.VWnd = 0
     CALL Svga_WireVesaOptimized
     DIM pp AS DWORD, gp AS DWORD, hp AS DWORD, vp AS DWORD
-    DIM a AS WORD, b AS WORD, yy AS WORD, c AS BYTE, got AS BYTE, i AS INTEGER, xs AS WORD, yc AS WORD
+    DIM a AS WORD, b AS WORD, yy AS WORD, c AS BYTE, got AS BYTE, i AS INTEGER, xs AS WORD, yc AS WORD, bad AS INTEGER
     pp = SVGADispatch.PutPixel : gp = SVGADispatch.GetPixel
     hp = SVGADispatch.HLine : vp = SVGADispatch.VLine
 
-    ' full-height vertical line at x = wid\2 (single-bank fast path for 320, multi-bank otherwise)
+    ' full-height vertical line at x = wid\2 (multi-bank run for the wide modes)
+    CALL TCase(nm + ": full-height VLine (inlined offset + bank runs)")
     a = wid \ 2 : b = 0 : yy = hgt - 1 : c = 9
     CALL DWORD vp BDECL (a, b, yy, c)
+    bad = 0
     FOR i = 0 TO hgt - 1
         a = wid \ 2 : b = i : got = 0
         CALL DWORD gp BDECL (a, b, got)
-        IF got <> 9 THEN PRINT #1, "FAILED "; nm; " vline y="; i : fail = 1
+        IF got <> 9 THEN bad = bad + 1
     NEXT i
+    CALL TChkEq(bad, 0, "every scanline of the column reads back")
 
-    ' full-width horizontal line on the row where the first 64k boundary falls
+    ' full-width horizontal line on the row straddling the first 64k boundary
+    CALL TCase(nm + ": full-width HLine across the 64k bank boundary")
     yc = 65536 \ wid
     IF yc >= hgt THEN yc = hgt \ 2
     a = 0 : b = wid - 1 : c = 13
     CALL DWORD hp BDECL (a, b, yc, c)
+    bad = 0
     FOR i = 0 TO 4
         xs = i * (wid \ 4)
         IF xs > wid - 1 THEN xs = wid - 1
         b = yc : got = 0
         CALL DWORD gp BDECL (xs, b, got)
-        IF got <> 13 THEN PRINT #1, "FAILED "; nm; " hline x="; xs : fail = 1
+        IF got <> 13 THEN bad = bad + 1
     NEXT i
+    CALL TChkEq(bad, 0, "5 sample points along the span read back")
 
     ' far corner round-trip
+    CALL TCase(nm + ": far-corner pixel round-trip")
     a = wid - 1 : b = hgt - 1 : c = 6
     CALL DWORD pp BDECL (a, b, c)
     a = wid - 1 : b = hgt - 1 : got = 0
     CALL DWORD gp BDECL (a, b, got)
-    IF got <> 6 THEN PRINT #1, "FAILED "; nm; " corner" : fail = 1
-
-    PRINT #1, "PASS "; nm
+    CALL TChkEq(got, 6, "bottom-right pixel")
 END SUB
 
-OPEN "UNITTEST.LOG" FOR OUTPUT AS #1
-PRINT #1, "=== VESA per-width fast paths (round-trip in real modes) ==="
-
-' 320-wide 256-colour is mode 13h (single 64k bank; offset = y*320 + x)
+' === entry point ===
+CALL TBeginSuite("VESAOPT")
 !MOV AX, &H0013
 !INT &H10
 CALL CheckWidth(320, 200, "320 (mode 13h)")
-
 !MOV AX, &H4F02
 !MOV BX, &H0101
 !INT &H10
-CALL CheckWidth(640, 480, "640 (0x101)")
-
+CALL CheckWidth(640, 480, "640 (VBE 0x101)")
 !MOV AX, &H4F02
 !MOV BX, &H0103
 !INT &H10
-CALL CheckWidth(800, 600, "800 (0x103)")
-
+CALL CheckWidth(800, 600, "800 (VBE 0x103)")
 !MOV AX, &H4F02
 !MOV BX, &H0105
 !INT &H10
-CALL CheckWidth(1024, 768, "1024 (0x105)")
-
+CALL CheckWidth(1024, 768, "1024 (VBE 0x105)")
 !MOV AX, &H4F02
 !MOV BX, &H0107
 !INT &H10
-CALL CheckWidth(1280, 1024, "1280 (0x107)")
-
+CALL CheckWidth(1280, 1024, "1280 (VBE 0x107)")
 !MOV AX, &H0003
 !INT &H10
-IF fail = 0 THEN PRINT #1, "ALL TESTS PASSED" ELSE PRINT #1, "SOME TESTS FAILED"
-CLOSE #1
+CALL TEndSuite("VESAOPT")
 END
