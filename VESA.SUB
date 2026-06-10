@@ -135,7 +135,7 @@ SUB Vesa_SetResolution (BYVAL xRes AS WORD, BYVAL yRes AS WORD, BYVAL colors AS 
     REG 9, STRSEG(VESAInfo)
     CALL INTERRUPT &H10
     
-    IF (AX AND &HFFFF) <> &H4F THEN
+    IF (REG(1) AND &HFFFF) <> &H4F THEN
         ' VESA not supported, try Mode-X fallback
         CALL ModeX_SetFallback(XRes, YRes, Colors)
         EXIT SUB
@@ -266,7 +266,7 @@ FUNCTION Vesa_GetMode (BYVAL xRes AS WORD, BYVAL yRes AS WORD, BYVAL colors AS W
         ' Check for exact match
         IF XRes = ModeXRes AND YRes = ModeYRes AND Colors = ModeColors THEN
             DEF SEG  ' Restore default segment
-            GETVESAMODE = ModeNumber
+            Vesa_GetMode = ModeNumber
             EXIT FUNCTION
         END IF
         
@@ -274,7 +274,7 @@ FUNCTION Vesa_GetMode (BYVAL xRes AS WORD, BYVAL yRes AS WORD, BYVAL colors AS W
     LOOP
     
     DEF SEG  ' Restore default segment
-    GETVESAMODE = 0  ' No suitable mode found
+    Vesa_GetMode = 0  ' No suitable mode found
 END FUNCTION
 
 ' =============================================================================
@@ -395,7 +395,7 @@ SUB VESA_HLine(X1_a AS WORD, X2_a AS WORD, Y_a AS WORD, colorVal_a AS BYTE)
     DIM X1 AS WORD, X2 AS WORD, Y AS WORD, colorVal AS BYTE
     X1 = X1_a : X2 = X2_a : Y = Y_a : colorVal = colorVal_a
     DIM StartOffset AS LONG, EndOffset AS LONG
-    DIM CurrentWindow AS WORD, BytesInWindow AS WORD
+    DIM CurrentWindow AS WORD, BytesInWindow AS LONG
     DIM LineLength AS WORD, CurrentX AS WORD
     DIM ColorWord AS WORD, ColorDWord AS LONG
     DIM WindowOffset AS WORD
