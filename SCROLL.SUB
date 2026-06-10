@@ -62,11 +62,6 @@ DIM VScreenBgStore AS SHARED STRING
 DIM ParallaxImageStore(8) AS SHARED STRING
 DIM ScrollSystemInitialized AS SHARED BYTE
 
-' Scrolling optimization arrays
-DIM ScrollBufferA AS SHARED STRING  ' Double buffering for smooth scrolling
-DIM ScrollBufferB AS SHARED STRING
-DIM CurrentScrollBuffer AS SHARED BYTE
-
 ' =============================================================================
 ' Initialize scrolling system
 ' Parameters: None
@@ -101,13 +96,6 @@ SUB Scroll_Init
         ParallaxLayers(I).Height = 0
         ParallaxLayers(I).Priority = I
     NEXT I
-    
-    ' Initialize scroll buffers
-    DIM BufferSize AS LONG
-    BufferSize = SVGAScreenContext.XRes * SVGAScreenContext.YRes
-    ScrollBufferA = SPACE$(BufferSize)
-    ScrollBufferB = SPACE$(BufferSize)
-    CurrentScrollBuffer = 0
     
     ScrollSystemInitialized = 1
 END SUB
@@ -670,10 +658,6 @@ SUB Scroll_Cleanup
     ' Clear virtual screen
     VirtualScreen.IsActive = 0
     VScreenBgStore = ""
-    
-    ' Free scroll buffers
-    ScrollBufferA = ""
-    ScrollBufferB = ""
-    
+
     ScrollSystemInitialized = 0
 END SUB
