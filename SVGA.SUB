@@ -448,6 +448,33 @@ SUB Svga_SetPalette (BYVAL palIdx AS BYTE, BYVAL palR AS BYTE, BYVAL palG AS BYT
 END SUB
 
 ' =============================================================================
+' Leave graphics: restore 80x25 text mode and reset every context - works
+' from any mode the library can set (VGA, tweaked, VESA or text-framebuffer)
+' =============================================================================
+SUB Svga_Close
+    ' Set text mode (Mode 03h - 80x25 colorVal text)
+    REG 1, &H0003
+    CALL INTERRUPT &H10
+
+    ' Clear graphics contexts
+    SVGAScreenContext.XRes = 0
+    SVGAScreenContext.YRes = 0
+    SVGAScreenContext.ColorDepth = 0
+    SVGAScreenContext.WindowNumber = 0
+
+    VESASystemContext.XRes = 0
+    VESASystemContext.YRes = 0
+    VESASystemContext.VWnd = 0
+    VESASystemContext.Offset = 0
+    VESASystemContext.CurrentMode = %SVGA_MODE13  ' Reset to default
+
+    ' Reset scaling
+    ScaleSystemContext.XScale = 1
+    ScaleSystemContext.YScale = 1
+    ScaleSystemContext.KScale = 1
+END SUB
+
+' =============================================================================
 ' Library version as "major.minor.patch"
 ' =============================================================================
 FUNCTION Svga_Version$ ()

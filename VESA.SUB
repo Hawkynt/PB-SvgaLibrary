@@ -193,28 +193,6 @@ END SUB
 ' Returns: Nothing
 ' Note: Restores original video mode and clears graphics context
 ' =============================================================================
-SUB Vesa_Close
-    ' Set text mode (Mode 03h - 80x25 colorVal text)
-    REG 1, &H0003
-    CALL INTERRUPT &H10
-
-    ' Clear graphics contexts
-    SVGAScreenContext.XRes = 0
-    SVGAScreenContext.YRes = 0
-    SVGAScreenContext.ColorDepth = 0
-    SVGAScreenContext.WindowNumber = 0
-
-    VESASystemContext.XRes = 0
-    VESASystemContext.YRes = 0
-    VESASystemContext.VWnd = 0
-    VESASystemContext.Offset = 0
-    VESASystemContext.CurrentMode = %SVGA_MODE13  ' Reset to default
-
-    ' Reset scaling
-    ScaleSystemContext.XScale = 1
-    ScaleSystemContext.YScale = 1
-    ScaleSystemContext.KScale = 1
-END SUB
 
 ' =============================================================================
 ' Get the best VESA mode number for given parameters
