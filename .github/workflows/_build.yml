@@ -75,6 +75,7 @@ jobs:
           # is built as separately-compiled $COMPILE UNITs assembled into SVGA.PBL.
           # scripts/build-pbl.py derives the units + interface (SVGA.BI/SVGAINT.BI)
           # + the PBLIB librarian script + a link-and-run self-test from the .SUB.
+          python3 scripts/gen-vesaopt.py
           python3 scripts/build-pbl.py . build
           cp pb/* build/
           {

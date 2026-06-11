@@ -41,10 +41,15 @@ performs a structural syntax check instead of a compile.
 
 The per-width VESA fast-path families (`VOPT320.SUB` ... `VOPT1600.SUB`), the
 dispatch wiring (`VESAOPT.SUB`) and their aggregate (`VESAOPT.INC`) are
-**generated** from `VESAOPT.TEMPLATE.BAS` by `scripts/gen-vesaopt.py` - never
-edit them directly. Change the template (or the mode list in the tool), rerun
-`python3 scripts/gen-vesaopt.py`, and commit template + outputs together; CI
-fails on any drift between them (`gen-vesaopt.py --check`).
+**generated** from `VESAOPT.TEMPLATE.BAS` by `scripts/gen-vesaopt.py` and are
+NOT committed (gitignored): every pipeline stage - the CI check, the test
+runner and the .PBL build - regenerates them first. Change the template (or
+the mode list in the tool) and rerun `python3 scripts/gen-vesaopt.py` locally
+before testing.
+
+The library version lives in `TYPES.SUB` (`%SVGA_VERSION_MAJOR/MINOR/PATCH`),
+is exposed at runtime via `Svga_Version$`, and drives the nightly/release
+naming - bump it there and nowhere else.
 
 ## Syntax & style
 

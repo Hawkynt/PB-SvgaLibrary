@@ -38,6 +38,9 @@ if [ ${#tests[@]} -eq 0 ]; then echo "::notice::no tests/*.BAS - skipping PB uni
 
 command -v dosbox >/dev/null || { sudo apt-get update && sudo apt-get install -y dosbox; }
 
+# the per-width VESA fast paths are generated, not committed
+python3 scripts/gen-vesaopt.py
+
 rm -rf build && mkdir -p build
 cp ./*.SUB build/ 2>/dev/null || true
 cp ./*.INC build/ 2>/dev/null || true
