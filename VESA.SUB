@@ -23,9 +23,9 @@ SUB Vesa_SetResolution (BYVAL xRes AS WORD, BYVAL yRes AS WORD, BYVAL colors AS 
 
     ' Handle standard VGA mode 13h (320x200x256)
     IF (XRes = 320) AND (YRes = 200) AND (Colors = 256) THEN
-        CALL Vesa_SetVgaMode(13)
-        VESASystemContext.CurrentMode = %SVGA_MODE13
-        CALL Svga_InitDispatchTable  ' Update function pointers for mode 13h
+        REG 1, &H0013
+        CALL INTERRUPT &H10
+        CALL Vga_InitMode13h
         EXIT SUB
     END IF
 

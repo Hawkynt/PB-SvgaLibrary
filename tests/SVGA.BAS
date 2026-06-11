@@ -124,6 +124,21 @@ SUB Vesa_ClearScreen(a AS BYTE)
 END SUB
 SUB Vesa_CopyBlock(a AS WORD, b AS WORD, c AS WORD, d AS WORD, e AS WORD, f AS WORD)
 END SUB
+DIM gRouteHit AS SHARED INTEGER   ' 1=ModeX 2=ModeZ 3=Mode16 4=VESA
+
+SUB ModeX_SetMode(BYVAL modeXType AS BYTE)
+    gRouteHit = 1
+END SUB
+SUB ModeZ_SetMode
+    gRouteHit = 2
+END SUB
+SUB Mode16_SetMode
+    gRouteHit = 3
+END SUB
+SUB Vesa_SetResolution(BYVAL xRes AS WORD, BYVAL yRes AS WORD, BYVAL colors AS WORD)
+    gRouteHit = 4
+END SUB
+
 SUB Svga_WireVesaOptimized
 END SUB
 
@@ -379,4 +394,39 @@ END SUB
 SUB Test_Teardown
     !MOV AX, &H0003
     !INT &H10
+END SUB
+
+SUB Test_SetRes_Mode13
+    CALL Test_Case("Svga_SetRes(320,200,256) wires mode 13h end to end")
+    DIM xv AS WORD, yv AS WORD, cv AS BYTE, got AS BYTE
+    CALL Svga_SetRes(320, 200, 256)
+    CALL Assert_IsEqual(VESASystemContext.CurrentMode, %SVGA_MODE13, "current mode tag")
+    CALL Assert_IsEqual(SVGAScreenContext.XRes, 320, "XRes")
+    CALL Assert_IsEqual(SVGAScreenContext.YRes, 200, "YRes")
+    CALL Assert_IsEqual(SVGAScreenContext.BytesPerLine, 320, "BytesPerLine")
+    xv = 77 : yv = 55 : cv = 123 : got = 0
+    CALL Svga_PutPixel(xv, yv, cv)
+    got = Svga_GetPixel(xv, yv)
+    CALL Assert_IsEqual(got, 123, "pixel round-trips through the wired dispatch")
+END SUB
+
+SUB Test_SetRes_Routing
+    CALL Test_Case("Svga_SetRes routes tweaked and VESA resolutions")
+    gRouteHit = 0 : CALL Svga_SetRes(320, 240, 256)
+    CALL Assert_IsEqual(gRouteHit, 1, "320x240x256 -> Mode-X")
+    gRouteHit = 0 : CALL Svga_SetRes(320, 400, 256)
+    CALL Assert_IsEqual(gRouteHit, 2, "320x400x256 -> Mode-Z")
+    gRouteHit = 0 : CALL Svga_SetRes(800, 600, 16)
+    CALL Assert_IsEqual(gRouteHit, 3, "800x600x16 -> tweaked 6Ah")
+    gRouteHit = 0 : CALL Svga_SetRes(640, 480, 256)
+    CALL Assert_IsEqual(gRouteHit, 4, "640x480x256 -> VESA lookup")
+END SUB
+
+SUB Test_SetPalette
+    CALL Test_Case("Svga_SetPalette programs a DAC entry")
+    CALL Svga_SetPalette(201, 63, 32, 16)
+    OUT &H3C7, 201
+    CALL Assert_IsEqual(INP(&H3C9), 63, "red read back")
+    CALL Assert_IsEqual(INP(&H3C9), 32, "green read back")
+    CALL Assert_IsEqual(INP(&H3C9), 16, "blue read back")
 END SUB

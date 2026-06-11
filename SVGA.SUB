@@ -396,6 +396,58 @@ END SUB
 ' Note: Call this before program termination to clean up resources
 ' =============================================================================
 ' =============================================================================
+' Set a graphics resolution - the single entry point for every mode the
+' library offers. Tweaked VGA modes route to their dedicated set-up, everything
+' else goes through the VESA mode search (which itself falls back to mode 13h
+' or a Mode-X variant). Mode, screen context and the SVGADispatch function
+' pointers are all wired - callers never touch them directly.
+'   320x200x256 -> VGA mode 13h      320x240x256 -> Mode-X
+'   320x400x256 -> Mode-Z            800x600x16  -> VGA tweaked mode 6Ah
+'   anything else -> VESA lookup (e.g. 640x480/800x600/1024x768/1280x1024/1600x1200 x256)
+' =============================================================================
+SUB Svga_SetRes (BYVAL xRes AS WORD, BYVAL yRes AS WORD, BYVAL colors AS WORD)
+    IF colors = 256 THEN
+        IF (xRes = 320) AND (yRes = 200) THEN
+            REG 1, &H0013
+            CALL INTERRUPT &H10
+            CALL Vga_InitMode13h
+            EXIT SUB
+        END IF
+        IF (xRes = 320) AND (yRes = 240) THEN
+            CALL ModeX_InitTables
+            CALL ModeX_SetMode(0)
+            EXIT SUB
+        END IF
+        IF (xRes = 320) AND (yRes = 400) THEN
+            CALL ModeX_InitTables
+            CALL ModeZ_SetMode
+            EXIT SUB
+        END IF
+    END IF
+    IF (colors = 16) AND (xRes = 800) AND (yRes = 600) THEN
+        CALL Mode16_SetMode
+        EXIT SUB
+    END IF
+    CALL Vesa_SetResolution(xRes, yRes, colors)
+END SUB
+
+' =============================================================================
+' Program one VGA DAC palette entry (r/g/b are 6-bit values, 0-63)
+' =============================================================================
+SUB Svga_SetPalette (BYVAL palIdx AS BYTE, BYVAL palR AS BYTE, BYVAL palG AS BYTE, BYVAL palB AS BYTE)
+    !MOV DX, &H3C8
+    !MOV AL, palIdx
+    !OUT DX, AL
+    !INC DX
+    !MOV AL, palR
+    !OUT DX, AL
+    !MOV AL, palG
+    !OUT DX, AL
+    !MOV AL, palB
+    !OUT DX, AL
+END SUB
+
+' =============================================================================
 ' Library version as "major.minor.patch"
 ' =============================================================================
 FUNCTION Svga_Version$ ()
