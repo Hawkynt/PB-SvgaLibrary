@@ -8,7 +8,8 @@
 # Toolchain image / binaries
 *.gz binary
 *.png binary
-# Demo assets
+# Demo assets (PB 3.5 LINE INPUT needs CRLF)
+*.TXT text eol=crlf
 *.MAP text eol=crlf
 *.DAT text eol=crlf
 *.CUR binary
