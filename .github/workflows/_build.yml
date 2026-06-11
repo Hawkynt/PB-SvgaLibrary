@@ -101,6 +101,45 @@ jobs:
         if: ${{ inputs.advisory != true && steps.tc.outcome == 'success' && steps.compile.outcome == 'failure' }}
         run: echo "::error::library failed to compile."; exit 1
 
+      - name: Compile and smoke-run the demos against SVGA.PBL
+        id: demos
+        if: steps.compile.outcome == 'success'
+        continue-on-error: true
+        run: |
+          # every demo is a real .PBL consumer: compile it, run it with the
+          # SMOKE argument (a deterministic input-free gameplay run) and require
+          # the SMOKE.OK file it writes on clean completion
+          rm -rf dbuild && mkdir -p dbuild
+          fail=0
+          for d in demos/*/; do
+            name=$(basename "$d")
+            work="dbuild/$name"
+            mkdir -p "$work"
+            cp "$d"* "$work"/ 2>/dev/null || true
+            cp build/SVGA.PBL build/SVGA.BI build/SVGATYPE.BI build/SVGADECL.BI "$work"/
+            cp pb/* "$work"/
+            main=$(ls "$work"/*.BAS | head -1); main=$(basename "$main")
+            exe="${main%.BAS}"
+            {
+              echo "[cpu]"; echo "core=dynamic"; echo "cycles=max"
+              echo "[autoexec]"; echo "mount c \"$(pwd)/$work\""; echo "c:"
+              echo "PBC.EXE -CE -G386 -FNPX $main >> DLOG.TXT"
+              echo "$exe SMOKE"
+              echo "EXIT"
+            } > "$work/dosbox.conf"
+            SDL_VIDEODRIVER=dummy timeout 240 dosbox -conf "$work/dosbox.conf" -exit >/dev/null 2>&1 || true
+            if [ -f "$work/SMOKE.OK" ]; then
+              echo "demo $name: SMOKE-OK"
+            else
+              echo "::error::demo $name failed its smoke run (no SMOKE.OK)"; cat "$work/DLOG.TXT" 2>/dev/null | tail -20; fail=1
+            fi
+          done
+          exit $fail
+
+      - name: Require green demos (non-advisory builds)
+        if: ${{ inputs.advisory != true && steps.compile.outcome == 'success' && steps.demos.outcome == 'failure' }}
+        run: echo "::error::a demo failed to compile or smoke-run."; exit 1
+
       - name: Bundle the linkable library
         if: steps.compile.outcome == 'success'
         run: |

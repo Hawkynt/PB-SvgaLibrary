@@ -779,6 +779,33 @@ CALL DrawIcl_CloseIcoLib(libHandle)
 - **Hardware Support:** Enhanced VGA features (unchained Mode-X variants)
 - **File Formats:** PNG support with proper alpha blending
 
+## 🎮 Demo Games
+
+`demos/` holds eleven self-contained showcase games, each a real `SVGA.PBL`
+consumer (`$INCLUDE "SVGA.BI"` + `$LINK "SVGA.PBL"`) with its assets beside it.
+Build one with `PBC.EXE -CE -G386 -FNPX <NAME>.BAS` next to the released
+`SVGA.PBL`/`SVGA.BI` files and run the `.EXE` under DOS or DOSBox. Every demo
+also accepts a `SMOKE` command-line argument that plays a short scripted
+session and exits - CI uses it to keep all of them green.
+
+| Demo | Genre | Highlights |
+|---|---|---|
+| `MINI` | hello world | the minimal consumer skeleton |
+| `PLATFORM` | 2D platformer | tile level, gravity/jump physics, parallax hills, coins, patrol enemies |
+| `SCROLLER` | side-scrolling shmup | 3-layer parallax starfield, enemy waves, explosions |
+| `TOPSHOOT` | top-down arena shooter | wave spawner, chasing enemies, pickups, health bar |
+| `CARDS` | memory card game | INT 33h mouse, library `.CUR` cursor + animated `.ANI` while waiting |
+| `FPS3D` | raycasting ego-shooter | 160-ray DDA, fixed-point, distance-shaded walls, minimap |
+| `TACTICS` | tactical RPG | BFS movement ranges, terrain costs, AI vs AI battles |
+| `ACTRPG` | action RPG | 4-room world, sword combat, palette-animated water, key/chest quest |
+| `TURNRPG` | turn-based JRPG | overworld + menu battles, damage numbers, boss fight |
+| `CITYSIM` | city builder | road-graph traffic simulation with congestion feedback |
+| `RACER` | pseudo-3D racing | segment-projected road, curves/hills, AI cars, 2-lap race |
+
+All gameplay drawing goes through the library: `Svga_SetRes` for mode set-up,
+`Svga_SetPalette` for colours, the `Svga_*`/`Graphics_*`/`Fonts_*` primitives
+for everything on screen.
+
 ## 🛠️ Building
 
 The library targets **PowerBASIC 3.5 for DOS**: `$INCLUDE "SVGA.SUB"` in your program and compile with `PB.EXE` (runs fine under [DOSBox](https://www.dosbox.com/)).
