@@ -67,7 +67,7 @@ DIM ANIRateData(8, 99) AS SHARED WORD         ' Frame rate dataBuf
 '   FileName - ANI file name (BYVAL)
 ' Returns: Animation handle (BYTE) or 255 if error
 ' =============================================================================
-FUNCTION Ani_LoadAnimation(BYVAL fileName AS STRING) AS BYTE
+FUNCTION DrawAni_LoadAnimation(BYVAL fileName AS STRING) AS BYTE
     DIM FileHandle AS INTEGER
     DIM ANIHandle AS BYTE
     DIM ChunkID AS STRING
@@ -82,7 +82,7 @@ FUNCTION Ani_LoadAnimation(BYVAL fileName AS STRING) AS BYTE
     NEXT ANIHandle
 
     IF ANIHandle > 7 THEN
-        Ani_LoadAnimation = 255  ' No free slots
+        DrawAni_LoadAnimation = 255  ' No free slots
         EXIT FUNCTION
     END IF
 
@@ -91,7 +91,7 @@ FUNCTION Ani_LoadAnimation(BYVAL fileName AS STRING) AS BYTE
     OPEN fileName FOR BINARY AS FileHandle
     IF LOF(FileHandle) < 12 THEN
         CLOSE FileHandle
-        Ani_LoadAnimation = 255
+        DrawAni_LoadAnimation = 255
         EXIT FUNCTION
     END IF
 
@@ -100,7 +100,7 @@ FUNCTION Ani_LoadAnimation(BYVAL fileName AS STRING) AS BYTE
     GET FileHandle, 1, ChunkID
     IF ChunkID <> "RIFF" THEN
         CLOSE FileHandle
-        Ani_LoadAnimation = 255
+        DrawAni_LoadAnimation = 255
         EXIT FUNCTION
     END IF
 
@@ -111,7 +111,7 @@ FUNCTION Ani_LoadAnimation(BYVAL fileName AS STRING) AS BYTE
     GET FileHandle, , ChunkID
     IF ChunkID <> "ACON" THEN
         CLOSE FileHandle
-        Ani_LoadAnimation = 255
+        DrawAni_LoadAnimation = 255
         EXIT FUNCTION
     END IF
 
@@ -142,16 +142,16 @@ FUNCTION Ani_LoadAnimation(BYVAL fileName AS STRING) AS BYTE
 
         SELECT CASE ChunkID
             CASE "anih"  ' Animation header
-                CALL Ani_ParseHeaderChunk(FileHandle, ANIHandle, ChunkSize)
+                CALL DrawAni_ParseHeaderChunk(FileHandle, ANIHandle, ChunkSize)
 
             CASE "seq "  ' Sequence dataBuf
-                CALL Ani_ParseSequenceChunk(FileHandle, ANIHandle, ChunkSize)
+                CALL DrawAni_ParseSequenceChunk(FileHandle, ANIHandle, ChunkSize)
 
             CASE "rate"  ' Rate dataBuf
-                CALL Ani_ParseRateChunk(FileHandle, ANIHandle, ChunkSize)
+                CALL DrawAni_ParseRateChunk(FileHandle, ANIHandle, ChunkSize)
 
             CASE "LIST"  ' List of frames
-                CALL Ani_ParseFrameList(FileHandle, ANIHandle, ChunkSize)
+                CALL DrawAni_ParseFrameList(FileHandle, ANIHandle, ChunkSize)
 
             CASE ELSE
                 ' Skip unknown chunks
@@ -163,7 +163,7 @@ FUNCTION Ani_LoadAnimation(BYVAL fileName AS STRING) AS BYTE
     LOOP
 
     CLOSE FileHandle
-    Ani_LoadAnimation = ANIHandle
+    DrawAni_LoadAnimation = ANIHandle
 END FUNCTION
 
 ' =============================================================================
@@ -174,7 +174,7 @@ END FUNCTION
 '   ChunkSize - Chunk size (BYVAL)
 ' Returns: Nothing
 ' =============================================================================
-SUB Ani_ParseHeaderChunk(BYVAL fileHandle AS INTEGER, BYVAL aniHandle AS BYTE, BYVAL chunkSize AS LONG)
+SUB DrawAni_ParseHeaderChunk(BYVAL fileHandle AS INTEGER, BYVAL aniHandle AS BYTE, BYVAL chunkSize AS LONG)
     DIM ANIHeader AS ANIHeaderType
 
     IF chunkSize < 36 THEN EXIT SUB
@@ -210,7 +210,7 @@ END SUB
 '   ChunkSize - Chunk size (BYVAL)
 ' Returns: Nothing
 ' =============================================================================
-SUB Ani_ParseSequenceChunk(BYVAL fileHandle AS INTEGER, BYVAL aniHandle AS BYTE, BYVAL chunkSize AS LONG)
+SUB DrawAni_ParseSequenceChunk(BYVAL fileHandle AS INTEGER, BYVAL aniHandle AS BYTE, BYVAL chunkSize AS LONG)
     DIM SequenceCount AS WORD
     DIM I AS WORD, FrameIndex AS WORD
 
@@ -233,7 +233,7 @@ END SUB
 '   ChunkSize - Chunk size (BYVAL)
 ' Returns: Nothing
 ' =============================================================================
-SUB Ani_ParseRateChunk(BYVAL fileHandle AS INTEGER, BYVAL aniHandle AS BYTE, BYVAL chunkSize AS LONG)
+SUB DrawAni_ParseRateChunk(BYVAL fileHandle AS INTEGER, BYVAL aniHandle AS BYTE, BYVAL chunkSize AS LONG)
     DIM RateCount AS WORD
     DIM I AS WORD, Rate AS WORD
 
@@ -258,7 +258,7 @@ END SUB
 '   ChunkSize - Chunk size (BYVAL)
 ' Returns: Nothing
 ' =============================================================================
-SUB Ani_ParseFrameList(BYVAL fileHandle AS INTEGER, BYVAL aniHandle AS BYTE, BYVAL chunkSize AS LONG)
+SUB DrawAni_ParseFrameList(BYVAL fileHandle AS INTEGER, BYVAL aniHandle AS BYTE, BYVAL chunkSize AS LONG)
     DIM ListType AS STRING
     DIM FrameCount AS WORD
     DIM I AS WORD
@@ -289,7 +289,7 @@ END SUB
 '   FrameIndex - Frame to display (BYVAL)
 ' Returns: Nothing
 ' =============================================================================
-SUB Ani_ShowFrame(BYVAL animHandle AS BYTE, BYVAL x AS WORD, BYVAL y AS WORD, BYVAL frameIndex AS WORD)
+SUB DrawAni_ShowFrame(BYVAL animHandle AS BYTE, BYVAL x AS WORD, BYVAL y AS WORD, BYVAL frameIndex AS WORD)
     DIM ActualFrame AS WORD
 
     IF animHandle > 7 OR ANIAnimations(animHandle).IsLoaded = 0 THEN EXIT SUB
@@ -323,11 +323,11 @@ END SUB
 '   AnimHandle - Animation handle (BYVAL)
 ' Returns: Number of frames (WORD)
 ' =============================================================================
-FUNCTION Ani_GetFrameCount(BYVAL animHandle AS BYTE) AS WORD
+FUNCTION DrawAni_GetFrameCount(BYVAL animHandle AS BYTE) AS WORD
     IF animHandle > 7 OR ANIAnimations(animHandle).IsLoaded = 0 THEN
-        Ani_GetFrameCount = 0
+        DrawAni_GetFrameCount = 0
     ELSE
-        Ani_GetFrameCount = ANIAnimations(animHandle).FrameCount
+        DrawAni_GetFrameCount = ANIAnimations(animHandle).FrameCount
     END IF
 END FUNCTION
 
@@ -338,17 +338,17 @@ END FUNCTION
 '   FrameIndex - Frame index (BYVAL)
 ' Returns: Frame DlyUnits in 10ms units (WORD)
 ' =============================================================================
-FUNCTION Ani_GetFrameDelay(BYVAL animHandle AS BYTE, BYVAL frameIndex AS WORD) AS WORD
+FUNCTION DrawAni_GetFrameDelay(BYVAL animHandle AS BYTE, BYVAL frameIndex AS WORD) AS WORD
     IF animHandle > 7 OR ANIAnimations(animHandle).IsLoaded = 0 THEN
-        Ani_GetFrameDelay = 0
+        DrawAni_GetFrameDelay = 0
         EXIT FUNCTION
     END IF
 
     ' Check if we have per-frame rates
     IF frameIndex < 100 AND ANIRateData(animHandle, frameIndex) > 0 THEN
-        Ani_GetFrameDelay = ANIRateData(animHandle, frameIndex)
+        DrawAni_GetFrameDelay = ANIRateData(animHandle, frameIndex)
     ELSE
-        Ani_GetFrameDelay = ANIAnimations(animHandle).FrameDelay
+        DrawAni_GetFrameDelay = ANIAnimations(animHandle).FrameDelay
     END IF
 END FUNCTION
 
@@ -361,7 +361,7 @@ END FUNCTION
 ' Returns: Nothing
 ' Note: Call repeatedly in main loop for animation
 ' =============================================================================
-SUB Ani_PlayAnimation(BYVAL animHandle AS BYTE, BYVAL x AS WORD, BYVAL y AS WORD, BYVAL loopCount AS WORD)
+SUB DrawAni_PlayAnimation(BYVAL animHandle AS BYTE, BYVAL x AS WORD, BYVAL y AS WORD, BYVAL loopCount AS WORD)
     DIM CurrentTime AS LONG
     DIM CurrentDelay AS WORD
 
@@ -376,12 +376,12 @@ SUB Ani_PlayAnimation(BYVAL animHandle AS BYTE, BYVAL x AS WORD, BYVAL y AS WORD
     CurrentTime = Timer_GetTimerTick
 
     ' Get DlyUnits for current frame
-    CurrentDelay = Ani_GetFrameDelay(animHandle, ANIAnimations(animHandle).CurrentFrame)
+    CurrentDelay = DrawAni_GetFrameDelay(animHandle, ANIAnimations(animHandle).CurrentFrame)
 
     ' Check if it's time for next frame
     IF CurrentTime >= ANIAnimations(animHandle).LastFrameTime + CurrentDelay THEN
         ' Display current frame
-        CALL Ani_ShowFrame(animHandle, x, y, ANIAnimations(animHandle).CurrentFrame)
+        CALL DrawAni_ShowFrame(animHandle, x, y, ANIAnimations(animHandle).CurrentFrame)
 
         ' Advance to next frame
         ANIAnimations(animHandle).CurrentFrame = ANIAnimations(animHandle).CurrentFrame + 1
@@ -409,11 +409,11 @@ END SUB
 '   AnimHandle - Animation handle (BYVAL)
 ' Returns: True if animation is playing (BYTE)
 ' =============================================================================
-FUNCTION Ani_IsPlaying(BYVAL animHandle AS BYTE) AS BYTE
+FUNCTION DrawAni_IsPlaying(BYVAL animHandle AS BYTE) AS BYTE
     IF animHandle > 7 OR ANIAnimations(animHandle).IsLoaded = 0 THEN
-        Ani_IsPlaying = 0
+        DrawAni_IsPlaying = 0
     ELSE
-        Ani_IsPlaying = (AnimationStates(animHandle) = %ANIM_STATE_PLAYING)  ' TotalLoops=0 also means "infinite" - the state machine disambiguates
+        DrawAni_IsPlaying = (AnimationStates(animHandle) = %ANIM_STATE_PLAYING)  ' TotalLoops=0 also means "infinite" - the state machine disambiguates
     END IF
 END FUNCTION
 
@@ -423,13 +423,13 @@ END FUNCTION
 '   AnimHandle - Animation handle (BYVAL)
 ' Returns: Nothing
 ' =============================================================================
-SUB Ani_StopAnimation(BYVAL animHandle AS BYTE)
+SUB DrawAni_StopAnimation(BYVAL animHandle AS BYTE)
     IF animHandle > 7 OR ANIAnimations(animHandle).IsLoaded = 0 THEN EXIT SUB
 
     ANIAnimations(animHandle).LoopCount = 0
     ANIAnimations(animHandle).TotalLoops = 0
     ANIAnimations(animHandle).CurrentFrame = 0
-    AnimationStates(animHandle) = %ANIM_STATE_STOPPED  ' mark stopped so Ani_IsPlaying does not read TotalLoops=0 as "infinite"
+    AnimationStates(animHandle) = %ANIM_STATE_STOPPED  ' mark stopped so DrawAni_IsPlaying does not read TotalLoops=0 as "infinite"
 END SUB
 
 ' =============================================================================
@@ -438,7 +438,7 @@ END SUB
 '   AnimHandle - Animation handle (BYVAL)
 ' Returns: Nothing
 ' =============================================================================
-SUB Ani_ResetAnimation(BYVAL animHandle AS BYTE)
+SUB DrawAni_ResetAnimation(BYVAL animHandle AS BYTE)
     IF animHandle > 7 OR ANIAnimations(animHandle).IsLoaded = 0 THEN EXIT SUB
 
     ANIAnimations(animHandle).CurrentFrame = 0
@@ -454,7 +454,7 @@ END SUB
 '   HotX, HotY - Hotspot coordinates (BYREF)
 ' Returns: Nothing (info returned via parameters)
 ' =============================================================================
-SUB Ani_GetAnimationInfo(BYVAL animHandle AS BYTE, widthVal AS WORD, height AS WORD, frameCount AS WORD, hotX AS WORD, hotY AS WORD)
+SUB DrawAni_GetAnimationInfo(BYVAL animHandle AS BYTE, widthVal AS WORD, height AS WORD, frameCount AS WORD, hotX AS WORD, hotY AS WORD)
     IF animHandle > 7 OR ANIAnimations(animHandle).IsLoaded = 0 THEN
         widthVal = 0
         height = 0
@@ -477,7 +477,7 @@ END SUB
 '   SpeedMultiplier - Speed multiplier (100 = normal, 200 = 2x, 50 = 0.5x) (BYVAL)
 ' Returns: Nothing
 ' =============================================================================
-SUB Ani_SetAnimationSpeed(BYVAL animHandle AS BYTE, BYVAL speedMultiplier AS WORD)
+SUB DrawAni_SetAnimationSpeed(BYVAL animHandle AS BYTE, BYVAL speedMultiplier AS WORD)
     IF animHandle > 7 OR ANIAnimations(animHandle).IsLoaded = 0 THEN EXIT SUB
     IF speedMultiplier = 0 THEN speedMultiplier = 100
 
@@ -501,7 +501,7 @@ END SUB
 '   AnimHandle - Animation handle (BYVAL)
 ' Returns: Nothing
 ' =============================================================================
-SUB Ani_FreeAnimation(BYVAL animHandle AS BYTE)
+SUB DrawAni_FreeAnimation(BYVAL animHandle AS BYTE)
     IF animHandle > 7 THEN EXIT SUB
 
     ANIAnimations(animHandle).IsLoaded = 0
@@ -542,22 +542,22 @@ SUB DrawAni_Show(BYVAL fileName AS STRING, BYVAL x AS WORD, BYVAL y AS WORD)
     DIM animHandle AS BYTE
 
     ' Load animation
-    animHandle = Ani_LoadAnimation(fileName)
+    animHandle = DrawAni_LoadAnimation(fileName)
     IF animHandle = 255 THEN EXIT SUB
 
     ' Play animation once
-    CALL Ani_StartAnimation(animHandle, x, y, 1, 0)
+    CALL DrawAni_StartAnimation(animHandle, x, y, 1, 0)
 
     ' Simple display loop - in a real application this would be integrated with main loop
     DIM startTime AS LONG
     startTime = Timer_GetTimerTick
 
-    DO WHILE Ani_IsPlaying(animHandle) AND (Timer_GetTimerTick - startTime) < 300  ' 3 second timeout
-        CALL Ani_UpdateAnimation(animHandle, x, y)
+    DO WHILE DrawAni_IsPlaying(animHandle) AND (Timer_GetTimerTick - startTime) < 300  ' 3 second timeout
+        CALL DrawAni_UpdateAnimation(animHandle, x, y)
     LOOP
 
     ' Cleanup
-    CALL Ani_FreeAnimation(animHandle)
+    CALL DrawAni_FreeAnimation(animHandle)
 END SUB
 
 ' =============================================================================
@@ -575,14 +575,14 @@ SUB DrawAni_GetSize(BYVAL fileName AS STRING, widthVal AS WORD, height AS WORD)
     height = 0
 
     ' Load animation
-    animHandle = Ani_LoadAnimation(fileName)
+    animHandle = DrawAni_LoadAnimation(fileName)
     IF animHandle = 255 THEN EXIT SUB
 
     ' Get animation info
-    CALL Ani_GetAnimationInfo(animHandle, widthVal, height, frameCount, hotX, hotY)
+    CALL DrawAni_GetAnimationInfo(animHandle, widthVal, height, frameCount, hotX, hotY)
 
     ' Cleanup
-    CALL Ani_FreeAnimation(animHandle)
+    CALL DrawAni_FreeAnimation(animHandle)
 END SUB
 
 ' =============================================================================
@@ -616,7 +616,7 @@ END FUNCTION
 '   AnimHandle - Animation handle (BYVAL)
 ' Returns: Nothing
 ' =============================================================================
-SUB Ani_PauseAnimation(BYVAL animHandle AS BYTE)
+SUB DrawAni_PauseAnimation(BYVAL animHandle AS BYTE)
     IF animHandle > 7 OR ANIAnimations(animHandle).IsLoaded = 0 THEN EXIT SUB
 
     ' Only pause if currently playing
@@ -636,7 +636,7 @@ END SUB
 '   AnimHandle - Animation handle (BYVAL)
 ' Returns: Nothing
 ' =============================================================================
-SUB Ani_ResumeAnimation(BYVAL animHandle AS BYTE)
+SUB DrawAni_ResumeAnimation(BYVAL animHandle AS BYTE)
     IF animHandle > 7 OR ANIAnimations(animHandle).IsLoaded = 0 THEN EXIT SUB
 
     ' Only resume if currently paused
@@ -657,7 +657,7 @@ END SUB
 '   AnimHandle - Animation handle (BYVAL)
 ' Returns: Nothing
 ' =============================================================================
-SUB Ani_FreezeAnimation(BYVAL animHandle AS BYTE)
+SUB DrawAni_FreezeAnimation(BYVAL animHandle AS BYTE)
     IF animHandle > 7 OR ANIAnimations(animHandle).IsLoaded = 0 THEN EXIT SUB
 
     AnimationStates(animHandle) = %ANIM_STATE_STOPPED
@@ -681,7 +681,7 @@ END SUB
 '   UseTimer - Use interrupt timer (BYVAL)
 ' Returns: Nothing
 ' =============================================================================
-SUB Ani_StartAnimation(BYVAL animHandle AS BYTE, BYVAL x AS WORD, BYVAL y AS WORD, BYVAL loopCount AS WORD, BYVAL useTimer AS BYTE)
+SUB DrawAni_StartAnimation(BYVAL animHandle AS BYTE, BYVAL x AS WORD, BYVAL y AS WORD, BYVAL loopCount AS WORD, BYVAL useTimer AS BYTE)
     IF animHandle > 7 OR ANIAnimations(animHandle).IsLoaded = 0 THEN EXIT SUB
 
     ' Reset animation to beginning
@@ -715,11 +715,11 @@ END SUB
 '   AnimHandle - Animation handle (BYVAL)
 ' Returns: Animation state (BYTE): 0=STOPPED, 1=PLAYING, 2=PAUSED, 3=FINISHED
 ' =============================================================================
-FUNCTION Ani_GetAnimationState(BYVAL animHandle AS BYTE) AS BYTE
+FUNCTION DrawAni_GetAnimationState(BYVAL animHandle AS BYTE) AS BYTE
     IF animHandle > 7 OR ANIAnimations(animHandle).IsLoaded = 0 THEN
-        Ani_GetAnimationState = %ANIM_STATE_STOPPED
+        DrawAni_GetAnimationState = %ANIM_STATE_STOPPED
     ELSE
-        Ani_GetAnimationState = AnimationStates(animHandle)
+        DrawAni_GetAnimationState = AnimationStates(animHandle)
     END IF
 END FUNCTION
 
@@ -730,7 +730,7 @@ END FUNCTION
 '   AutoCleanup - Auto cleanup flag (BYVAL)
 ' Returns: Nothing
 ' =============================================================================
-SUB Ani_SetAutoCleanup(BYVAL animHandle AS BYTE, BYVAL autoCleanup AS BYTE)
+SUB DrawAni_SetAutoCleanup(BYVAL animHandle AS BYTE, BYVAL autoCleanup AS BYTE)
     IF animHandle <= 7 THEN
         AnimationAutoCleanup(animHandle) = autoCleanup
     END IF
@@ -743,7 +743,7 @@ END SUB
 '   X, Y - Display position (BYVAL)
 ' Returns: Nothing
 ' =============================================================================
-SUB Ani_UpdateAnimation(BYVAL animHandle AS BYTE, BYVAL x AS WORD, BYVAL y AS WORD)
+SUB DrawAni_UpdateAnimation(BYVAL animHandle AS BYTE, BYVAL x AS WORD, BYVAL y AS WORD)
     DIM CurrentTime AS LONG
     DIM CurrentDelay AS WORD
     DIM TimerID AS BYTE
@@ -757,17 +757,17 @@ SUB Ani_UpdateAnimation(BYVAL animHandle AS BYTE, BYVAL x AS WORD, BYVAL y AS WO
     IF TimerID <> 255 THEN
         ' Timer-driven: check if timer is ready
         IF Timer_IsTimerReady(TimerID) THEN
-            CALL Ani_ShowFrame(animHandle, x, y, ANIAnimations(animHandle).CurrentFrame)
-            CALL AdvanceAnimationFrame(animHandle)
+            CALL DrawAni_ShowFrame(animHandle, x, y, ANIAnimations(animHandle).CurrentFrame)
+            CALL DrawAni_AdvanceFrame(animHandle)
         END IF
     ELSE
         ' Manual timing: use Timer_GetTimerTick
         CurrentTime = Timer_GetTimerTick
-        CurrentDelay = Ani_GetFrameDelay(animHandle, ANIAnimations(animHandle).CurrentFrame)
+        CurrentDelay = DrawAni_GetFrameDelay(animHandle, ANIAnimations(animHandle).CurrentFrame)
 
         IF CurrentTime >= ANIAnimations(animHandle).LastFrameTime + CurrentDelay THEN
-            CALL Ani_ShowFrame(animHandle, x, y, ANIAnimations(animHandle).CurrentFrame)
-            CALL AdvanceAnimationFrame(animHandle)
+            CALL DrawAni_ShowFrame(animHandle, x, y, ANIAnimations(animHandle).CurrentFrame)
+            CALL DrawAni_AdvanceFrame(animHandle)
             ANIAnimations(animHandle).LastFrameTime = CurrentTime
         END IF
     END IF
@@ -779,7 +779,7 @@ END SUB
 '   AnimHandle - Animation handle (BYVAL)
 ' Returns: Nothing
 ' =============================================================================
-SUB AdvanceAnimationFrame(BYVAL animHandle AS BYTE)
+SUB DrawAni_AdvanceFrame(BYVAL animHandle AS BYTE)
     ANIAnimations(animHandle).CurrentFrame = ANIAnimations(animHandle).CurrentFrame + 1
 
     ' Check if animation completed
@@ -802,7 +802,7 @@ SUB AdvanceAnimationFrame(BYVAL animHandle AS BYTE)
 
                 ' Auto-cleanup if enabled
                 IF AnimationAutoCleanup(animHandle) THEN
-                    CALL Ani_FreeAnimation(animHandle)
+                    CALL DrawAni_FreeAnimation(animHandle)
                 END IF
             END IF
         END IF

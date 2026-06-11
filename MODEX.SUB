@@ -77,49 +77,49 @@ SUB ModeX_SetMode(BYVAL modeXType AS BYTE)
     ' Configure resolution based on mode type
     SELECT CASE ModeXType
         CASE 0  ' 320x240
-            CALL SetModeXRegisters320x240
+            CALL ModeX_SetRegisters320x240
             ModeXSystemContext.XRes = 320
             ModeXSystemContext.YRes = 240
             ModeXSystemContext.LogicalWidth = 80
 
         CASE 1  ' 360x240
-            CALL SetModeXRegisters360x240
+            CALL ModeX_SetRegisters360x240
             ModeXSystemContext.XRes = 360
             ModeXSystemContext.YRes = 240
             ModeXSystemContext.LogicalWidth = 90
 
         CASE 2  ' 320x400
-            CALL SetModeXRegisters320x400
+            CALL ModeX_SetRegisters320x400
             ModeXSystemContext.XRes = 320
             ModeXSystemContext.YRes = 400
             ModeXSystemContext.LogicalWidth = 80
 
         CASE 3  ' 360x400
-            CALL SetModeXRegisters360x400
+            CALL ModeX_SetRegisters360x400
             ModeXSystemContext.XRes = 360
             ModeXSystemContext.YRes = 400
             ModeXSystemContext.LogicalWidth = 90
 
         CASE 4  ' 320x480
-            CALL SetModeXRegisters320x480
+            CALL ModeX_SetRegisters320x480
             ModeXSystemContext.XRes = 320
             ModeXSystemContext.YRes = 480
             ModeXSystemContext.LogicalWidth = 80
 
         CASE 5  ' 360x480
-            CALL SetModeXRegisters360x480
+            CALL ModeX_SetRegisters360x480
             ModeXSystemContext.XRes = 360
             ModeXSystemContext.YRes = 480
             ModeXSystemContext.LogicalWidth = 90
 
         CASE 6  ' 256x256
-            CALL SetModeXRegisters256x256
+            CALL ModeX_SetRegisters256x256
             ModeXSystemContext.XRes = 256
             ModeXSystemContext.YRes = 256
             ModeXSystemContext.LogicalWidth = 64
 
         CASE 7  ' 400x300
-            CALL SetModeXRegisters400x300
+            CALL ModeX_SetRegisters400x300
             ModeXSystemContext.XRes = 400
             ModeXSystemContext.YRes = 300
             ModeXSystemContext.LogicalWidth = 100
@@ -476,7 +476,7 @@ END SUB
 ' Mode-X register setup functions for different resolutions
 ' =============================================================================
 
-SUB SetModeXRegisters320x240
+SUB ModeX_SetRegisters320x240
     ' 320x240 Mode-X (tweaked Mode 13h)
     !MOV DX, &H3D4
     !MOV AL, &H09
@@ -486,7 +486,7 @@ SUB SetModeXRegisters320x240
     !OUT DX, AL
 END SUB
 
-SUB SetModeXRegisters360x240
+SUB ModeX_SetRegisters360x240
     ' 360x240 Mode-X
     DIM RegisterValues(0 TO 15) AS BYTE
     DIM Index AS BYTE
@@ -518,7 +518,7 @@ END SUB
 ' Additional register setup functions for other Mode-X variants would follow...
 ' (320x400, 360x400, 320x480, 360x480, 256x256, 400x300)
 
-SUB SetModeXRegisters320x400
+SUB ModeX_SetRegisters320x400
     ' 320x400 Mode-X (no double scanning)
     !MOV DX, &H3D4
     !MOV AL, &H09
@@ -534,7 +534,7 @@ SUB SetModeXRegisters320x400
     !OUT DX, AL
 END SUB
 
-SUB SetModeXRegisters360x400
+SUB ModeX_SetRegisters360x400
     ' 360x400 Mode-X
     DIM RegisterValues(0 TO 15) AS BYTE
     DIM Index AS BYTE
@@ -563,7 +563,7 @@ SUB SetModeXRegisters360x400
     NEXT Index
 END SUB
 
-SUB SetModeXRegisters320x480
+SUB ModeX_SetRegisters320x480
     ' 320x480 Mode-X (maximum VGA vertical resolution)
     DIM RegisterValues(0 TO 15) AS BYTE
     DIM Index AS BYTE
@@ -592,7 +592,7 @@ SUB SetModeXRegisters320x480
     NEXT Index
 END SUB
 
-SUB SetModeXRegisters360x480
+SUB ModeX_SetRegisters360x480
     ' 360x480 Mode-X
     DIM RegisterValues(0 TO 15) AS BYTE
     DIM Index AS BYTE
@@ -621,7 +621,7 @@ SUB SetModeXRegisters360x480
     NEXT Index
 END SUB
 
-SUB SetModeXRegisters256x256
+SUB ModeX_SetRegisters256x256
     ' 256x256 Mode-X (square mode for games)
     DIM RegisterValues(0 TO 15) AS BYTE
     DIM Index AS BYTE
@@ -650,7 +650,7 @@ SUB SetModeXRegisters256x256
     NEXT Index
 END SUB
 
-SUB SetModeXRegisters400x300
+SUB ModeX_SetRegisters400x300
     ' 400x300 Mode-X (4:3 aspect ratio)
     DIM RegisterValues(0 TO 15) AS BYTE
     DIM Index AS BYTE

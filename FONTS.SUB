@@ -29,8 +29,6 @@ SUB Fonts_InitFont (BYVAL fontFile AS STRING, BYVAL displayMode AS BYTE)
         CLS
         PRINT "LOAD " + CHR$(34) + UCASE$(fontFile) + CHR$(34) + ",8,1"
         PRINT "LOADING FROM $2000 TO $3000"
-    ELSEIF displayMode = 2 THEN
-        CALL LOADING(0)  ' Start loading animation
     END IF
 
     ' Open font file
@@ -81,8 +79,6 @@ SUB Fonts_InitFont (BYVAL fontFile AS STRING, BYVAL displayMode AS BYTE)
     IF displayMode = 1 THEN
         PRINT
         PRINT "READY."
-    ELSEIF displayMode = 2 THEN
-        CALL LOADING(1)  ' End loading animation
     END IF
 
     ' Set standard 8x8 character dimensions

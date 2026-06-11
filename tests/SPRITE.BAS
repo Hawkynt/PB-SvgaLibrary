@@ -9,16 +9,16 @@ $INCLUDE "TYPES.SUB"
 $INCLUDE "VGA.SUB"
 $INCLUDE "SPRITE.SUB"
 
-' collaborators: Ani_* are no-op stubs (animated code paths not tested here).
+' collaborators: DrawAni_* are no-op stubs (animated code paths not tested here).
 ' Svga_PutPixel and Svga_HLine route to the real VGA implementations so that
 ' Sprite_Draw's generic path actually writes VRAM we can read back.
-SUB Ani_GetAnimationInfo(a AS BYTE, w AS WORD, h AS WORD, fc AS WORD, hx AS WORD, hy AS WORD)
+SUB DrawAni_GetAnimationInfo(a AS BYTE, w AS WORD, h AS WORD, fc AS WORD, hx AS WORD, hy AS WORD)
 END SUB
-SUB Ani_PlayAnimation(a AS BYTE, x AS INTEGER, y AS INTEGER, lp AS INTEGER)
+SUB DrawAni_PlayAnimation(a AS BYTE, x AS INTEGER, y AS INTEGER, lp AS INTEGER)
 END SUB
-SUB Ani_ShowFrame(a AS BYTE, x AS INTEGER, y AS INTEGER, fr AS INTEGER)
+SUB DrawAni_ShowFrame(a AS BYTE, x AS INTEGER, y AS INTEGER, fr AS INTEGER)
 END SUB
-SUB Ani_StopAnimation(a AS BYTE)
+SUB DrawAni_StopAnimation(a AS BYTE)
 END SUB
 SUB Svga_FillRect(x1 AS INTEGER, y1 AS INTEGER, x2 AS INTEGER, y2 AS INTEGER, c AS BYTE)
     DIM wx1 AS WORD, wy1 AS WORD, wx2 AS WORD, wy2 AS WORD, wc AS BYTE

@@ -395,12 +395,19 @@ END SUB
 ' Returns: Nothing
 ' Note: Call this before program termination to clean up resources
 ' =============================================================================
+' =============================================================================
+' Library version as "major.minor.patch"
+' =============================================================================
+FUNCTION Svga_Version$ ()
+    Svga_Version$ = LTRIM$(STR$(%SVGA_VERSION_MAJOR)) + "." + LTRIM$(STR$(%SVGA_VERSION_MINOR)) + "." + LTRIM$(STR$(%SVGA_VERSION_PATCH))
+END FUNCTION
+
 SUB Svga_Cleanup
     ' Stop all animations first
     DIM I AS BYTE
     FOR I = 0 TO 7
-        CALL Ani_StopAnimation(I)
-        CALL Ani_FreeAnimation(I)
+        CALL DrawAni_StopAnimation(I)
+        CALL DrawAni_FreeAnimation(I)
     NEXT I
     
     ' Close all icon libraries

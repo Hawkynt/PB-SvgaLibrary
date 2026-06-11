@@ -11,33 +11,6 @@ SUB DrawBmp_PutBmpPixel(BYVAL X AS WORD, BYVAL Y AS WORD, BYVAL colorVal AS BYTE
     CALL Svga_PutPixel(X, Y, colorVal)
 END SUB
 
-' Draw one decoded scanline (8-bit palette indices, one byte per pixel) at X,Y.
-' Higher colour depths are approximated by using the leading byte of each pixel.
-SUB BMP_DrawScanline(scanData AS STRING, BYVAL X AS WORD, BYVAL Y AS WORD, BYVAL widthVal AS WORD, BYVAL depth AS BYTE)
-    DIM bytesPerPixel AS BYTE
-    DIM px AS INTEGER           ' signed to avoid WORD underflow when widthVal=0
-    DIM srcOffset AS WORD
-    DIM colorIndex AS BYTE
-
-    bytesPerPixel = depth \ 8
-    IF bytesPerPixel = 0 THEN bytesPerPixel = 1
-
-    ' Guard: widthVal=0 -> widthVal-1 wraps to 65535 for WORD; skip loop
-    IF widthVal = 0 THEN EXIT SUB
-    FOR px = 0 TO widthVal - 1
-        srcOffset = px * bytesPerPixel + 1
-        IF srcOffset <= LEN(scanData) THEN
-            colorIndex = ASC(MID$(scanData, srcOffset, 1))
-            CALL Svga_PutPixel(X + px, Y, colorIndex)
-        END IF
-    NEXT px
-END SUB
-
-' Optional on-screen "loading" indicator. The original library only ever toggled
-' it on (0) / off (1); there is no canonical visual, so this is a safe no-op.
-SUB Loading(BYVAL mode AS INTEGER)
-END SUB
-
 ' Return the display to the standard 80x25 colour text mode (BIOS mode 03h).
 SUB Vga_CloseVga
     !MOV AX, &H0003

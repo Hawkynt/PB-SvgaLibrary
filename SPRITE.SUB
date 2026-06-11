@@ -182,7 +182,7 @@ FUNCTION Sprite_CreateAnimated(BYVAL x AS INTEGER, BYVAL y AS INTEGER, BYVAL ani
     DIM animWidth AS WORD, animHeight AS WORD, frameCount AS WORD, hotX AS WORD, hotY AS WORD
 
     ' Get animation info
-    CALL Ani_GetAnimationInfo(animHandle, animWidth, animHeight, frameCount, hotX, hotY)
+    CALL DrawAni_GetAnimationInfo(animHandle, animWidth, animHeight, frameCount, hotX, hotY)
     IF frameCount = 0 THEN
         Sprite_CreateAnimated = 255
         EXIT FUNCTION
@@ -200,7 +200,7 @@ FUNCTION Sprite_CreateAnimated(BYVAL x AS INTEGER, BYVAL y AS INTEGER, BYVAL ani
     Sprites(spriteHandle).Flags = Sprites(spriteHandle).Flags OR %SPRITE_ANIMATED
 
     ' Start animation
-    CALL Ani_PlayAnimation(animHandle, x, y, 0)  ' Infinite loop, use timer
+    CALL DrawAni_PlayAnimation(animHandle, x, y, 0)  ' Infinite loop, use timer
 
     Sprite_CreateAnimated = spriteHandle
 END FUNCTION
@@ -388,7 +388,7 @@ SUB Sprite_Draw(BYVAL spriteHandle AS BYTE)
 
     ' Animated sprite path
     IF (Sprites(spriteHandle).Flags AND %SPRITE_ANIMATED) AND Sprites(spriteHandle).AnimHandle <> 255 THEN
-        CALL Ani_ShowFrame(Sprites(spriteHandle).AnimHandle, sprX, sprY, 0)
+        CALL DrawAni_ShowFrame(Sprites(spriteHandle).AnimHandle, sprX, sprY, 0)
         EXIT SUB
     END IF
 
@@ -699,7 +699,7 @@ SUB Sprite_CheckAllCollisions
                 ' Call collision callback if defined
                 IF CollisionCallback(i, j) <> 0 THEN
                     ' PB 3.5 cannot call a function pointer with args; invoke the built-in handler.
-                    CALL SpriteCollisionCallback(i, j)
+                    CALL Sprite_CollisionCallback(i, j)
                 END IF
             END IF
 
@@ -762,7 +762,7 @@ SUB Sprite_Free(BYVAL spriteHandle AS BYTE)
     IF Sprites(spriteHandle).IsActive THEN
         ' Stop animation if active
         IF Sprites(spriteHandle).AnimHandle <> 255 THEN
-            CALL Ani_StopAnimation(Sprites(spriteHandle).AnimHandle)
+            CALL DrawAni_StopAnimation(Sprites(spriteHandle).AnimHandle)
         END IF
 
         ' Clear sprite dataBuf
@@ -822,7 +822,7 @@ END SUB
 '   SpriteA, SpriteB - Colliding sprites (BYVAL)
 ' Returns: Nothing
 ' =============================================================================
-SUB SpriteCollisionCallback(BYVAL spriteA AS BYTE, BYVAL spriteB AS BYTE)
+SUB Sprite_CollisionCallback(BYVAL spriteA AS BYTE, BYVAL spriteB AS BYTE)
     ' Default behavior: bounce sprites off each other
     DIM tempVX AS INTEGER, tempVY AS INTEGER
 

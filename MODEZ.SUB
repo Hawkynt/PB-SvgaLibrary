@@ -31,7 +31,7 @@ SUB ModeZ_SetMode
     !OUT DX, AL
 
     ' 320x400: turn off vertical double-scan (Max Scan Line) + adjust timing
-    CALL SetModeXRegisters320x400
+    CALL ModeX_SetRegisters320x400
 
     ModeXSystemContext.XRes = 320
     ModeXSystemContext.YRes = 400

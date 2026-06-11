@@ -36,9 +36,9 @@ SUB ModeX_InitTables
 END SUB
 
 ' --- stubs for Svga_Cleanup collaborators ---
-SUB Ani_StopAnimation(BYVAL animHandle AS BYTE)
+SUB DrawAni_StopAnimation(BYVAL animHandle AS BYTE)
 END SUB
-SUB Ani_FreeAnimation(BYVAL animHandle AS BYTE)
+SUB DrawAni_FreeAnimation(BYVAL animHandle AS BYTE)
 END SUB
 SUB DrawIcl_CloseIcoLib(BYVAL libHandle AS BYTE)
 END SUB
@@ -178,6 +178,14 @@ END FUNCTION
 ' =============================================================================
 
 ' --- Test 1: Svga_Init sets sane context defaults ---
+SUB Test_Version
+    CALL Test_Case("Svga_Version$ reports the version constants")
+    DIM v AS STRING
+    v = Svga_Version$
+    CALL Assert_AreEqualStr(v, LTRIM$(STR$(%SVGA_VERSION_MAJOR)) + "." + LTRIM$(STR$(%SVGA_VERSION_MINOR)) + "." + LTRIM$(STR$(%SVGA_VERSION_PATCH)), "matches the constants")
+    CALL Assert_IsTrue(INSTR(v, ".") > 1, "has a dotted form")
+END SUB
+
 SUB Test_Init_Defaults
     CALL Test_Case("Svga_Init sets default context values")
     ' Given: Svga_Init has been called in Test_Setup
