@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Release version (e.g. 1.0.0). Defaults to 0.1.<run-number>.'
+        description: 'Release version override (defaults to %SVGA_VERSION_* from TYPES.SUB).'
         required: false
       reason:
         description: 'Why are you cutting this release? (optional, for the audit log)'
@@ -33,10 +33,13 @@ jobs:
     outputs:
       version: ${{ steps.v.outputs.version }}
     steps:
+      - uses: actions/checkout@v4
       - id: v
         run: |
+          # the source is the single version authority (TYPES.SUB %SVGA_VERSION_*,
+          # exposed at runtime via Svga_Version$); the input only overrides it
           V="${{ github.event.inputs.version }}"
-          [ -n "$V" ] || V="0.1.${{ github.run_number }}"
+          [ -n "$V" ] || V=$(awk '/%SVGA_VERSION_MAJOR/{ma=$3} /%SVGA_VERSION_MINOR/{mi=$3} /%SVGA_VERSION_PATCH/{pa=$3} END{printf "%d.%d.%d", ma, mi, pa}' TYPES.SUB)
           echo "version=$V" >> "$GITHUB_OUTPUT"
           echo "Releasing v$V"
 
@@ -62,9 +65,10 @@ jobs:
           cat > RELEASE_NOTES.md <<EOF
           ## PB-SvgaLibrary v$V
 
-          Directly-usable **PowerBASIC 3.5 source-include library** - drop the \`.SUB\`
-          files into your project and \`\$INCLUDE "SVGA.SUB"\`. Compiles cleanly with
-          PowerBASIC 3.5 under DOSBox or on real DOS.
+          The compiled **PowerBASIC 3.5 SVGA library**: \`SVGA.PBL\` plus its
+          \`SVGA.BI\` interface (with \`SVGATYPE.BI\`/\`SVGADECL.BI\`), README and
+          LICENSE. Consume it with \`\$INCLUDE "SVGA.BI"\` and \`\$LINK "SVGA.PBL"\` -
+          the runtime version is available in-program via \`Svga_Version\$\`.
           EOF
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2

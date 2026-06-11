@@ -1,10 +1,11 @@
 name: Nightly
 
 # Fires after CI passes on main, plus manual dispatch. Builds the library via
-# the reusable _build.yml (which only succeeds when the library compiles under
-# PowerBASIC 3.5) and publishes the directly-usable source-include bundle as a
-# rolling nightly pre-release. Until the PB 3.5 port lands on main the build
-# fails and the nightly simply produces nothing.
+# the reusable _build.yml (non-advisory: a broken unit/.PBL build turns the
+# nightly red - this is the drift-catcher) and publishes the consumer bundle
+# as a dated nightly pre-release following the house scheme:
+#   tag  nightly-YYYYMMDD
+#   name Nightly YYYYMMDD (<version from TYPES.SUB>)
 on:
   workflow_run:
     workflows: ["CI"]
@@ -25,18 +26,33 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
 
 jobs:
-  build:
+  version:
     if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      date: ${{ steps.v.outputs.date }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: v
+        run: |
+          # the version lives in the source (TYPES.SUB %SVGA_VERSION_*) so the
+          # program itself, the artifacts and the releases can never disagree
+          V=$(awk '/%SVGA_VERSION_MAJOR/{ma=$3} /%SVGA_VERSION_MINOR/{mi=$3} /%SVGA_VERSION_PATCH/{pa=$3} END{printf "%d.%d.%d", ma, mi, pa}' TYPES.SUB)
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+          echo "date=$(date -u +%Y%m%d)" >> "$GITHUB_OUTPUT"
+          echo "Nightly for v$V"
+
+  build:
+    needs: version
     uses: ./.github/workflows/_build.yml
     with:
-      version: nightly
-      # the nightly is the drift-catcher: a broken unit/.PBL build MUST turn it
-      # red (CI keeps its advisory build for fast feedback; releases also gate)
+      version: ${{ needs.version.outputs.version }}-nightly
       advisory: false
     secrets: inherit
 
   publish:
-    needs: build
+    needs: [version, build]
     if: ${{ needs.build.outputs.built == 'true' }}
     runs-on: ubuntu-latest
     steps:
@@ -44,13 +60,14 @@ jobs:
         with:
           name: ${{ needs.build.outputs.artifact-name }}
           path: dist
-      - name: Publish rolling nightly pre-release
+      - name: Publish dated nightly pre-release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: nightly
-          name: Nightly (${{ github.sha }})
+          tag_name: nightly-${{ needs.version.outputs.date }}
+          name: Nightly ${{ needs.version.outputs.date }} (${{ needs.version.outputs.version }})
           prerelease: true
           files: dist/svga-library.zip
           body: |
-            Automated nightly bundle of the PowerBASIC 3.5 source-include SVGA library
-            (`$INCLUDE "SVGA.SUB"`). Commit ${{ github.sha }}.
+            Automated nightly of the PowerBASIC 3.5 SVGA library, version ${{ needs.version.outputs.version }} at commit ${{ github.sha }}.
+
+            The zip contains the compiled `SVGA.PBL`, its `SVGA.BI` interface (plus `SVGATYPE.BI`/`SVGADECL.BI`), the README and the LICENSE — consume it with `$INCLUDE "SVGA.BI"` and `$LINK "SVGA.PBL"`.

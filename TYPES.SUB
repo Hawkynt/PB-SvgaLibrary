@@ -4,6 +4,12 @@
 ' Contains all TYPE definitions and global variable structures
 ' =============================================================================
 
+' Library version - the single source of truth: Svga_Version$ returns it at
+' runtime and CI/CD derives nightly/release names from it
+%SVGA_VERSION_MAJOR = 1
+%SVGA_VERSION_MINOR = 0
+%SVGA_VERSION_PATCH = 0
+
 ' Graphics Mode Constants
 %SVGA_MODE13 = 0                ' VGA Mode 13h (320x200x256)
 %SVGA_MODEX = 1                 ' Mode-X variants
