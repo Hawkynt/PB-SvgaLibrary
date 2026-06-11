@@ -118,12 +118,39 @@ FOR row = 0 TO %GRID_H - 1
 NEXT row
 CLOSE #fh
 
+DIM tBmp AS STRING, tBmpX AS WORD, tBmpY AS WORD
+tBmp = "TITLE.BMP" : tBmpX = 0 : tBmpY = 70
+CALL DrawBmp_Show(tBmp, tBmpX, tBmpY)
+' restore game palette after BMP loader overwrites it
+pr = 5  : pg = 22 : pb2 = 5  : CALL Svga_SetPalette(32, pr, pg, pb2)
+pr = 8  : pg = 28 : pb2 = 8  : CALL Svga_SetPalette(33, pr, pg, pb2)
+pr = 18 : pg = 18 : pb2 = 18 : CALL Svga_SetPalette(34, pr, pg, pb2)
+pr = 42 : pg = 42 : pb2 = 42 : CALL Svga_SetPalette(35, pr, pg, pb2)
+pr = 8  : pg = 38 : pb2 = 8  : CALL Svga_SetPalette(36, pr, pg, pb2)
+pr = 4  : pg = 48 : pb2 = 4  : CALL Svga_SetPalette(37, pr, pg, pb2)
+pr = 2  : pg = 58 : pb2 = 2  : CALL Svga_SetPalette(38, pr, pg, pb2)
+pr = 14 : pg = 30 : pb2 = 14 : CALL Svga_SetPalette(39, pr, pg, pb2)
+pr = 8  : pg = 8  : pb2 = 42 : CALL Svga_SetPalette(40, pr, pg, pb2)
+pr = 4  : pg = 4  : pb2 = 52 : CALL Svga_SetPalette(41, pr, pg, pb2)
+pr = 2  : pg = 2  : pb2 = 62 : CALL Svga_SetPalette(42, pr, pg, pb2)
+pr = 14 : pg = 14 : pb2 = 30 : CALL Svga_SetPalette(43, pr, pg, pb2)
+pr = 8  : pg = 8  : pb2 = 8  : CALL Svga_SetPalette(44, pr, pg, pb2)
+pr = 62 : pg = 62 : pb2 = 62 : CALL Svga_SetPalette(45, pr, pg, pb2)
+pr = 62 : pg = 62 : pb2 = 0  : CALL Svga_SetPalette(46, pr, pg, pb2)
+pr = 40 : pg = 22 : pb2 = 4  : CALL Svga_SetPalette(47, pr, pg, pb2)
+pr = 48 : pg = 8  : pb2 = 4  : CALL Svga_SetPalette(48, pr, pg, pb2)
+pr = 28 : pg = 22 : pb2 = 8  : CALL Svga_SetPalette(49, pr, pg, pb2)
+pr = 62 : pg = 10 : pb2 = 10 : CALL Svga_SetPalette(50, pr, pg, pb2)
+pr = 62 : pg = 62 : pb2 = 10 : CALL Svga_SetPalette(51, pr, pg, pb2)
+pr = 10 : pg = 10 : pb2 = 62 : CALL Svga_SetPalette(52, pr, pg, pb2)
+pr = 62 : pg = 10 : pb2 = 62 : CALL Svga_SetPalette(53, pr, pg, pb2)
+
 IF smk = 1 THEN
     CALL DoSmoke()
 ELSE
     CALL DoPlay()
 END IF
-CALL Vesa_Close(0)
+CALL Svga_Close(0)
 END
 
 ' =========================================================
@@ -486,6 +513,11 @@ SUB DoSmoke()
         CALL DrawMap()
     NEXT sfr
 
+    ' draw HUD emblem strip to exercise the TIF loader
+    DIM hudTif AS STRING, hudTx AS WORD, hudTy AS WORD
+    hudTif = "CITYHUD.TIF" : hudTx = 224 : hudTy = 1
+    CALL DrawTif_Show(hudTif, hudTx, hudTy)
+
     IF nSpw >= 3 AND nMov >= 3 THEN
         DIM smokeF AS INTEGER
         smokeF = FREEFILE
@@ -505,9 +537,11 @@ SUB DoPlay()
     DIM hcl AS BYTE, ff AS BYTE, fb AS BYTE, fl AS BYTE
     DIM fx AS WORD, fy AS WORD
     DIM cpx AS WORD, cpy AS WORD, ccl AS BYTE
+    DIM hudF AS STRING, hudX AS WORD, hudY AS WORD
 
     CALL Fonts_InitFont("FONT8.TXT", 0)
     goRun = 1 : goPaus = 0 : cX = 5 : cY = 5 : tool = 1
+    hudF = "CITYHUD.TIF" : hudX = 224 : hudY = 1
 
     DO WHILE goRun = 1
         k = INKEY$
@@ -549,6 +583,8 @@ SUB DoPlay()
 
         hcl = 44
         CALL Svga_FillRect(0, 0, 319, 13, hcl)
+        ' HUD emblem strip (TIF, right side of bar)
+        CALL DrawTif_Show(hudF, hudX, hudY)
         ff = 45 : fb = 44 : fl = 0 : fy = 3
         s = "$" + LTRIM$(STR$(funds)) : fx = 0
         CALL Fonts_VgaPrint(fx, fy, ff, fb, s, fl)

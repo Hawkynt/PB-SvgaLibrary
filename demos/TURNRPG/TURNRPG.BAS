@@ -66,6 +66,7 @@ DIM gSmokePhase  AS INTEGER
 DIM gStepsEnc    AS INTEGER
 
 ' ---- Forward declarations ----
+DECLARE SUB ShowTitle(BYVAL sm AS INTEGER)
 DECLARE SUB InitGame(BYVAL d AS INTEGER)
 DECLARE SUB SetupPalette(BYVAL d AS INTEGER)
 DECLARE SUB DrawWindow(BYVAL x1 AS INTEGER, BYVAL y1 AS INTEGER, _
@@ -115,6 +116,7 @@ CALL Svga_SetRes(320, 200, 256)
 
 IF INSTR(UCASE$(COMMAND$), "SMOKE") > 0 THEN gSmoke = 1
 
+CALL ShowTitle(gSmoke)
 CALL SetupPalette(0)
 CALL Fonts_InitFont("FONT8.TXT", 0)
 CALL InitGame(0)
@@ -143,7 +145,7 @@ DO
     IF gQuit = 1 THEN EXIT LOOP
 LOOP
 
-CALL Vesa_Close(0)
+CALL Svga_Close(0)
 
 IF gSmoke = 1 THEN
     OPEN "SMOKE.OK" FOR OUTPUT AS #1
@@ -1080,12 +1082,7 @@ END SUB
 SUB DrawMonster(BYVAL mx AS WORD, BYVAL my AS WORD, _
                 BYVAL mi AS INTEGER)
 ' ============================================================
-    DIM c1 AS BYTE, c2 AS BYTE, c3 AS BYTE
-    DIM b1 AS WORD, b2 AS WORD, b3 AS WORD, b4 AS WORD
-    DIM shi AS INTEGER
-    DIM sx1 AS WORD, sx2 AS WORD, sy AS WORD
-    DIM ox AS WORD, oy AS WORD
-    DIM t1 AS WORD, t2 AS WORD, t3 AS WORD, t4 AS WORD
+    DIM gx AS WORD, gy AS WORD
 
     IF gIsBoss = 1 THEN
         CALL DrawBossMonster(mx, my)
@@ -1093,82 +1090,23 @@ SUB DrawMonster(BYVAL mx AS WORD, BYVAL my AS WORD, _
     END IF
 
     IF mi = 0 THEN
-        c1 = 56 : c2 = 57 : c3 = 44
-        b1 = mx : b2 = my + 12
-        CALL Svga_FillCircle(b1, b2, 15, c3)
-        CALL Svga_FillCircle(b1, b2, 14, c1)
-        FOR shi = 0 TO 8
-            sx1 = mx - 13 + shi : sx2 = mx + 13 - shi
-            sy = my + 12 + 5 + shi
-            IF sy <= my + 26 THEN CALL Svga_HLine(sx1, sx2, sy, c2)
-        NEXT shi
-        ox = mx - 4 : oy = my + 7
-        CALL Svga_FillCircle(ox, oy, 3, 67)
-        CALL Svga_PutPixel(mx - 3, my + 10, c3)
-        CALL Svga_PutPixel(mx + 3, my + 10, c3)
+        ' SLIME: 48x40 sprite, centred on mx
+        gx = mx - 24 : gy = my
+        CALL DrawGif_Show("SLIME.GIF", gx, gy)
     ELSE
-        c1 = 58 : c2 = 59 : c3 = 44
-        b1 = mx - 15 : b2 = my + 4 : b3 = mx + 15 : b4 = my + 22
-        CALL Svga_FillRect(b1, b2, b3, b4, c3)
-        b1 = mx - 14 : b2 = my + 5 : b3 = mx + 14 : b4 = my + 21
-        CALL Svga_FillRect(b1, b2, b3, b4, c1)
-        b1 = mx + 2 : b2 = my + 6 : b3 = mx + 14 : b4 = my + 20
-        CALL Svga_FillRect(b1, b2, b3, b4, c2)
-        b1 = mx - 18 : b2 = my : b3 = mx - 8 : b4 = my + 10
-        CALL Svga_FillRect(b1, b2, b3, b4, c1)
-        b1 = mx - 22 : b2 = my + 4 : b3 = mx - 14 : b4 = my + 8
-        CALL Svga_FillRect(b1, b2, b3, b4, c1)
-        CALL Svga_PutPixel(mx - 15, my + 3, c3)
-        b1 = mx - 10 : b2 = my + 22 : b3 = mx - 7 : b4 = my + 30
-        CALL Svga_FillRect(b1, b2, b3, b4, c2)
-        b1 = mx : b2 = my + 22 : b3 = mx + 3 : b4 = my + 30
-        CALL Svga_FillRect(b1, b2, b3, b4, c2)
-        t1 = mx + 12 : t2 = my : t3 = mx + 18 : t4 = my + 8
-        CALL Svga_LineDraw(t1, t2, t3, t4, c1)
+        ' WOLF: 64x44 sprite, centred on mx
+        gx = mx - 32 : gy = my
+        CALL DrawGif_Show("WOLF.GIF", gx, gy)
     END IF
 END SUB
 
 ' ============================================================
 SUB DrawBossMonster(BYVAL bx AS WORD, BYVAL by AS WORD)
 ' ============================================================
-    DIM b1 AS WORD, b2 AS WORD, b3 AS WORD, b4 AS WORD
-    DIM gr AS INTEGER
-    DIM gox AS WORD, goy AS WORD, gorw AS WORD
-    DIM h1 AS WORD, h2 AS WORD, h3 AS WORD, h4 AS WORD
-
-    b1 = bx - 22 : b2 = by : b3 = bx + 22 : b4 = by + 40
-    CALL Svga_FillRect(b1, b2, b3, b4, 63)
-    b1 = bx - 20 : b2 = by + 1 : b3 = bx + 20 : b4 = by + 39
-    CALL Svga_FillRect(b1, b2, b3, b4, 60)
-    b1 = bx + 8 : b2 = by + 2 : b3 = bx + 19 : b4 = by + 38
-    CALL Svga_FillRect(b1, b2, b3, b4, 61)
-
-    gr = 22 + (gFrame MOD 8)
-    gox = bx : goy = by + 20 : gorw = gr
-    CALL Svga_DrawCircle(gox, goy, gorw, 62)
-
-    b1 = bx - 14 : b2 = by - 15 : b3 = bx + 14 : b4 = by + 1
-    CALL Svga_FillRect(b1, b2, b3, b4, 60)
-
-    h1 = bx - 12 : h2 = by - 15 : h3 = bx - 18 : h4 = by - 25
-    CALL Svga_LineDraw(h1, h2, h3, h4, 60)
-    h1 = bx + 12 : h3 = bx + 18
-    CALL Svga_LineDraw(h1, h2, h3, h4, 60)
-
-    DIM ecx AS WORD, ecy AS WORD
-    ecx = bx - 6 : ecy = by - 8
-    CALL Svga_FillCircle(ecx, ecy, 3, 62)
-    ecx = bx + 6
-    CALL Svga_FillCircle(ecx, ecy, 3, 62)
-
-    b1 = bx - 30 : b2 = by + 5 : b3 = bx - 22 : b4 = by + 20
-    CALL Svga_FillRect(b1, b2, b3, b4, 60)
-    b1 = bx + 22 : b2 = by + 5 : b3 = bx + 30 : b4 = by + 20
-    CALL Svga_FillRect(b1, b2, b3, b4, 60)
-    b1 = bx - 16 : b2 = by + 40 : b3 = bx - 8 : b4 = by + 52
-    CALL Svga_FillRect(b1, b2, b3, b4, 61)
-    b1 = bx + 8 : b2 = by + 40 : b3 = bx + 16 : b4 = by + 52
-    CALL Svga_FillRect(b1, b2, b3, b4, 61)
+    DIM dgx AS WORD, dgy AS WORD
+    ' DEMON: 80x64 sprite, centred on bx
+    dgx = bx - 40 : dgy = by
+    CALL DrawGif_Show("DEMON.GIF", dgx, dgy)
 END SUB
 
 ' ============================================================
@@ -1290,5 +1228,20 @@ SUB DoVictory(BYVAL d AS INTEGER)
     ELSE
         kv = INP(&H60)
         IF kv <> 0 AND kv <> 128 THEN gQuit = 1
+    END IF
+END SUB
+
+' ============================================================
+SUB ShowTitle(BYVAL sm AS INTEGER)
+' ============================================================
+    DIM tsx AS WORD : tsx = 0
+    DIM tsy AS WORD : tsy = 0
+    CALL DrawBmp_Show("TITLE.BMP", tsx, tsy)
+    IF sm = 0 THEN
+        DIM tsc AS INTEGER : tsc = 0
+        DO WHILE tsc = 0
+            tsc = INP(&H60)
+            IF tsc >= 128 THEN tsc = 0
+        LOOP
     END IF
 END SUB

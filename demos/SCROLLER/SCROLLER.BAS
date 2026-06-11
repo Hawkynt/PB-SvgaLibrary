@@ -106,6 +106,26 @@ gmover = %FVAL : killed = 0
 smokeMode = %FVAL
 IF INSTR(UCASE$(COMMAND$), "SMOKE") > 0 THEN smokeMode = %TVAL
 
+' ---- title splash -----------------------------------------------------------
+DIM spfn2 AS STRING, spx2 AS WORD, spy2 AS WORD
+DIM sphld2 AS INTEGER, spk2 AS STRING
+spfn2 = "TITLE.PCX"
+spx2 = 0 : spy2 = 20
+CALL DrawPcx_Show(spfn2, spx2, spy2)
+IF smokeMode = %TVAL THEN
+    sphld2 = 0
+    WHILE sphld2 < 20
+        sphld2 = sphld2 + 1
+    WEND
+ELSE
+    spk2 = ""
+    WHILE spk2 = ""
+        spk2 = INKEY$
+    WEND
+END IF
+' restore game palette after image loader replaced it
+CALL SetPalette(0)
+
 ' ============================================================
 ' MAIN GAME LOOP
 ' ============================================================
@@ -177,7 +197,7 @@ DO
     END IF
 LOOP
 
-CALL Vesa_Close(0)
+CALL Svga_Close(0)
 
 IF smokeMode = %TVAL THEN
     IF killed >= 1 THEN

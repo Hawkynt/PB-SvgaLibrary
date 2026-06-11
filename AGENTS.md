@@ -56,7 +56,7 @@ naming - bump it there and nowhere else.
 `demos/<NAME>/` each hold one `.BAS` (8.3 name) plus assets; they consume the
 built library (`$INCLUDE "SVGA.BI"` + `$LINK "SVGA.PBL"`) and MUST use the
 abstract API only: `Svga_SetRes` (never raw INT 10h/context/dispatch),
-`Svga_SetPalette` (never raw OUT &H3C8), `Vesa_Close` to leave graphics. Every
+`Svga_SetPalette` (never raw OUT &H3C8), `Svga_Close` to leave graphics. Every
 demo honours a `SMOKE` argument (deterministic input-free run that writes
 `SMOKE.OK`); the build workflow compiles and smoke-runs all of them.
 

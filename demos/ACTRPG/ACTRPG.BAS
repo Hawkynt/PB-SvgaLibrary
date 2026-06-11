@@ -90,6 +90,7 @@ ELSE
     RANDOMIZE TIMER
 END IF
 
+CALL ShowTitle(smokeMode)
 CALL SetupPalette(0)
 CALL LoadMap(0)
 CALL InitEnemies(0)
@@ -141,7 +142,7 @@ DO WHILE running = 1
     END IF
 LOOP
 
-CALL Vesa_Close(0)
+CALL Svga_Close(0)
 
 IF smokeMode = 1 THEN
     OPEN "SMOKE.OK" FOR OUTPUT AS #1
@@ -957,5 +958,21 @@ SUB SmokeScript (moveDir AS BYTE)
             swordTimer = 3 : swordDir = %DIR_RT
         END IF
         IF swordTimer > 0 THEN CALL SwordHitCheck(0)
+    END IF
+END SUB
+
+' ====================================================================
+' SUB ShowTitle - show TITLE.BMP splash, wait for key
+' ====================================================================
+SUB ShowTitle (BYVAL sm AS BYTE)
+    DIM tsx AS WORD : tsx = 0
+    DIM tsy AS WORD : tsy = 0
+    CALL DrawBmp_Show("TITLE.BMP", tsx, tsy)
+    IF sm = 0 THEN
+        DIM tsc AS INTEGER : tsc = 0
+        DO WHILE tsc = 0
+            tsc = INP(&H60)
+            IF tsc >= 128 THEN tsc = 0
+        LOOP
     END IF
 END SUB

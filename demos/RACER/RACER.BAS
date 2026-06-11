@@ -1,5 +1,6 @@
 $INCLUDE "SVGA.BI"
 $LINK "SVGA.PBL"
+$STACK 8192
 
 ' ---- screen constants -------------------------------------------------------
 %SCR_W    = 320
@@ -108,6 +109,26 @@ CALL Svga_SetRes(320, 200, 256)
 smokeMode = 0
 IF INSTR(UCASE$(COMMAND$), "SMOKE") > 0 THEN smokeMode = 1
 
+' ---- Title splash ------------------------------------------------------------
+' TITLE.GIF is 224x140 (centred on the 320x200 screen).
+' DrawGif_Show loads the GIF using the library palette indices; SetupPalette
+' below restores the game palette afterwards.
+DIM splFrmR  AS INTEGER
+DIM splKeyR  AS STRING
+DIM splXR    AS WORD
+DIM splYR    AS WORD
+splXR = 48 : splYR = 30
+CALL DrawGif_Show("TITLE.GIF", splXR, splYR)
+IF smokeMode = 1 THEN
+    FOR splFrmR = 1 TO 20
+        CALL Svga_WaitVRetrace(0)
+    NEXT splFrmR
+ELSE
+    DO
+        splKeyR = INKEY$
+    LOOP WHILE LEN(splKeyR) = 0
+END IF
+
 CALL SetupPalette()
 
 DIM fontNm AS STRING
@@ -144,7 +165,7 @@ LOOP
 ' ============================================================================
 ' SHUTDOWN
 ' ============================================================================
-CALL Vesa_Close(0)
+CALL Svga_Close(0)
 IF smokeMode = 1 THEN
     OPEN "SMOKE.OK" FOR OUTPUT AS #1
     PRINT #1, "OK"

@@ -62,6 +62,11 @@ IF gSmoke = 0 THEN
     CALL Fonts_InitFont(gFontF, 0)
 END IF
 
+IF gSmoke > 0 THEN
+    gFontF = "FONT8.TXT"
+    CALL Fonts_InitFont(gFontF, 0)
+END IF
+
 DO WHILE gWin < 0
     IF gSmoke = 0 THEN
         CALL Render
@@ -72,9 +77,11 @@ DO WHILE gWin < 0
     END IF
 LOOP
 
-CALL Vesa_Close(0)
-
 IF gSmoke = 0 THEN CALL ShowBanner
+
+IF gSmoke > 0 THEN CALL SmokeAssets
+
+CALL Svga_Close(0)
 
 IF gSmoke > 0 THEN
     OPEN "SMOKE.OK" FOR OUTPUT AS #1
@@ -493,6 +500,7 @@ SUB DrawHUD
     DIM px1 AS WORD, py1 AS WORD, px2 AS WORD, py2 AS WORD, cv AS BYTE
     DIM xw AS WORD, yw AS WORD, fc AS BYTE, bc AS BYTE, fl AS BYTE
     DIM ts AS STRING
+    DIM icoF AS STRING, icoX AS WORD, icoY AS WORD, icoN AS WORD
     px1=232 : py1=0 : px2=319 : py2=159 : cv=26
     CALL Svga_FillRect(px1, py1, px2, py2, cv)
     i = gUID
@@ -502,10 +510,10 @@ SUB DrawHUD
     IF gUTeam(i) = 0 THEN ts = "BLUE" ELSE ts = "RED "
     CALL Fonts_VgaPrint(xw, yw, fc, bc, ts, fl)
     SELECT CASE gUCls(i)
-        CASE %C_KNIGHT : ts = "KNGHT"
-        CASE %C_ARCHER : ts = "ARCHR"
-        CASE %C_MAGE   : ts = "MAGE "
-        CASE ELSE      : ts = "???  "
+        CASE %C_KNIGHT : ts = "KNGHT" : icoN = 0
+        CASE %C_ARCHER : ts = "ARCHR" : icoN = 1
+        CASE %C_MAGE   : ts = "MAGE " : icoN = 2
+        CASE ELSE      : ts = "???  " : icoN = 0
     END SELECT
     yw=14
     CALL Fonts_VgaPrint(xw, yw, fc, bc, ts, fl)
@@ -515,6 +523,9 @@ SUB DrawHUD
     ts = "TURN" + STR$(gTurns)
     yw=34
     CALL Fonts_VgaPrint(xw, yw, fc, bc, ts, fl)
+    ' unit portrait icon (32x32) centred in HUD panel
+    icoF = "UNITS.ICO" : icoX = 244 : icoY = 44
+    CALL DrawIco_Show(icoF, icoX, icoY, icoN)
 END SUB
 
 ' -----------------------------------------------------------------------
@@ -522,10 +533,13 @@ SUB ShowBanner
     DIM px1 AS WORD, py1 AS WORD, px2 AS WORD, py2 AS WORD, cv AS BYTE
     DIM xw AS WORD, yw AS WORD, fc AS BYTE, bc AS BYTE, fl AS BYTE
     DIM ts AS STRING, dly AS INTEGER
-    px1=60 : py1=60 : px2=179 : py2=99 : cv=0
-    CALL Svga_FillRect(px1, py1, px2, py2, cv)
-    cv=25
-    CALL Svga_DrawRect(px1, py1, px2, py2, cv)
+    DIM bmpF AS STRING, bmpX AS WORD, bmpY AS WORD
+    ' victory banner plate (240x48) centred on screen
+    bmpF = "BANNER.BMP" : bmpX = 40 : bmpY = 76
+    CALL DrawBmp_Show(bmpF, bmpX, bmpY)
+    ' restore palette entries after BMP loader
+    CALL SetPalette
+    ' outcome label over the banner
     IF gWin = 0 THEN
         ts = "  BLUE WINS!  "
     ELSEIF gWin = 1 THEN
@@ -533,11 +547,28 @@ SUB ShowBanner
     ELSE
         ts = "    DRAW!     "
     END IF
-    xw=70 : yw=75 : fc=25 : bc=0 : fl=0
+    xw=70 : yw=90 : fc=25 : bc=0 : fl=0
     CALL Fonts_VgaPrint(xw, yw, fc, bc, ts, fl)
     FOR dly = 1 TO 100
         CALL Timer_Delay10Ms(5)
     NEXT dly
+END SUB
+
+' -----------------------------------------------------------------------
+' Smoke-mode asset validation: load and draw every image file at least once.
+SUB SmokeAssets
+    DIM icoF AS STRING, icoX AS WORD, icoY AS WORD, icoN AS WORD
+    DIM bmpF AS STRING, bmpX AS WORD, bmpY AS WORD
+    CALL SetPalette
+    bmpF = "BANNER.BMP" : bmpX = 40 : bmpY = 76
+    CALL DrawBmp_Show(bmpF, bmpX, bmpY)
+    CALL SetPalette
+    icoF = "UNITS.ICO" : icoX = 244 : icoY = 44 : icoN = 0
+    CALL DrawIco_Show(icoF, icoX, icoY, icoN)
+    icoN = 1
+    CALL DrawIco_Show(icoF, icoX, icoY, icoN)
+    icoN = 2
+    CALL DrawIco_Show(icoF, icoX, icoY, icoN)
 END SUB
 
 ' -----------------------------------------------------------------------

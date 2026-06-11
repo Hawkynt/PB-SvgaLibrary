@@ -99,6 +99,27 @@ FOR tbI = 0 TO 1023
     END IF
 NEXT tbI
 
+' ---- Title splash ------------------------------------------------------------
+' DrawPcx_Show loads TITLE.PCX and replaces the VGA palette with the image's.
+' SetupPalette below restores game colours after the splash.
+DIM splIsSmoke AS INTEGER
+DIM splFrm     AS INTEGER
+DIM splKey     AS STRING
+DIM splX       AS WORD
+DIM splY       AS WORD
+splX = 0 : splY = 0
+IF INSTR(UCASE$(COMMAND$), "SMOKE") > 0 THEN splIsSmoke = 1
+CALL DrawPcx_Show("TITLE.PCX", splX, splY)
+IF splIsSmoke THEN
+    FOR splFrm = 1 TO 20
+        CALL Svga_WaitVRetrace(0)
+    NEXT splFrm
+ELSE
+    DO
+        splKey = INKEY$
+    LOOP WHILE LEN(splKey) = 0
+END IF
+
 CALL LoadMap(0)
 CALL SetupPalette(0)
 CALL Fonts_InitFont("FONT8.TXT", 0)
@@ -146,7 +167,7 @@ DO
     END IF
 LOOP
 
-CALL Vesa_Close(0)
+CALL Svga_Close(0)
 
 IF gSmoke THEN
     OPEN "SMOKE.OK" FOR OUTPUT AS #1

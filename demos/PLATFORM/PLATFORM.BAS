@@ -49,6 +49,12 @@ DIM idx     AS INTEGER
 DIM ln      AS STRING
 DIM ch      AS STRING
 DIM ei      AS INTEGER
+' splash temps
+DIM spfn    AS STRING
+DIM spx     AS WORD
+DIM spy     AS WORD
+DIM sphld   AS INTEGER
+DIM spk     AS STRING
 
 ' ---- harness ----------------------------------------------------------------
 CALL Svga_Init(0)
@@ -57,6 +63,24 @@ RANDOMIZE 42
 
 sMode = 0
 IF INSTR(UCASE$(COMMAND$), "SMOKE") > 0 THEN sMode = 1
+
+' ---- title splash -----------------------------------------------------------
+spfn = "TITLE.BMP"
+spx = 0 : spy = 20
+CALL DrawBmp_Show(spfn, spx, spy)
+IF sMode = 1 THEN
+    ' smoke: hold ~20 frames worth, then continue
+    sphld = 0
+    WHILE sphld < 20
+        sphld = sphld + 1
+    WEND
+ELSE
+    ' interactive: wait for any key
+    spk = ""
+    WHILE spk = ""
+        spk = INKEY$
+    WEND
+END IF
 
 ' ---- palette ----------------------------------------------------------------
 FOR pi = 0 TO 15
@@ -193,7 +217,7 @@ WEND
 ' ============================================================================
 ' SHUTDOWN
 ' ============================================================================
-CALL Vesa_Close(0)
+CALL Svga_Close(0)
 IF sMode = 1 THEN
     OPEN "SMOKE.OK" FOR OUTPUT AS #1
     PRINT #1, "OK"

@@ -1,10 +1,12 @@
 """
-Generate ARROW.CUR and SPARK.ANI binary assets for the CARDS demo.
+Generate ARROW.CUR, SPARK.ANI and TITLE.BMP assets for the CARDS demo.
 Run once from the demos/CARDS directory (or anywhere - output goes next to this script).
 """
-import struct, os
+import sys, struct, os
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, os.path.join(HERE, '..', '..', 'scripts'))
+import pbassets as A
 
 # ---------------------------------------------------------------------------
 # helpers
@@ -128,7 +130,110 @@ def make_spark_ani(path):
     print(f"  {os.path.basename(path)}  {len(riff)} bytes")
 
 # ---------------------------------------------------------------------------
+# TITLE.BMP  320x60  8-bit
+# Palette mirrors Game_SetPalette so indices work with both BMP-loaded
+# DAC state and the restored game palette.  CARDS.BAS re-applies
+# Game_SetPalette after DrawBmp_Show, making this doubly safe.
+# ---------------------------------------------------------------------------
+def make_title_bmp(path):
+    W, H = 320, 60
+
+    # Build palette matching CARDS.BAS slot layout exactly:
+    # indices 32-51 hold the game colours; rest filled black.
+    pal = [(0, 0, 0)] * 256
+    # VGA DAC uses 6-bit (0-63); BMP palette stores 8-bit (0-255).
+    # Scale: 8bit = 6bit * 4 + 3  (round-trip through /4 then *4 ≈ identity)
+    def dac(v6): return min(255, v6 * 4)
+
+    pal[32] = (dac(4),  dac(22), dac(8))    # PC_FELT
+    pal[33] = (dac(6),  dac(28), dac(10))   # PC_FELTA
+    pal[34] = (dac(8),  dac(34), dac(13))   # PC_FELTB
+    pal[35] = (dac(62), dac(62), dac(62))   # PC_WHITE
+    pal[36] = (dac(18), dac(18), dac(18))   # PC_BORDER
+    pal[37] = (dac(60), dac(50), dac(10))   # PC_GLOW (gold)
+    pal[38] = (dac(6),  dac(14), dac(28))   # PC_BACK1
+    pal[39] = (dac(4),  dac(10), dac(20))   # PC_BACK2
+    pal[40] = (dac(58), dac(58), dac(58))   # PC_TXT
+    pal[41] = (dac(12), dac(40), dac(16))   # PC_TXTS
+
+    # Additional art-specific palette slots (beyond game range)
+    # Deep green for ornamental border fill
+    pal[52] = (dac(2),  dac(14), dac(5))
+    # Mid gold for inner ornament line
+    pal[53] = (dac(45), dac(38), dac(8))
+    # Dark shadow for title drop
+    pal[54] = (dac(2),  dac(6),  dac(2))
+    # Bright gold title highlight
+    pal[55] = (dac(63), dac(56), dac(12))
+
+    img = A.canvas(W, H, 32)    # fill with PC_FELT green
+
+    # --- felt gradient top-to-bottom (dark -> lighter) ---
+    A.hgrad(img, 0, 0, W - 1, H - 1, 32, 34)
+
+    # --- ornamental border: outer dark line, inner gold line ---
+    A.rect(img, 0, 0,   W - 1, H - 1, 52)         # outer dark green fill band
+    A.rect(img, 2, 2,   W - 3, H - 3, 32)          # clear interior to felt
+    A.hgrad(img, 2, 2,  W - 3, H - 3, 32, 34)      # re-apply gradient inside
+    A.rect(img, 0, 0,   W - 1, 0, 37)              # top gold line
+    A.rect(img, 0, H-1, W - 1, H-1, 37)            # bottom gold line
+    A.rect(img, 0, 0,   0, H - 1, 37)              # left gold line
+    A.rect(img, W-1, 0, W-1, H-1, 37)              # right gold line
+
+    # inner gold rule (2px inset)
+    A.rect(img, 4, 4, W - 5, 4, 53)
+    A.rect(img, 4, H-5, W - 5, H-5, 53)
+    A.rect(img, 4, 4, 4, H-5, 53)
+    A.rect(img, W-5, 4, W-5, H-5, 53)
+
+    # corner diamonds (3x3 bright gold)
+    for cx, cy in [(4, 4), (W-5, 4), (4, H-5), (W-5, H-5)]:
+        A.disc(img, cx, cy, 2, 37)
+
+    # --- card suit decorations (♠ ♥ ♦ ♣ represented as filled shapes) ---
+    # left side: heart (two discs + triangle)
+    hx, hy = 18, H // 2
+    A.disc(img, hx - 3, hy - 3, 3, 41)
+    A.disc(img, hx + 3, hy - 3, 3, 41)
+    # triangle pointing down
+    for dy2 in range(8):
+        hw = 7 - dy2
+        A.rect(img, hx - hw, hy - 1 + dy2, hx + hw, hy - 1 + dy2, 41)
+
+    # right side: spade (inverted heart + stem)
+    sx2, sy2 = W - 19, H // 2
+    A.disc(img, sx2 - 3, sy2 + 3, 3, 40)
+    A.disc(img, sx2 + 3, sy2 + 3, 3, 40)
+    for dy2 in range(8):
+        hw = 7 - dy2
+        A.rect(img, sx2 - hw, sy2 + 1 - dy2, sx2 + hw, sy2 + 1 - dy2, 40)
+    # stem
+    A.rect(img, sx2, sy2 + 4, sx2, sy2 + 8, 40)
+    A.rect(img, sx2 - 3, sy2 + 8, sx2 + 3, sy2 + 8, 40)
+
+    # --- title text: "MEMORY  PAIRS" ---
+    title    = "MEMORY  PAIRS"
+    scale    = 2
+    tw       = len(title) * 8 * scale
+    tx       = (W - tw) // 2
+    ty       = (H - 8 * scale) // 2 - 1
+
+    # shadow
+    A.text(img, tx + 2, ty + 2, title, 54, scale=scale)
+    # main: split colour - white for MEMORY, green for PAIRS
+    A.text(img, tx,     ty,     "MEMORY", 40,  scale=scale)
+    A.text(img, tx + 7 * 8 * scale, ty, "PAIRS",  41,  scale=scale)
+
+    # gold underline beneath title text
+    A.rect(img, tx - 4, ty + 8 * scale + 2, tx + tw + 3, ty + 8 * scale + 3, 37)
+
+    A.write_bmp8(path, pal, img)
+    sz = os.path.getsize(path)
+    print(f"  {os.path.basename(path)}  {sz} bytes  ({W}x{H})")
+
+# ---------------------------------------------------------------------------
 if __name__ == '__main__':
     make_arrow_cur(os.path.join(HERE, 'ARROW.CUR'))
     make_spark_ani(os.path.join(HERE, 'SPARK.ANI'))
+    make_title_bmp(os.path.join(HERE, 'TITLE.BMP'))
     print("Assets written.")

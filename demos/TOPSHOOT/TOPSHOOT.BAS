@@ -102,6 +102,27 @@ CALL Fonts_InitFont("FONT8.TXT", 0)
 smoke = 0
 IF INSTR(UCASE$(COMMAND$), "SMOKE") > 0 THEN smoke = 1
 
+' --- title splash ---
+DIM splashFile AS STRING
+splashFile = "TITLE.BMP"
+DIM splashX AS WORD, splashY AS WORD
+splashX = 0 : splashY = 20
+CALL DrawBmp_Show(splashFile, splashX, splashY)
+' DrawBmp_Show replaces VGA palette; restore game palette immediately
+CALL SetPalette(0)
+IF smoke = 0 THEN
+    ' interactive: wait for any key
+    DIM splashKey AS STRING
+    splashKey = ""
+    DO WHILE splashKey = ""
+        splashKey = INKEY$
+    LOOP
+END IF
+' clear screen before drawing arena
+DIM clrx1 AS WORD, clry1 AS WORD, clrx2 AS WORD, clry2 AS WORD
+clrx1 = 0 : clry1 = 0 : clrx2 = 319 : clry2 = 199
+CALL Svga_FillRect(clrx1, clry1, clrx2, clry2, %C_BLACK)
+
 RANDOMIZE 42
 
 CALL InitGame(0)
@@ -139,7 +160,26 @@ DO
 LOOP
 
 GameExit:
-CALL Vesa_Close(0)
+' --- game over plate (shown on player death or smoke exercise) ---
+IF gameOver <> 0 OR smoke <> 0 THEN
+    DIM goFile AS STRING
+    goFile = "GAMEOVER.BMP"
+    DIM goX AS WORD, goY AS WORD
+    goX = 60 : goY = 70
+    CALL DrawBmp_Show(goFile, goX, goY)
+    ' DrawBmp_Show replaces VGA palette; restore game palette
+    CALL SetPalette(0)
+    IF smoke = 0 THEN
+        ' interactive: wait for any key before closing
+        DIM goKey AS STRING
+        goKey = ""
+        DO WHILE goKey = ""
+            goKey = INKEY$
+        LOOP
+    END IF
+END IF
+
+CALL Svga_Close(0)
 IF smoke <> 0 THEN
     OPEN "SMOKE.OK" FOR OUTPUT AS #1
     PRINT #1, "OK " + Svga_Version$

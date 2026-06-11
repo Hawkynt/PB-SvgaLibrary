@@ -87,6 +87,28 @@ CALL Game_Init()
 CALL Game_SetPalette()
 CALL Game_Shuffle()
 
+' --- title splash: load and display BMP header plate ---
+DIM titleFile AS STRING
+titleFile = "TITLE.BMP"
+DIM titleX AS WORD, titleY AS WORD
+titleY = 70
+titleX = 0
+CALL DrawBmp_Show(titleFile, titleX, titleY)
+' DrawBmp_Show replaces VGA palette; restore game palette
+CALL Game_SetPalette()
+IF gSmokeMode = 0 THEN
+    ' interactive: brief key wait before table draw
+    DIM titleKey AS STRING
+    titleKey = ""
+    DO WHILE titleKey = ""
+        titleKey = INKEY$
+    LOOP
+END IF
+' clear the screen before full table draw
+DIM tclx1 AS WORD, tcly1 AS WORD, tclx2 AS WORD, tcly2 AS WORD
+tclx1 = 0 : tcly1 = 0 : tclx2 = 319 : tcly2 = 199
+CALL Svga_FillRect(tclx1, tcly1, tclx2, tcly2, %PC_FELT)
+
 CALL Fonts_InitFont("FONT8.TXT", 0)
 
 ' init cursor system
@@ -272,7 +294,7 @@ IF gAniHandle < 8 THEN
     CALL DrawAni_FreeAnimation(gAniHandle)
 END IF
 
-CALL Vesa_Close(0)
+CALL Svga_Close(0)
 
 IF gSmokeMode = 1 THEN
     OPEN "SMOKE.OK" FOR OUTPUT AS #1
