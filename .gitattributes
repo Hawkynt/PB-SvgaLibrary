@@ -8,3 +8,9 @@
 # Toolchain image / binaries
 *.gz binary
 *.png binary
+# Demo assets
+*.MAP text eol=crlf
+*.DAT text eol=crlf
+*.CUR binary
+*.ANI binary
+*.BMP binary
