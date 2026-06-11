@@ -124,14 +124,14 @@ jobs:
               echo "[cpu]"; echo "core=dynamic"; echo "cycles=max"
               echo "[autoexec]"; echo "mount c \"$(pwd)/$work\""; echo "c:"
               echo "PBC.EXE -CE -G386 -FNPX $main >> DLOG.TXT"
-              echo "$exe SMOKE"
+              echo "$exe SMOKE > RUN.TXT"
               echo "EXIT"
             } > "$work/dosbox.conf"
             SDL_VIDEODRIVER=dummy timeout 240 dosbox -conf "$work/dosbox.conf" -exit >/dev/null 2>&1 || true
             if [ -f "$work/SMOKE.OK" ]; then
               echo "demo $name: SMOKE-OK"
             else
-              echo "::error::demo $name failed its smoke run (no SMOKE.OK)"; cat "$work/DLOG.TXT" 2>/dev/null | tail -20; fail=1
+              echo "::error::demo $name failed its smoke run (no SMOKE.OK)"; echo "--- runtime output ---"; cat "$work/RUN.TXT" 2>/dev/null; echo "--- compile log tail ---"; cat "$work/DLOG.TXT" 2>/dev/null | tail -8; fail=1
             fi
           done
           exit $fail
