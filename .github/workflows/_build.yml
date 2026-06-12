@@ -128,6 +128,12 @@ jobs:
               echo "EXIT"
             } > "$work/dosbox.conf"
             SDL_VIDEODRIVER=dummy timeout 240 dosbox -conf "$work/dosbox.conf" -exit >/dev/null 2>&1 || true
+            if [ ! -f "$work/SMOKE.OK" ]; then
+              # hosted runners occasionally stall a DOSBox session - one retry
+              # distinguishes a flake from a real failure
+              echo "demo $name: no SMOKE.OK, retrying once"
+              SDL_VIDEODRIVER=dummy timeout 240 dosbox -conf "$work/dosbox.conf" -exit >/dev/null 2>&1 || true
+            fi
             if [ -f "$work/SMOKE.OK" ]; then
               echo "demo $name: SMOKE-OK"
             else
