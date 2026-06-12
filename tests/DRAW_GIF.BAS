@@ -343,10 +343,11 @@ END SUB
 '
 ' Global CT: 4 colours
 ' minCodeSize = 2  -> ClearCode=4, EndCode=5, initial codeSize=3, MaxCode=7
-' Proper LZW encoding for pixels [0,1,2,3]:
-'   At codeSize=3: emit clear(4), code0(0), code1(1)  [after code1: NextCode=8>7, bump to codeSize=4]
-'   At codeSize=4: emit code2(2), code3(3), end(5)
-' Bytes: 0x44 0x64 0x0A
+' Standard LZW (bump cs when NextCode > MaxCode) for pixels [0,1,2,3]:
+'   At codeSize=3: emit clear(4), code0(0), code1(1), code2(2)
+'   After code2: NextCode=8 > MaxCode(7), bump to codeSize=4
+'   At codeSize=4: emit code3(3), end(5)
+' Stream bytes: 0x44 0x34 0x05   (20 bits in 3 bytes, 4 padding bits)
 ' Pixels decoded: 0,1,2,3
 ' =============================================================================
 SUB MakeGifMinCode2
@@ -365,8 +366,8 @@ SUB MakeGifMinCode2
     gifData = gifData + CHR$(2) + CHR$(0) + CHR$(2) + CHR$(0) + CHR$(0)
     ' LZW min code size = 2
     gifData = gifData + CHR$(2)
-    ' Sub-block: size=3, data=0x44,0x64,0x0A, then terminator 0x00
-    gifData = gifData + CHR$(3) + CHR$(&H44) + CHR$(&H64) + CHR$(&H0A) + CHR$(0)
+    ' Sub-block: size=3, data=0x44,0x34,0x05, then terminator 0x00
+    gifData = gifData + CHR$(3) + CHR$(&H44) + CHR$(&H34) + CHR$(&H05) + CHR$(0)
     ' Trailer
     gifData = gifData + CHR$(59)
     OPEN "TMC2.GIF" FOR BINARY AS #1
@@ -469,6 +470,123 @@ SUB Test_ParseFile_GCE_ContextSet
     CLOSE fh
     CALL Assert_IsEqual(ok, 1, "ParseFile returns 1 for GCE file")
     CALL Assert_IsNotZero(ctx.GlobalColorTable, "GlobalColorTable set for GCE file")
+END SUB
+
+' =============================================================================
+' MakeGifReal: write the genuine PIL-encoded 64x40 GIF87a fixture to TREAL.GIF.
+' Layout: pixel (0,0) = index 2 (blue corner), left half (x<32, y>0) = index 0
+' (red), right half (x>=32) = index 1 (green).
+' GCT: color[0]=(255,0,0) red, color[1]=(0,255,0) green, color[2]=(0,0,255) blue.
+' =============================================================================
+SUB MakeGifReal
+    DIM rrd AS STRING
+    rrd = CHR$(71)+CHR$(73)+CHR$(70)+CHR$(56)+CHR$(55)+CHR$(97)+CHR$(64)+CHR$(0)+CHR$(40)+CHR$(0)+CHR$(129)+CHR$(0)+CHR$(0)+CHR$(255)+STRING$(3,0)+CHR$(255)+STRING$(3,0)+CHR$(255)+STRING$(3,0)+CHR$(44) _
+          +STRING$(4,0)+CHR$(64)+CHR$(0)+CHR$(40)+CHR$(0)+CHR$(64)+CHR$(8)+CHR$(164)+CHR$(0)+CHR$(5)+CHR$(0)+CHR$(24)+CHR$(72)+CHR$(176)+CHR$(160)+CHR$(193)+CHR$(131)+CHR$(8)+CHR$(9)+CHR$(6)+CHR$(88)+CHR$(200) _
+          +CHR$(176)+CHR$(161)+CHR$(195)+CHR$(135)+CHR$(16)+CHR$(27)+CHR$(38)+CHR$(156)+CHR$(72)+CHR$(209)+CHR$(96)+CHR$(196)+CHR$(139)+CHR$(24)+CHR$(29)+CHR$(86)+CHR$(220)+CHR$(56)+CHR$(49)+CHR$(163)+CHR$(199) _
+          +CHR$(139)+CHR$(28)+CHR$(67)+CHR$(90)+CHR$(252)+CHR$(72)+CHR$(82)+CHR$(162)+CHR$(200)+CHR$(147)+CHR$(37)+CHR$(83)+CHR$(6)+CHR$(56)+CHR$(137)+CHR$(82)+CHR$(37)+CHR$(73)+CHR$(150)+CHR$(34)+CHR$(93) _
+          +CHR$(190)+CHR$(132)+CHR$(201)+CHR$(81)+CHR$(230)+CHR$(71)+CHR$(154)+CHR$(53)+CHR$(109)+CHR$(102)+CHR$(196)+CHR$(185)+CHR$(81)+CHR$(231)+CHR$(78)+CHR$(158)+CHR$(20)+CHR$(125)+CHR$(98)+CHR$(4)+CHR$(26) _
+          +CHR$(84)+CHR$(104)+CHR$(68)+CHR$(162)+CHR$(29)+CHR$(141)+CHR$(66)+CHR$(68)+CHR$(154)+CHR$(80)+CHR$(233)+CHR$(82)+CHR$(166)+CHR$(7)+CHR$(157)+CHR$(62)+CHR$(132)+CHR$(26)+CHR$(85)+CHR$(170)+CHR$(73) _
+          +CHR$(170)+CHR$(10)+CHR$(173)+CHR$(50)+CHR$(196)+CHR$(90)+CHR$(80)+CHR$(235)+CHR$(86)+CHR$(174)+CHR$(3)+CHR$(189)+CHR$(46)+CHR$(4)+CHR$(27)+CHR$(86)+CHR$(44)+CHR$(89)+CHR$(0)+CHR$(98)+CHR$(87) _
+          +CHR$(146)+CHR$(77)+CHR$(123)+CHR$(150)+CHR$(237)+CHR$(90)+CHR$(179)+CHR$(111)+CHR$(189)+CHR$(182)+CHR$(133)+CHR$(11)+CHR$(214)+CHR$(109)+CHR$(93)+CHR$(186)+CHR$(92)+CHR$(237)+CHR$(230)+CHR$(197) _
+          +CHR$(139)+CHR$(85)+CHR$(111)+CHR$(95)+CHR$(190)+CHR$(84)+CHR$(253)+CHR$(6)+CHR$(6)+CHR$(12)+CHR$(85)+CHR$(112)+CHR$(97)+CHR$(194)+CHR$(76)+CHR$(13)+CHR$(39)+CHR$(70)+CHR$(140)+CHR$(84)+CHR$(113) _
+          +CHR$(99)+CHR$(177)+CHR$(1)+CHR$(1)+CHR$(0)+CHR$(59)
+    OPEN "TREAL.GIF" FOR BINARY AS #1
+    PUT$ #1, rrd
+    CLOSE #1
+END SUB
+
+' =============================================================================
+' MakeGifLarge: build a 320x200 single-colour GIF87a (PIL-encoded real LZW,
+' index 1 throughout, 256-entry GCT).  Writing is split into 128-byte PUT$
+' chunks so no single string exceeds the 32767-byte limit.
+' This fixture proves the streaming decoder handles > 32767 pixels.
+' =============================================================================
+SUB MakeGifLarge
+    OPEN "TLARGE.GIF" FOR BINARY AS #1
+    DIM gld AS STRING
+    gld = CHR$(71)+CHR$(73)+CHR$(70)+CHR$(56)+CHR$(55)+CHR$(97)+CHR$(64)+CHR$(1)+CHR$(200)+CHR$(0)+CHR$(135)+STRING$(5,0)+CHR$(100)+CHR$(100)+CHR$(200)
+    PUT$ #1, gld
+    gld = STRING$(762,0)
+    PUT$ #1, gld
+    gld = CHR$(44)+STRING$(4,0)+CHR$(64)+CHR$(1)+CHR$(200)+CHR$(0)+CHR$(64)+CHR$(8)+CHR$(255)+CHR$(0)+CHR$(3)+CHR$(8)+CHR$(28)+CHR$(72)+CHR$(176)+CHR$(160)+CHR$(193)+CHR$(131)+CHR$(8)+CHR$(19)+CHR$(42) _
+          +CHR$(92)+CHR$(200)+CHR$(176)+CHR$(161)+CHR$(195)+CHR$(135)+CHR$(16)+CHR$(35)+CHR$(74)+CHR$(156)+CHR$(72)+CHR$(177)+CHR$(162)+CHR$(197)+CHR$(139)+CHR$(24)+CHR$(51)+CHR$(106)+CHR$(220)+CHR$(200) _
+          +CHR$(177)+CHR$(163)+CHR$(199)+CHR$(143)+CHR$(32)+CHR$(67)+CHR$(138)+CHR$(28)+CHR$(73)+CHR$(178)+CHR$(164)+CHR$(201)+CHR$(147)+CHR$(40)+CHR$(83)+CHR$(170)+CHR$(92)+CHR$(201)+CHR$(178)+CHR$(165) _
+          +CHR$(203)+CHR$(151)+CHR$(48)+CHR$(99)+CHR$(202)+CHR$(156)+CHR$(73)+CHR$(179)+CHR$(166)+CHR$(205)+CHR$(155)+CHR$(56)+CHR$(115)+CHR$(234)+CHR$(220)+CHR$(201)+CHR$(179)+CHR$(167)+CHR$(207)+CHR$(159) _
+          +CHR$(64)+CHR$(131)+CHR$(10)+CHR$(29)+CHR$(74)+CHR$(180)+CHR$(168)+CHR$(209)+CHR$(163)+CHR$(72)+CHR$(147)+CHR$(42)+CHR$(93)+CHR$(202)+CHR$(180)+CHR$(169)+CHR$(211)+CHR$(167)+CHR$(80)+CHR$(163)+CHR$(74) _
+          +CHR$(157)+CHR$(74)+CHR$(181)+CHR$(170)+CHR$(213)+CHR$(171)+CHR$(88)+CHR$(179)+CHR$(106)+CHR$(221)+CHR$(202)+CHR$(181)+CHR$(171)+CHR$(215)+CHR$(175)+CHR$(96)+CHR$(195)+CHR$(138)+CHR$(29)+CHR$(75) _
+          +CHR$(182)+CHR$(172)+CHR$(217)
+    PUT$ #1, gld
+    gld = CHR$(179)+CHR$(104)+CHR$(211)+CHR$(170)+CHR$(93)+CHR$(203)+CHR$(182)+CHR$(173)+CHR$(219)+CHR$(183)+CHR$(112)+CHR$(227)+CHR$(202)+CHR$(157)+CHR$(75)+CHR$(183)+CHR$(174)+CHR$(221)+CHR$(187)+CHR$(120) _
+          +CHR$(243)+CHR$(234)+CHR$(221)+CHR$(203)+CHR$(183)+CHR$(175)+CHR$(223)+CHR$(191)+CHR$(128)+CHR$(3)+CHR$(11)+CHR$(30)+CHR$(76)+CHR$(184)+CHR$(176)+CHR$(225)+CHR$(195)+CHR$(136)+CHR$(19)+CHR$(43) _
+          +CHR$(94)+CHR$(204)+CHR$(184)+CHR$(177)+CHR$(227)+CHR$(199)+CHR$(144)+CHR$(35)+CHR$(75)+CHR$(158)+CHR$(76)+CHR$(185)+CHR$(178)+CHR$(229)+CHR$(203)+CHR$(152)+CHR$(51)+CHR$(107)+CHR$(222)+CHR$(204) _
+          +CHR$(185)+CHR$(179)+CHR$(231)+CHR$(207)+CHR$(160)+CHR$(67)+CHR$(139)+CHR$(30)+CHR$(77)+CHR$(186)+CHR$(180)+CHR$(233)+CHR$(211)+CHR$(168)+CHR$(83)+CHR$(171)+CHR$(94)+CHR$(205)+CHR$(186)+CHR$(181) _
+          +CHR$(235)+CHR$(215)+CHR$(176)+CHR$(99)+CHR$(203)+CHR$(158)+CHR$(77)+CHR$(187)+CHR$(182)+CHR$(237)+CHR$(219)+CHR$(184)+CHR$(115)+CHR$(235)+CHR$(222)+CHR$(205)+CHR$(187)+CHR$(183)+CHR$(239)+CHR$(223) _
+          +CHR$(192)+CHR$(131)+CHR$(11)+CHR$(31)+CHR$(78)+CHR$(188)+CHR$(184)+CHR$(241)+CHR$(227)+CHR$(200)+CHR$(147)+CHR$(43)+CHR$(95)+CHR$(206)+CHR$(188)+CHR$(185)+CHR$(243)+CHR$(231)+CHR$(208)+CHR$(163) _
+          +CHR$(75)+CHR$(159)+CHR$(78)+CHR$(189)+CHR$(186)+CHR$(245)+CHR$(235)+CHR$(216)
+    PUT$ #1, gld
+    gld = CHR$(179)+CHR$(107)+CHR$(223)+CHR$(206)+CHR$(189)+CHR$(187)+CHR$(247)+CHR$(239)+CHR$(224)+CHR$(195)+CHR$(139)+CHR$(163)+CHR$(31)+CHR$(79)+CHR$(190)+CHR$(188)+CHR$(249)+CHR$(243)+CHR$(232)+CHR$(211) _
+          +CHR$(171)+CHR$(95)+CHR$(207)+CHR$(190)+CHR$(189)+CHR$(251)+CHR$(247)+CHR$(240)+CHR$(227)+CHR$(203)+CHR$(159)+CHR$(79)+CHR$(191)+CHR$(190)+CHR$(253)+CHR$(251)+CHR$(248)+CHR$(243)+CHR$(235)+CHR$(223) _
+          +CHR$(207)+CHR$(191)+CHR$(191)+CHR$(255)+CHR$(255)+CHR$(0)+CHR$(6)+CHR$(40)+CHR$(224)+CHR$(128)+CHR$(4)+CHR$(22)+CHR$(104)+CHR$(224)+CHR$(129)+CHR$(8)+CHR$(38)+CHR$(168)+CHR$(224)+CHR$(130)+CHR$(12) _
+          +CHR$(54)+CHR$(232)+CHR$(224)+CHR$(131)+CHR$(16)+CHR$(70)+CHR$(40)+CHR$(225)+CHR$(132)+CHR$(20)+CHR$(86)+CHR$(104)+CHR$(225)+CHR$(133)+CHR$(24)+CHR$(102)+CHR$(168)+CHR$(225)+CHR$(134)+CHR$(28) _
+          +CHR$(118)+CHR$(232)+CHR$(225)+CHR$(135)+CHR$(32)+CHR$(134)+CHR$(40)+CHR$(226)+CHR$(136)+CHR$(36)+CHR$(150)+CHR$(104)+CHR$(226)+CHR$(137)+CHR$(40)+CHR$(166)+CHR$(168)+CHR$(226)+CHR$(138)+CHR$(44) _
+          +CHR$(182)+CHR$(232)+CHR$(226)+CHR$(139)+CHR$(48)+CHR$(198)+CHR$(40)+CHR$(227)+CHR$(140)+CHR$(52)+CHR$(214)+CHR$(104)+CHR$(227)+CHR$(141)+CHR$(56)+CHR$(230)+CHR$(168)+CHR$(227)+CHR$(142)+CHR$(60) _
+          +CHR$(246)+CHR$(232)+CHR$(227)+CHR$(143)+CHR$(64)+CHR$(6)+CHR$(41)
+    PUT$ #1, gld
+    gld = CHR$(228)+CHR$(144)+CHR$(68)+CHR$(22)+CHR$(105)+CHR$(228)+CHR$(145)+CHR$(72)+CHR$(38)+CHR$(169)+CHR$(228)+CHR$(146)+CHR$(76)+CHR$(54)+CHR$(233)+CHR$(228)+CHR$(147)+CHR$(80)+CHR$(70)+CHR$(41) _
+          +CHR$(229)+CHR$(148)+CHR$(84)+CHR$(86)+CHR$(105)+CHR$(229)+CHR$(149)+CHR$(88)+CHR$(102)+CHR$(169)+CHR$(229)+CHR$(150)+CHR$(92)+CHR$(118)+CHR$(233)+CHR$(229)+CHR$(151)+CHR$(96)+CHR$(134)+CHR$(41) _
+          +CHR$(230)+CHR$(152)+CHR$(100)+CHR$(150)+CHR$(25)+CHR$(86)+CHR$(64)+CHR$(0)+CHR$(59)
+    PUT$ #1, gld
+    CLOSE #1
+END SUB
+
+' =============================================================================
+' Test: DrawGif_Show decodes the genuine PIL-encoded 64x40 GIF87a correctly
+' Given TREAL.GIF (203 bytes, real multi-code LZW, 4-entry GCT)
+' When  DrawGif_Show("TREAL.GIF", 0, 0) is called
+' Then  pixel (0,0)  = index 2 (blue corner)
+'       pixel (1,0)  = index 0 (red  - left half)
+'       pixel (32,0) = index 1 (green - right half)
+'       DAC entry 0  = red  (R=63, G=0,  B=0  in 6-bit)
+'       DAC entry 1  = green (R=0, G=63, B=0  in 6-bit)
+' =============================================================================
+SUB Test_Show_RealGif
+    CALL Test_Case("Show correctly decodes a genuine PIL-encoded 64x40 GIF87a")
+    CALL MakeGifReal
+    CALL DrawGif_Show("TREAL.GIF", 0, 0)
+    ' Pixel layout assertions
+    CALL Assert_IsEqual(GetP(0, 0),  2, "REAL: pixel(0,0) = 2 (blue corner)")
+    CALL Assert_IsEqual(GetP(1, 0),  0, "REAL: pixel(1,0) = 0 (red left half)")
+    CALL Assert_IsEqual(GetP(32, 0), 1, "REAL: pixel(32,0) = 1 (green right half)")
+    CALL Assert_IsEqual(GetP(63, 0), 1, "REAL: pixel(63,0) = 1 (green right edge)")
+    CALL Assert_IsEqual(GetP(0, 39), 0, "REAL: pixel(0,39) = 0 (red bottom-left)")
+    ' DAC assertions: GCT programs the VGA DAC (8-bit -> 6-bit via divide by 4)
+    ' color[0] = red (255,0,0) -> DAC (63,0,0)
+    OUT &H3C7, 0
+    CALL Assert_IsEqual(INP(&H3C9), 63, "REAL: DAC[0].R = 63 (red)")
+    CALL Assert_IsEqual(INP(&H3C9), 0,  "REAL: DAC[0].G = 0")
+    CALL Assert_IsEqual(INP(&H3C9), 0,  "REAL: DAC[0].B = 0")
+    ' color[1] = green (0,255,0) -> DAC (0,63,0)
+    OUT &H3C7, 1
+    CALL Assert_IsEqual(INP(&H3C9), 0,  "REAL: DAC[1].R = 0")
+    CALL Assert_IsEqual(INP(&H3C9), 63, "REAL: DAC[1].G = 63 (green)")
+    CALL Assert_IsEqual(INP(&H3C9), 0,  "REAL: DAC[1].B = 0")
+END SUB
+
+' =============================================================================
+' Test: DrawGif_Show handles a 320x200 image (64000 pixels > 32767 limit)
+' Given TLARGE.GIF (PIL-encoded real LZW, 256-entry GCT, all pixels = 1)
+' When  DrawGif_Show("TLARGE.GIF", 0, 0) is called
+' Then  corner pixel (0,0) = 1, centre pixel (160,100) = 1
+' This is the streaming-decoder regression: the old accumulation path would
+' overflow the 32767-byte string limit and produce wrong/no output.
+' =============================================================================
+SUB Test_Show_LargeGif
+    CALL Test_Case("Show correctly renders a 320x200 GIF (streaming regression)")
+    CALL MakeGifLarge
+    CALL DrawGif_Show("TLARGE.GIF", 0, 0)
+    CALL Assert_IsEqual(GetP(0,   0),   1, "LARGE: pixel(0,0) = 1")
+    CALL Assert_IsEqual(GetP(160, 100), 1, "LARGE: pixel(160,100) = 1")
+    CALL Assert_IsEqual(GetP(319, 199), 1, "LARGE: pixel(319,199) = 1")
 END SUB
 
 ' --- Mode 13h setup / teardown ---

@@ -78,6 +78,20 @@ TYPE LZWContextType
     MaxCode AS WORD            ' Maximum code for current size
 END TYPE
 
+' Streaming draw context: pixel cursor position across the image
+TYPE GIFDrawContextType
+    CurX AS LONG               ' Current column within image (0-based)
+    CurY AS LONG               ' Current row within image (0-based)
+    ImgLeft AS LONG            ' Image descriptor left offset
+    ImgTop AS LONG             ' Image descriptor top offset
+    ImgWide AS LONG            ' Image width in pixels
+    ImgHigh AS LONG            ' Image height in pixels
+    DispX AS LONG              ' Display X origin (DrawGif_Show x arg)
+    DispY AS LONG              ' Display Y origin (DrawGif_Show y arg)
+    HasTransp AS BYTE          ' Transparent colour flag
+    TranspIdx AS BYTE          ' Transparent colour index
+END TYPE
+
 ' Forward declarations (functions used before their definition in this file)
 DECLARE FUNCTION DrawGif_ParseFile(BYVAL fileHandle AS INTEGER, gifContext AS GIFContextType) AS BYTE
 DECLARE FUNCTION DrawGif_ReadLZWCode(BYVAL dataBuf AS STRING, bitPos AS LONG, BYVAL codeSize AS BYTE) AS WORD
@@ -177,7 +191,7 @@ FUNCTION DrawGif_ParseFile(BYVAL fileHandle AS INTEGER, gifContext AS GIFContext
     gifContext.GlobalColorTableSize = 2 ^ ((screenDescriptor.Packed AND &H07) + 1)
     gifContext.BackgroundColorIndex = screenDescriptor.BackgroundColorIndex
 
-    ' Read global colorVal table if present
+    ' Read global colorVal table if present and program VGA DAC (8-bit -> 6-bit)
     IF gifContext.GlobalColorTable THEN
         REDIM GIFGlobalPaletteStore(gifContext.GlobalColorTableSize * 3 - 1)
 
@@ -189,6 +203,11 @@ FUNCTION DrawGif_ParseFile(BYVAL fileHandle AS INTEGER, gifContext AS GIFContext
             GIFGlobalPaletteStore(i * 3) = r
             GIFGlobalPaletteStore(i * 3 + 1) = g
             GIFGlobalPaletteStore(i * 3 + 2) = b
+
+            OUT &H3C8, i
+            OUT &H3C9, r \ 4
+            OUT &H3C9, g \ 4
+            OUT &H3C9, b \ 4
         NEXT i
     END IF
 
@@ -295,7 +314,9 @@ SUB DrawGif_SkipDataSubBlocks(BYVAL fileHandle AS INTEGER)
 END SUB
 
 ' =============================================================================
-' Draw GIF image dataBuf
+' Draw GIF image dataBuf - reads compressed bytes and streams decoded pixels
+' directly to the screen via DrawGif_StreamDraw, avoiding whole-image
+' accumulation.
 ' Parameters:
 '   FileHandle - Open file handle (BYVAL)
 '   GIFContext - GIF context (BYVAL)
@@ -313,7 +334,7 @@ SUB DrawGif_DrawImageData(BYVAL fileHandle AS INTEGER, gifContext AS GIFContextT
     DIM r AS BYTE, g AS BYTE, b AS BYTE
     DIM lzwMinimumCodeSize AS BYTE
     DIM compressedData AS STRING
-    DIM decodedData AS STRING
+    DIM dc AS GIFDrawContextType
 
     ' Read image descriptor
     GET fileHandle, , imageDescriptor.leftV
@@ -349,14 +370,23 @@ SUB DrawGif_DrawImageData(BYVAL fileHandle AS INTEGER, gifContext AS GIFContextT
     ' Read compressed image dataBuf
     CALL DrawGif_ReadDataSubBlocks(fileHandle, compressedData)
 
-    ' Decompress LZW dataBuf
-    CALL DrawGif_DecompressLZW(compressedData, lzwMinimumCodeSize, decodedData)
+    ' Set up streaming draw context
+    dc.CurX = 0
+    dc.CurY = 0
+    dc.ImgLeft = imageDescriptor.leftV
+    dc.ImgTop = imageDescriptor.Top
+    dc.ImgWide = imageDescriptor.Wide
+    dc.ImgHigh = imageDescriptor.Height
+    dc.DispX = x
+    dc.DispY = y
+    dc.HasTransp = gifContext.HasTransparentColor
+    dc.TranspIdx = gifContext.TransparentColorIndex
 
-    ' Draw the image
+    ' Stream-decode and draw directly (no whole-image string accumulation)
     IF localColorTable THEN
-        CALL DrawGif_DrawPixelData(decodedData, localPalette(), imageDescriptor, gifContext, x, y, interlaceFlag)
+        CALL DrawGif_StreamDraw(compressedData, lzwMinimumCodeSize, dc, localPalette())
     ELSE
-        CALL DrawGif_DrawPixelData(decodedData, GIFGlobalPaletteStore(), imageDescriptor, gifContext, x, y, interlaceFlag)
+        CALL DrawGif_StreamDraw(compressedData, lzwMinimumCodeSize, dc, GIFGlobalPaletteStore())
     END IF
 END SUB
 
@@ -384,7 +414,222 @@ SUB DrawGif_ReadDataSubBlocks(BYVAL fileHandle AS INTEGER, dataString AS STRING)
 END SUB
 
 ' =============================================================================
-' Decompress GIF LZW dataBuf (simplified implementation)
+' Emit a run of pixels from one dictionary entry to the screen.
+' Pixels are placed at the current cursor position in dc, advancing
+' left-to-right, top-to-bottom.  Contiguous pixels on the same row
+' that fit on-screen are drawn with Svga_HLine for speed.
+' The palette array is NOT passed here; the caller converts index->colour
+' before reaching this point - pixel values are raw palette indices.
+' Parameters:
+'   run      - string of palette index bytes to emit (BYVAL)
+'   dc       - streaming cursor + image geometry (BYREF)
+'   paletteV - palette array, indexed by colour index (BYREF array)
+' Returns: Nothing
+' =============================================================================
+SUB DrawGif_EmitRun(BYVAL pixRun AS STRING, dc AS GIFDrawContextType, paletteV() AS BYTE)
+    DIM runLen AS INTEGER
+    DIM rpos AS INTEGER
+    DIM colorIndex AS BYTE
+    DIM screenX AS INTEGER
+    DIM screenY AS INTEGER
+    DIM spanStart AS INTEGER
+    DIM spanColor AS BYTE
+    DIM spanLen AS INTEGER
+    DIM xi AS INTEGER
+
+    runLen = LEN(pixRun)
+    IF runLen = 0 THEN EXIT SUB
+
+    rpos = 1
+    DO WHILE rpos <= runLen
+        ' Skip pixels that land beyond the image bottom
+        IF dc.CurY >= dc.ImgHigh THEN EXIT DO
+
+        screenY = dc.DispY + dc.ImgTop + dc.CurY
+        IF screenY >= SVGAScreenContext.YRes THEN
+            ' Advance cursor to next row to avoid infinite spin
+            dc.CurX = dc.ImgWide
+        ELSE
+            ' How many pixels remain on this row in the run?
+            DIM rowRemain AS INTEGER
+            rowRemain = dc.ImgWide - dc.CurX
+
+            ' How many pixels remain in the run string?
+            DIM strRemain AS INTEGER
+            strRemain = runLen - rpos + 1
+
+            ' Take the smaller of the two
+            DIM take AS INTEGER
+            IF rowRemain < strRemain THEN
+                take = rowRemain
+            ELSE
+                take = strRemain
+            END IF
+
+            ' Emit pixels for this segment of the current row
+            xi = 0
+            DO WHILE xi < take
+                colorIndex = ASC(MID$(pixRun, rpos + xi, 1))
+
+                IF dc.HasTransp = 0 OR colorIndex <> dc.TranspIdx THEN
+                    screenX = dc.DispX + dc.ImgLeft + dc.CurX + xi
+
+                    IF screenX >= 0 AND screenX < SVGAScreenContext.XRes THEN
+                        ' Try to build a horizontal span of identical colour
+                        ' for HLine optimisation
+                        spanStart = screenX
+                        spanColor = colorIndex
+                        spanLen = 1
+
+                        DIM xi2 AS INTEGER
+                        xi2 = xi + 1
+                        DO WHILE xi2 < take
+                            DIM nc AS BYTE
+                            nc = ASC(MID$(pixRun, rpos + xi2, 1))
+                            IF nc <> spanColor THEN EXIT DO
+                            DIM sx2 AS INTEGER
+                            sx2 = dc.DispX + dc.ImgLeft + dc.CurX + xi2
+                            IF sx2 < 0 OR sx2 >= SVGAScreenContext.XRes THEN EXIT DO
+                            spanLen = spanLen + 1
+                            xi2 = xi2 + 1
+                        LOOP
+
+                        IF spanLen > 1 THEN
+                            DIM hx1 AS WORD, hx2 AS WORD, hy AS WORD
+                            hx1 = spanStart
+                            hx2 = spanStart + spanLen - 1
+                            hy  = screenY
+                            CALL Svga_HLine(hx1, hx2, hy, spanColor)
+                            xi = xi + spanLen
+                        ELSE
+                            DIM px AS WORD, py AS WORD
+                            px = screenX : py = screenY
+                            CALL Svga_PutPixel(px, py, colorIndex)
+                            xi = xi + 1
+                        END IF
+                    ELSE
+                        xi = xi + 1
+                    END IF
+                ELSE
+                    xi = xi + 1
+                END IF
+            LOOP
+
+            rpos = rpos + take
+            dc.CurX = dc.CurX + take
+        END IF
+
+        ' Advance to next row when current row is full
+        DO WHILE dc.CurX >= dc.ImgWide AND dc.CurY < dc.ImgHigh
+            dc.CurX = dc.CurX - dc.ImgWide
+            dc.CurY = dc.CurY + 1
+        LOOP
+    LOOP
+END SUB
+
+' =============================================================================
+' Stream-decode LZW compressed image data and draw each decoded run directly
+' to the screen.  Dictionary entry strings (each a few hundred bytes at most)
+' are held per-entry as before; no whole-image accumulation is performed.
+' Parameters:
+'   compressedData    - raw LZW byte stream (BYVAL)
+'   minimumCodeSize   - LZW minimum code size from image descriptor (BYVAL)
+'   dc                - streaming draw cursor (BYREF)
+'   paletteV          - colour table array (BYREF)
+' Returns: Nothing
+' =============================================================================
+SUB DrawGif_StreamDraw(BYVAL compressedData AS STRING, BYVAL minimumCodeSize AS BYTE, dc AS GIFDrawContextType, paletteV() AS BYTE)
+    DIM lzwContext AS LZWContextType
+    DIM bitPos AS LONG
+    DIM code AS WORD
+    DIM oldCode AS WORD
+    DIM firstChar AS BYTE
+    DIM outputString AS STRING
+    DIM readCodeSize AS BYTE
+
+    ' Initialise LZW context
+    lzwContext.CodeSize = minimumCodeSize
+    lzwContext.ClearCode = 2 ^ minimumCodeSize
+    lzwContext.EndCode = lzwContext.ClearCode + 1
+    lzwContext.NextCode = lzwContext.EndCode + 1
+    lzwContext.CurrentCodeSize = minimumCodeSize + 1
+    lzwContext.MaxCode = (2 ^ lzwContext.CurrentCodeSize) - 1
+    lzwContext.BitBuffer = 0
+    lzwContext.BitCount = 0
+
+    CALL DrawGif_InitializeLZWDictionary(lzwContext)
+
+    bitPos = 0
+    oldCode = 0
+
+    DO WHILE bitPos <= LEN(compressedData) * 8
+        readCodeSize = lzwContext.CurrentCodeSize
+        code = DrawGif_ReadLZWCode(compressedData, bitPos, readCodeSize)
+
+        IF code = lzwContext.EndCode THEN
+            EXIT DO
+        ELSEIF code = lzwContext.ClearCode THEN
+            CALL DrawGif_InitializeLZWDictionary(lzwContext)
+            lzwContext.NextCode = lzwContext.EndCode + 1
+            lzwContext.CurrentCodeSize = lzwContext.CodeSize + 1
+            lzwContext.MaxCode = (2 ^ lzwContext.CurrentCodeSize) - 1
+
+            bitPos = bitPos + readCodeSize
+            readCodeSize = lzwContext.CurrentCodeSize
+            code = DrawGif_ReadLZWCode(compressedData, bitPos, readCodeSize)
+            IF code = lzwContext.EndCode THEN EXIT DO
+
+            ' Emit single literal pixel
+            outputString = CHR$(code)
+            CALL DrawGif_EmitRun(outputString, dc, paletteV())
+            oldCode = code
+            firstChar = code
+        ELSE
+            IF code < lzwContext.NextCode THEN
+                outputString = DrawGif_GetDictionaryEntry(lzwContext, code)
+                CALL DrawGif_EmitRun(outputString, dc, paletteV())
+                firstChar = ASC(LEFT$(outputString, 1))
+
+                IF lzwContext.NextCode <= 4095 THEN
+                    CALL DrawGif_AddDictionaryEntry(lzwContext, _
+                        DrawGif_GetDictionaryEntry(lzwContext, oldCode) + CHR$(firstChar))
+                    lzwContext.NextCode = lzwContext.NextCode + 1
+
+                    IF lzwContext.NextCode > lzwContext.MaxCode AND _
+                       lzwContext.CurrentCodeSize < 12 THEN
+                        lzwContext.CurrentCodeSize = lzwContext.CurrentCodeSize + 1
+                        lzwContext.MaxCode = (2 ^ lzwContext.CurrentCodeSize) - 1
+                    END IF
+                END IF
+
+                oldCode = code
+            ELSE
+                outputString = DrawGif_GetDictionaryEntry(lzwContext, oldCode) + CHR$(firstChar)
+                CALL DrawGif_EmitRun(outputString, dc, paletteV())
+
+                IF lzwContext.NextCode <= 4095 THEN
+                    CALL DrawGif_AddDictionaryEntry(lzwContext, outputString)
+                    lzwContext.NextCode = lzwContext.NextCode + 1
+
+                    IF lzwContext.NextCode > lzwContext.MaxCode AND _
+                       lzwContext.CurrentCodeSize < 12 THEN
+                        lzwContext.CurrentCodeSize = lzwContext.CurrentCodeSize + 1
+                        lzwContext.MaxCode = (2 ^ lzwContext.CurrentCodeSize) - 1
+                    END IF
+                END IF
+
+                oldCode = code
+                firstChar = ASC(LEFT$(outputString, 1))
+            END IF
+        END IF
+
+        bitPos = bitPos + readCodeSize
+    LOOP
+END SUB
+
+' =============================================================================
+' Decompress GIF LZW dataBuf
+' Kept for unit tests that verify the decoded byte sequence directly.
 ' Parameters:
 '   CompressedData - Input compressed dataBuf (BYVAL)
 '   MinimumCodeSize - Initial code size (BYVAL)
@@ -566,7 +811,7 @@ SUB DrawGif_AddDictionaryEntry(lzwContext AS LZWContextType, BYVAL entry AS STRI
 END SUB
 
 ' =============================================================================
-' Draw GIF pixel dataBuf to screen
+' Draw GIF pixel dataBuf to screen (used by unit tests via DrawGif_DecompressLZW)
 ' Parameters:
 '   PixelData - Decoded pixel dataBuf (BYVAL)
 '   paletteV - colorVal paletteV (BYVAL array)
