@@ -146,6 +146,57 @@ def write_gif87(path, palette, pixels):
     out += b'\x00\x3B'
     open(path, 'wb').write(out)
 
+def write_gif_pil(path, palette, pixels):
+    """Save an indexed-colour GIF via PIL (real LZW).
+
+    PIL is called with optimize=False so it does not reorder the palette.
+    After saving, the file is reloaded to verify that no index remapping
+    occurred.  If PIL did remap indices, the function falls back to
+    write_gif87 (uncompressed-style, index-exact).
+
+    palette  -- list of (r, g, b) tuples, max 256 entries
+    pixels   -- list of rows, each a list of palette index integers
+    """
+    try:
+        from PIL import Image
+    except ImportError:
+        write_gif87(path, palette, pixels)
+        return
+
+    h = len(pixels); w = len(pixels[0])
+    # Build a flat palette padded to 768 bytes (256 * 3)
+    flat = bytearray()
+    for r, g, b in palette[:256]:
+        flat += bytes((r, g, b))
+    flat += b'\x00' * (768 - len(flat))
+
+    # Create a P-mode image and assign the pixel data row by row
+    img = Image.new('P', (w, h))
+    img.putpalette(bytes(flat))
+    flat_pixels = []
+    for row in pixels:
+        flat_pixels.extend(row)
+    img.putdata(flat_pixels)
+
+    img.save(path, format='GIF', optimize=False)
+
+    # Verify index preservation: reload and spot-check a handful of pixels
+    try:
+        chk = Image.open(path)
+        chk_data = list(chk.getdata())
+        ok = True
+        for y, row in enumerate(pixels):
+            for x, idx in enumerate(row):
+                if chk_data[y * w + x] != idx:
+                    ok = False
+                    break
+            if not ok:
+                break
+        if not ok:
+            write_gif87(path, palette, pixels)
+    except Exception:
+        write_gif87(path, palette, pixels)
+
 # ---------- TIFF (8-bit grayscale-index, uncompressed, single strip, LE) -------
 def write_tif8(path, pixels):
     h = len(pixels); w = len(pixels[0])
@@ -168,6 +219,89 @@ def write_tif8(path, pixels):
     out += struct.pack('<I', 0)
     out += data
     open(path, 'wb').write(out)
+
+# ---------- CUR (Windows cursor, type 2, hotspot in directory entry) -----------
+def write_cur(path, hotspot, palette, pixels, mask):
+    """Write a Windows .CUR file.
+
+    hotspot  -- (x, y) hotspot coordinates stored in the directory entry
+    palette  -- list of (r, g, b) tuples; len <= 16 -> 4-bit, else 8-bit
+    pixels   -- list of rows (top-down), each a list of palette indices
+    mask     -- list of rows (top-down), each a list of bits: 0=opaque, 1=transparent
+    """
+    h = len(pixels)
+    w = len(pixels[0])
+    hot_x, hot_y = hotspot
+
+    ncolors = len(palette)
+    if ncolors <= 2:
+        bpp = 1
+    elif ncolors <= 16:
+        bpp = 4
+    else:
+        bpp = 8
+
+    # Palette padded to 2^bpp entries
+    pal_entries = 1 << bpp
+    pal_bytes = bytearray()
+    for i in range(pal_entries):
+        if i < len(palette):
+            r, g, b = palette[i]
+        else:
+            r, g, b = 0, 0, 0
+        pal_bytes += bytes((b, g, r, 0))   # BGRA
+
+    # XOR bitmap rows (bottom-up, DWORD-padded per row)
+    xor_stride = ((w * bpp + 31) // 32) * 4
+    xor_bytes = bytearray()
+    for row in reversed(pixels):
+        line = bytearray(xor_stride)
+        if bpp == 1:
+            for x, idx in enumerate(row):
+                if idx:
+                    line[x // 8] |= 0x80 >> (x % 8)
+        elif bpp == 4:
+            for x, idx in enumerate(row):
+                if x % 2 == 0:
+                    line[x // 2] = (idx & 0xF) << 4
+                else:
+                    line[x // 2] |= idx & 0xF
+        else:
+            for x, idx in enumerate(row):
+                line[x] = idx & 0xFF
+        xor_bytes += line
+
+    # AND mask rows (bottom-up, 1 bit per pixel, DWORD-padded)
+    and_stride = ((w + 31) // 32) * 4
+    and_bytes = bytearray()
+    msk = mask or [[0] * w for _ in range(h)]
+    for row in reversed(msk):
+        line = bytearray(and_stride)
+        for x, bit in enumerate(row):
+            if bit:
+                line[x // 8] |= 0x80 >> (x % 8)
+        and_bytes += line
+
+    bih = struct.pack('<IiiHHIIiiII',
+        40,        # biSize
+        w,         # biWidth
+        h * 2,     # biHeight doubled (XOR + AND stacked)
+        1,         # biPlanes
+        bpp,       # biBitCount
+        0, 0, 0, 0, pal_entries, 0)
+
+    dib = bih + bytes(pal_bytes) + bytes(xor_bytes) + bytes(and_bytes)
+    image_offset = 6 + 16   # header(6) + one directory entry(16)
+
+    cur_hdr = struct.pack('<HHH', 0, 2, 1)
+    color_count = min(ncolors, 255)
+    entry = struct.pack('<BBBBHHII',
+        w % 256, h % 256, color_count, 0,
+        hot_x, hot_y,       # Planes=hotX, BitCount=hotY for CUR
+        len(dib), image_offset)
+
+    open(path, 'wb').write(cur_hdr + entry + dib)
+
 
 # ---------- ICO (8-bit, doubled-height info header, AND mask) ------------------
 def write_ico8(path, images):
@@ -206,3 +340,140 @@ def write_ico8(path, images):
     for b in bodies:
         out += b
     open(path, 'wb').write(out)
+
+
+# ---------- ANI (Windows Animated Cursor, RIFF ACON) ---------------------------
+def write_ani(path, frames, rate_jiffies=6):
+    """Write a spec-correct Windows .ANI file.
+
+    frames        -- list of (hotspot, palette, pixels, mask) tuples;
+                     each element is passed directly to write_cur to produce
+                     the embedded CUR bytes stored as an 'icon' chunk.
+    rate_jiffies  -- default display rate in 1/60 s units (written to 'anih'
+                     and a 'rate' chunk); can be a list of per-frame values.
+
+    RIFF ACON layout:
+      RIFF('ACON')
+        anih  (36 bytes)
+        rate  (nFrames * 4 bytes)
+        LIST('fram')
+          icon  (full CUR bytes for frame 0)
+          icon  (full CUR bytes for frame 1)
+          ...
+    """
+    nframes = len(frames)
+
+    # Build the embedded CUR bytes for each frame.
+    icon_chunks = []
+    for hotspot, palette, pixels, mask in frames:
+        h = len(pixels)
+        w = len(pixels[0])
+        hot_x, hot_y = hotspot
+        ncolors = len(palette)
+        if ncolors <= 2:
+            bpp = 1
+        elif ncolors <= 16:
+            bpp = 4
+        else:
+            bpp = 8
+        pal_entries = 1 << bpp
+        pal_bytes = bytearray()
+        for i in range(pal_entries):
+            if i < len(palette):
+                r, g, b = palette[i]
+            else:
+                r, g, b = 0, 0, 0
+            pal_bytes += bytes((b, g, r, 0))
+        xor_stride = ((w * bpp + 31) // 32) * 4
+        xor_bytes = bytearray()
+        for row in reversed(pixels):
+            line = bytearray(xor_stride)
+            if bpp == 1:
+                for x, idx in enumerate(row):
+                    if idx:
+                        line[x // 8] |= 0x80 >> (x % 8)
+            elif bpp == 4:
+                for x, idx in enumerate(row):
+                    if x % 2 == 0:
+                        line[x // 2] = (idx & 0xF) << 4
+                    else:
+                        line[x // 2] |= idx & 0xF
+            else:
+                for x, idx in enumerate(row):
+                    line[x] = idx & 0xFF
+            xor_bytes += line
+        and_stride = ((w + 31) // 32) * 4
+        and_bytes = bytearray()
+        msk = mask or [[0] * w for _ in range(h)]
+        for row in reversed(msk):
+            line = bytearray(and_stride)
+            for x, bit in enumerate(row):
+                if bit:
+                    line[x // 8] |= 0x80 >> (x % 8)
+            and_bytes += line
+        bih = struct.pack('<IiiHHIIiiII',
+            40, w, h * 2, 1, bpp, 0, 0, 0, 0, pal_entries, 0)
+        dib = bih + bytes(pal_bytes) + bytes(xor_bytes) + bytes(and_bytes)
+        # Full CUR file bytes (header + 1 directory entry + dib)
+        image_offset = 6 + 16
+        color_count = min(ncolors, 255)
+        cur_hdr = struct.pack('<HHH', 0, 2, 1)
+        entry = struct.pack('<BBBBHHII',
+            w % 256, h % 256, color_count, 0,
+            hot_x, hot_y, len(dib), image_offset)
+        icon_payload = cur_hdr + entry + dib
+        icon_chunks.append(bytes(icon_payload))
+
+    def riff_chunk(tag, data):
+        """Build a RIFF chunk: tag(4) + size(4,LE) + data [+ pad if odd]."""
+        assert len(tag) == 4
+        chunk = tag.encode('ascii') if isinstance(tag, str) else tag
+        chunk += struct.pack('<I', len(data))
+        chunk += data
+        if len(data) & 1:
+            chunk += b'\x00'
+        return chunk
+
+    # anih payload: 36 bytes
+    if isinstance(rate_jiffies, (list, tuple)):
+        default_rate = rate_jiffies[0] if rate_jiffies else 6
+    else:
+        default_rate = rate_jiffies
+    anih_payload = struct.pack('<IIIIIIIII',
+        36,           # cbSize
+        nframes,      # nFrames
+        nframes,      # nSteps
+        len(pixels),  # iWidth  (use last frame's dims; all identical for simple ANI)
+        len(pixels) // len(pixels[0]) * len(pixels[0]),  # placeholder -- recalc below
+        bpp,          # iBitCount
+        1,            # nPlanes
+        default_rate, # iDispRate
+        0,            # bfAttributes
+    )
+    # Recalculate using first frame's dimensions
+    h0 = len(frames[0][2])
+    w0 = len(frames[0][2][0])
+    anih_payload = struct.pack('<IIIIIIIII',
+        36, nframes, nframes, w0, h0,
+        (4 if len(frames[0][1]) <= 16 else 8),
+        1, default_rate, 0)
+
+    anih_chunk = riff_chunk(b'anih', anih_payload)
+
+    # rate chunk: nFrames DWORDs
+    if isinstance(rate_jiffies, (list, tuple)):
+        rates = list(rate_jiffies) + [default_rate] * (nframes - len(rate_jiffies))
+    else:
+        rates = [rate_jiffies] * nframes
+    rate_payload = b''.join(struct.pack('<I', r) for r in rates[:nframes])
+    rate_chunk = riff_chunk(b'rate', rate_payload)
+
+    # LIST 'fram' chunk: each icon chunk inside
+    list_inner = b'fram'
+    for ic in icon_chunks:
+        list_inner += riff_chunk(b'icon', ic)
+    list_chunk = riff_chunk(b'LIST', list_inner)
+
+    riff_body = b'ACON' + anih_chunk + rate_chunk + list_chunk
+    riff = b'RIFF' + struct.pack('<I', len(riff_body)) + riff_body
+    open(path, 'wb').write(riff)

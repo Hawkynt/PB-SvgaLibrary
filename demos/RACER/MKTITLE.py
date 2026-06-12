@@ -1,21 +1,17 @@
 """
-Generate TITLE.GIF for RACER: a 224x140 sunset-highway title splash.
+Generate TITLE.GIF for RACER: a 320x200 sunset-highway title splash.
 Scene: banded gradient sunset sky with dithered sun disc, road vanishing
 to horizon with perspective stripes, palm tree silhouettes, chrome title.
 
-Uses a proper LZW encoder (not pbassets write_gif87) so the GIF library
-decoder handles far fewer codes on a 224x140 image (horizontal bands
-compress very well with LZW).
-
-224x140 = 31360 pixels; the DOS GIF decoder crashes above ~32640 pixels
-due to a signed-integer overflow in decodedData string length tracking.
+Uses PIL's real LZW encoder via pbassets.write_gif_pil so the GIF library
+decoder handles real-world compressed output at full 320x200 resolution.
 """
-import sys, os, math, struct
+import sys, os, math
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'scripts'))
 import pbassets as A
 
-W, H = 224, 140
-HORIZON = 84    # horizon line y (60% down = 84 of 140)
+W, H = 320, 200
+HORIZON = 120    # horizon line y (60% down = 120 of 200)
 
 # ---- palette -----------------------------------------------------------------
 pal = [(0, 0, 0)] * 256
@@ -129,14 +125,14 @@ for y in range(HORIZON):
 
 # SUN DISC: solid concentric rings (no checkerboard dither: better LZW)
 sun_cx = W // 2
-sun_cy = HORIZON - 22
-sun_r  = 16
+sun_cy = HORIZON - 32
+sun_r  = 22
 A.disc(img, sun_cx, sun_cy, sun_r,      SUN_BASE + 5)
-A.disc(img, sun_cx, sun_cy, sun_r - 3,  SUN_BASE + 3)
-A.disc(img, sun_cx, sun_cy, sun_r - 7,  SUN_BASE + 1)
-A.disc(img, sun_cx, sun_cy, sun_r - 10, SUN_BASE + 0)
+A.disc(img, sun_cx, sun_cy, sun_r - 4,  SUN_BASE + 3)
+A.disc(img, sun_cx, sun_cy, sun_r - 10, SUN_BASE + 1)
+A.disc(img, sun_cx, sun_cy, sun_r - 14, SUN_BASE + 0)
 # Outer glow rings (full arcs, no dither)
-for ring in range(4):
+for ring in range(5):
     for yy in range(sun_cy - sun_r - ring - 1, sun_cy + sun_r + ring + 2):
         for xx in range(sun_cx - sun_r - ring - 1, sun_cx + sun_r + ring + 2):
             dx = xx - sun_cx
@@ -148,18 +144,18 @@ for ring in range(4):
                 A.putpx(img, xx, yy, SUN_BASE + 6 + min(1, ring))
 
 # Horizon haze band (solid)
-A.rect(img, 0, HORIZON - 3, W - 1, HORIZON - 1, 63)
-A.rect(img, 0, HORIZON - 6, W - 1, HORIZON - 4, 64)
+A.rect(img, 0, HORIZON - 4, W - 1, HORIZON - 1, 63)
+A.rect(img, 0, HORIZON - 9, W - 1, HORIZON - 5, 64)
 
 # GROUND: dark band below horizon
 A.rect(img, 0, HORIZON, W - 1, H - 1, 45)
-A.rect(img, 0, HORIZON, W - 1, HORIZON + 4, 46)
+A.rect(img, 0, HORIZON, W - 1, HORIZON + 6, 46)
 
 # ROAD: converging trapezoid (each row: solid sections -> good LZW compression)
 road_cx = W // 2
-road_w_far  = 8
-road_w_near = 70
-road_top_y = HORIZON + 2
+road_w_far  = 11
+road_w_near = 100
+road_top_y = HORIZON + 3
 
 for y in range(road_top_y, H):
     t = (y - road_top_y) / max(1, H - 1 - road_top_y)
@@ -171,24 +167,24 @@ for y in range(road_top_y, H):
     if rx1 < 0: rx1 = 0
     if rx2 > W - 1: rx2 = W - 1
     A.rect(img, rx1, y, rx2, y, road_ci)
-    rumb_w = max(2, hw // 8)
+    rumb_w = max(3, hw // 8)
     rum_ci = 43 if t > 0.5 else 44
     A.rect(img, max(0, rx1 - rumb_w), y, rx1, y, rum_ci)
     A.rect(img, rx2, y, min(W - 1, rx2 + rumb_w), y, rum_ci)
 
 # Road centre stripe dashes (keep solid lines for LZW)
-stripe_spacing = 10
-for stripe_y in range(road_top_y + 3, H - 3, stripe_spacing):
+stripe_spacing = 14
+for stripe_y in range(road_top_y + 4, H - 4, stripe_spacing):
     t = (stripe_y - road_top_y) / max(1, H - 1 - road_top_y)
     hw = int(road_w_far + (road_w_near - road_w_far) * t)
     sw = max(1, hw // 6)
-    stripe_len = max(2, int(4 * t))
+    stripe_len = max(2, int(6 * t))
     for dy in range(stripe_len):
         sy = stripe_y + dy
         if road_top_y <= sy < H:
             A.rect(img, road_cx - sw, sy, road_cx + sw, sy, 41)
 
-# PALM SILHOUETTES (scaled to smaller canvas)
+# PALM SILHOUETTES (scaled for 320x200)
 def draw_palm(img, px, base_y, trunk_h, frond_r):
     for ti in range(trunk_h):
         tx = px + ti // 8
@@ -205,21 +201,21 @@ def draw_palm(img, px, base_y, trunk_h, frond_r):
             if 0 <= fy < H and 0 <= fx < W:
                 A.putpx(img, fx, fy, 47)
 
-draw_palm(img,  16, H - 7, 42, 20)
-draw_palm(img,  35, H - 7, 32, 16)
-draw_palm(img, 178, H - 7, 44, 21)
-draw_palm(img, 196, H - 7, 30, 14)
-draw_palm(img,  68, HORIZON + 24, 18, 11)
-draw_palm(img, 152, HORIZON + 24, 19, 12)
+draw_palm(img,  22, H - 10, 60, 28)
+draw_palm(img,  50, H - 10, 46, 22)
+draw_palm(img, 254, H - 10, 63, 30)
+draw_palm(img, 280, H - 10, 43, 20)
+draw_palm(img,  97, HORIZON + 34, 26, 16)
+draw_palm(img, 218, HORIZON + 34, 27, 17)
 
 # ---- TITLE TEXT: chrome "RACER" ----------------------------------------------
 title = "RACER"
-ts = 2
+ts = 3
 tw = len(title) * 8 * ts
 tx = (W - tw) // 2
-ty = 12
+ty = 16
 # Drop shadows
-A.text(img, tx + 3, ty + 3, title, 58, scale=ts)
+A.text(img, tx + 4, ty + 4, title, 58, scale=ts)
 A.text(img, tx + 2, ty + 2, title, 58, scale=ts)
 # Chrome face
 A.text(img, tx,     ty,     title, 50, scale=ts)
@@ -239,132 +235,27 @@ for row_off in range(8 * ts):
 sub = "SPEED CHALLENGE"
 sub_tw = len(sub) * 8
 sub_tx = (W - sub_tw) // 2
-sub_ty = ty + 8 * ts + 6
+sub_ty = ty + 8 * ts + 8
 A.text(img, sub_tx + 1, sub_ty + 1, sub, 60, scale=1)
 A.text(img, sub_tx,     sub_ty,     sub, 59, scale=1)
 
 # Separator
-sep_y = sub_ty + 12
-A.rect(img, 20, sep_y,     W - 21, sep_y,     50)
-A.rect(img, 20, sep_y + 1, W - 21, sep_y + 1, 53)
+sep_y = sub_ty + 14
+A.rect(img, 28, sep_y,     W - 29, sep_y,     50)
+A.rect(img, 28, sep_y + 1, W - 29, sep_y + 1, 53)
 
 # PRESS ANY KEY
 pak = "PRESS ANY KEY"
 pak_tw = len(pak) * 8
 pak_tx = (W - pak_tw) // 2
-pak_ty = H - 12
+pak_ty = H - 14
 A.text(img, pak_tx + 1, pak_ty + 1, pak, 62, scale=1)
 A.text(img, pak_tx,     pak_ty,     pak, 61, scale=1)
 
 
-# ---- Proper LZW GIF87a writer -----------------------------------------------
-# Real LZW encoder so the library decoder handles far fewer codes.
-# Horizontal bands compress very well; the decoder (which builds decodedData
-# via string concatenation in PB 3.5) runs O(codes) iterations not O(pixels),
-# making 320x200 feasible within the DOS heap and time budget.
-
-def write_gif87_lzw(path, palette, pixels):
-    """
-    GIF87a with proper variable-width LZW.
-    palette : 256 (r,g,b) tuples, 8-bit
-    pixels  : list of H rows of W palette indices
-    """
-    h = len(pixels)
-    w = len(pixels[0])
-
-    MIN_CODE = 8
-    CLEAR    = 1 << MIN_CODE             # 256
-    EOI      = CLEAR + 1                 # 257
-
-    # Encode and pack bits in a single pass so cs stays perfectly in sync
-    cs  = MIN_CODE + 1                   # current code width
-    mc  = (1 << cs) - 1                  # max code for current width
-    nc  = EOI + 1                        # next assignable code
-    table = {bytes([i]): i for i in range(CLEAR)}
-
-    packed = bytearray()
-    acc = 0
-    nb  = 0
-
-    def emit(code):
-        nonlocal acc, nb
-        acc |= (code << nb)
-        nb  += cs
-        while nb >= 8:
-            packed.append(acc & 0xFF)
-            acc >>= 8
-            nb  -= 8
-
-    def do_reset():
-        nonlocal cs, mc, nc, table
-        cs    = MIN_CODE + 1
-        mc    = (1 << cs) - 1
-        nc    = EOI + 1
-        table = {bytes([i]): i for i in range(CLEAR)}
-
-    # Initial CLEAR, then reset decoder state
-    emit(CLEAR)
-    do_reset()
-
-    flat = [px for row in pixels for px in row]
-    buf  = bytes([flat[0]])
-
-    for px in flat[1:]:
-        ext = buf + bytes([px])
-        if ext in table:
-            buf = ext
-        else:
-            emit(table[buf])
-            if nc <= 4095:
-                table[ext] = nc
-                nc += 1
-                if nc > mc and cs < 12:
-                    cs += 1
-                    mc  = (1 << cs) - 1
-            if nc > 4095:
-                # Dictionary full: emit CLEAR and reset
-                emit(CLEAR)
-                do_reset()
-            buf = bytes([px])
-
-    # Last buffered token
-    emit(table[buf] if buf in table else buf[0])
-    # Advance nc so cs is at the right width for EOI
-    nc += 1
-    if nc > mc and cs < 12:
-        cs += 1
-        mc  = (1 << cs) - 1
-    emit(EOI)
-    if nb:
-        packed.append(acc & 0xFF)
-
-    # ---- assemble GIF file ----
-    out = bytearray(b'GIF87a')
-    out += struct.pack('<HH', w, h)
-    out += bytes([0xF7, 0, 0])           # global CT, 256 entries
-    for r, g, b in palette[:256]:
-        out += bytes([r & 0xFF, g & 0xFF, b & 0xFF])
-    out += b'\x00' * max(0, 768 - 3 * min(256, len(palette)))
-
-    out += b'\x2C'
-    out += struct.pack('<HHHH', 0, 0, w, h)
-    out += b'\x00'                       # no local CT, not interlaced
-    out.append(MIN_CODE)
-
-    i = 0
-    while i < len(packed):
-        chunk = packed[i:i + 255]
-        out.append(len(chunk))
-        out += chunk
-        i += 255
-    out += b'\x00\x3B'                   # block terminator + GIF trailer
-
-    open(path, 'wb').write(out)
-
-
 # ---- Write out ---------------------------------------------------------------
 out_path = os.path.join(os.path.dirname(__file__), 'TITLE.GIF')
-write_gif87_lzw(out_path, pal, img)
+A.write_gif_pil(out_path, pal, img)
 sz = os.path.getsize(out_path)
 print('Written %s  %d bytes' % (out_path, sz))
 print('OK')

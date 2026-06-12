@@ -15,119 +15,148 @@ def le16(v): return struct.pack('<H', v & 0xFFFF)
 def le32(v): return struct.pack('<I', v & 0xFFFFFFFF)
 
 # ---------------------------------------------------------------------------
-# ARROW.CUR  --  16x16, 1-bit, hotspot (0,0)
-# Layout mirrors the fixture in tests/DRAW_CUR.BAS:
-#   CUR header (6) + entry (16) + BITMAPINFOHEADER (40)
-#   + palette (2 x 4 = 8) + XOR rows (16 x 4 = 64) + AND rows (16 x 4 = 64)
+# ARROW.CUR  --  32x32, 4-bit, hotspot (0,0)
+# Classic top-left arrow pointer: white fill with black outline.
+# Palette: index 0 = transparent (background shows through), index 1 = black,
+#          index 15 = white.  4-bit, so 16 palette entries.
+# The AND mask marks every pixel outside the arrow shape as transparent (1).
 # ---------------------------------------------------------------------------
 def make_arrow_cur(path):
-    W, H = 16, 16
+    W, H = 32, 32
     hotX, hotY = 0, 0
 
-    # --- XOR bitmap: arrow shape (1=white/visible, 0=black/fill) ---
-    # We draw a classic top-left arrow.  1bpp, MSB first, DWORD-padded (4 bytes/row).
-    # Rows stored bottom-up in file.
-    # Arrow rows (screen top-down):
-    arrow_rows = [
-        0b1000000000000000,  # row  0  *
-        0b1100000000000000,  # row  1  **
-        0b1110000000000000,  # row  2  ***
-        0b1111000000000000,  # row  3  ****
-        0b1111100000000000,  # row  4  *****
-        0b1111110000000000,  # row  5  ******
-        0b1111111000000000,  # row  6  *******
-        0b1111111100000000,  # row  7  ********
-        0b1111111110000000,  # row  8  *********
-        0b1111100000000000,  # row  9  *****
-        0b1101100000000000,  # row 10  ** **
-        0b1001110000000000,  # row 11  *  ***
-        0b0000110000000000,  # row 12     **
-        0b0000110000000000,  # row 13     **
-        0b0000011000000000,  # row 14      **
-        0b0000000000000000,  # row 15
-    ]
-    # AND mask: 0=opaque where XOR has pixel, 1=transparent elsewhere
-    # Invert XOR to get mask (transparent = no pixel)
-    and_rows = [r ^ 0xFFFF for r in arrow_rows]
+    # 4-bit palette: 16 entries.
+    # Index 0 = black, index 15 = white; others unused (set to black).
+    PAL_BLACK = 0
+    PAL_WHITE = 15
+    palette = [(0, 0, 0)] * 16
+    palette[PAL_WHITE] = (255, 255, 255)
 
-    def row_to_bytes_1bpp(val_16):
-        # pack 16 bits MSB-first into 4 bytes (DWORD-padded)
-        hi = (val_16 >> 8) & 0xFF
-        lo = val_16 & 0xFF
-        return bytes([hi, lo, 0, 0])
+    # Arrow pixel map (32x32): True = filled pixel, False = transparent
+    # Classic top-left pointer shape.
+    def arrow_pixel(col, row):
+        if col < 0 or row < 0 or col >= W or row >= H:
+            return False
+        # The shaft of the arrow widens by one column per row from the top-left,
+        # forming a filled triangle on the left side.  Rows 16+ are the tail.
+        if row <= 15:
+            # diagonal edge: include pixel if col <= row
+            if col > row:
+                return False
+            return True
+        else:
+            # tail: two columns wide (cols 0-1) for rows 16-30; row 31 is empty
+            if row >= 31:
+                return False
+            if col <= 1:
+                return True
+            # right side of lower arrow body (col == row - 14 at widths that
+            # mirror a classic pointer's shoulder at row 10-15)
+            # We keep only the narrow tail after the notch at row 10 edge:
+            return False
 
-    xor_data = b''.join(row_to_bytes_1bpp(r) for r in reversed(arrow_rows))
-    and_data = b''.join(row_to_bytes_1bpp(r) for r in reversed(and_rows))
+    pixels = []
+    mask = []
+    for row in range(H):
+        prow = []
+        mrow = []
+        for col in range(W):
+            if arrow_pixel(col, row):
+                prow.append(PAL_WHITE)
+                mrow.append(0)        # opaque
+            else:
+                prow.append(PAL_BLACK)
+                mrow.append(1)        # transparent
+        pixels.append(prow)
+        mask.append(mrow)
 
-    bytes_per_row = 4
-    bih_height = H * 2   # doubled for AND+XOR
+    # Add a 1-pixel black outline on the inner left/top edge of the arrow
+    for row in range(1, H):
+        for col in range(W):
+            if arrow_pixel(col, row) and not arrow_pixel(col, row - 1):
+                pixels[row][col] = PAL_BLACK
+            if arrow_pixel(col, row) and not arrow_pixel(col - 1, row):
+                pixels[row][col] = PAL_BLACK
 
-    palette  = b'\x00\x00\x00\x00' + b'\xff\xff\xff\x00'   # black, white
-    dib_size = 40 + len(palette) + len(xor_data) + len(and_data)
-
-    image_offset = 6 + 16   # right after header + one entry
-
-    cur_hdr  = le16(0) + le16(2) + le16(1)           # reserved=0, kind=2, count=1
-    entry    = (bytes([W, H, 2, 0])                   # wide, height, colorCount, reserved
-                + le16(hotX) + le16(hotY)             # stored in Planes / BitCount
-                + le32(dib_size)
-                + le32(image_offset))
-    bih      = (le32(40)           # biSize
-                + le32(W)          # biWidth
-                + le32(bih_height) # biHeight  (doubled)
-                + le16(1)          # biPlanes
-                + le16(1)          # biBitCount
-                + le32(0)          # biCompression
-                + le32(0)          # biSizeImage
-                + le32(0) + le32(0) + le32(0) + le32(0))
-
-    data = cur_hdr + entry + bih + palette + xor_data + and_data
-    with open(path, 'wb') as f:
-        f.write(data)
-    print(f"  {os.path.basename(path)}  {len(data)} bytes")
+    A.write_cur(path, (hotX, hotY), palette, pixels, mask)
+    sz = os.path.getsize(path)
+    print(f"  {os.path.basename(path)}  {sz} bytes  ({W}x{H} 4-bit)")
 
 # ---------------------------------------------------------------------------
-# SPARK.ANI  --  4-frame sparkle, 8x8, RIFF ACON
-# DrawAni_ShowFrame ignores actual pixel data and draws coloured rects,
-# so we only need valid RIFF/ACON/anih chunks so LoadAnimation succeeds.
+# SPARK.ANI  --  4-frame sparkle animation, 16x16, 4-bit, RIFF ACON
+# Each frame is a complete embedded .CUR image (16x16, 4-bit palette,
+# transparent background, rotating/growing sparkle shape).
 # ---------------------------------------------------------------------------
 def make_spark_ani(path):
-    FRAME_COUNT = 4
-    W, H = 8, 8
+    W, H = 16, 16
     DISPLAY_RATE = 6    # ~100ms per frame (6/60 sec)
 
-    # anih chunk: 36 bytes of ANIHeaderType
-    anih_payload = (le32(36)           # Size
-                    + le32(FRAME_COUNT)# FrameCount
-                    + le32(FRAME_COUNT)# StepCount
-                    + le32(W)          # Wide
-                    + le32(H)          # Height
-                    + le32(1)          # BitCount
-                    + le32(1)          # PlaneCount
-                    + le32(DISPLAY_RATE)
-                    + le32(0))         # Flags
-    anih_chunk = b'anih' + le32(36) + anih_payload
+    # 4-bit palette: 16 entries
+    # index 0 = black (unused / transparent background colour)
+    # index 1 = dark yellow
+    # index 2 = bright yellow
+    # index 3 = white
+    # others = black
+    PAL = [(0, 0, 0)] * 16
+    PAL[1] = (180, 160, 0)
+    PAL[2] = (255, 220, 0)
+    PAL[3] = (255, 255, 255)
 
-    # rate chunk: 4 WORDs (but stored as LONGs per spec - 4 longs)
-    rate_payload = b''.join(le32(DISPLAY_RATE) for _ in range(FRAME_COUNT))
-    rate_chunk   = b'rate' + le32(len(rate_payload)) + rate_payload
+    def blank():
+        return [[0] * W for _ in range(H)]
 
-    # LIST fram chunk with minimal placeholder icon data
-    # ParseFrameList reads the LIST type tag ("fram") then iterates using
-    # the frame count; it stores approximate offsets but ShowFrame only
-    # draws a coloured rect -- so we just need the chunk to be parseable.
-    # Each frame nominally has some bytes; we stuff 40-byte placeholders.
-    frame_blobs = b'\x00' * 40 * FRAME_COUNT
-    list_payload = b'fram' + frame_blobs
-    list_chunk   = b'LIST' + le32(len(list_payload)) + list_payload
+    def blank_mask(all_transparent=True):
+        v = 1 if all_transparent else 0
+        return [[v] * W for _ in range(H)]
 
-    # Assemble RIFF body
-    riff_body = b'ACON' + anih_chunk + rate_chunk + list_chunk
-    riff = b'RIFF' + le32(len(riff_body)) + riff_body
+    def put(px, py, img, msk, c):
+        if 0 <= py < H and 0 <= px < W:
+            img[py][px] = c
+            msk[py][px] = 0  # opaque
 
-    with open(path, 'wb') as f:
-        f.write(riff)
-    print(f"  {os.path.basename(path)}  {len(riff)} bytes")
+    def cross(img, msk, cx, cy, arm, c):
+        for d in range(-arm, arm + 1):
+            put(cx + d, cy, img, msk, c)
+            put(cx, cy + d, img, msk, c)
+
+    def diag(img, msk, cx, cy, arm, c):
+        for d in range(-arm, arm + 1):
+            put(cx + d, cy + d, img, msk, c)
+            put(cx + d, cy - d, img, msk, c)
+
+    cx, cy = 7, 7   # centre at (7,7) in 16x16
+
+    frames = []
+
+    # Frame 0: small cross (arm=2), centre white
+    img, msk = blank(), blank_mask()
+    cross(img, msk, cx, cy, 2, 2)
+    put(cx, cy, img, msk, 3)
+    frames.append(((cx, cy), PAL, img, msk))
+
+    # Frame 1: medium cross + short diagonals (arm=3 cross, arm=1 diag)
+    img, msk = blank(), blank_mask()
+    cross(img, msk, cx, cy, 3, 2)
+    diag(img, msk, cx, cy, 1, 1)
+    put(cx, cy, img, msk, 3)
+    frames.append(((cx, cy), PAL, img, msk))
+
+    # Frame 2: short cross (arm=1) + medium diagonals (arm=3)
+    img, msk = blank(), blank_mask()
+    cross(img, msk, cx, cy, 1, 2)
+    diag(img, msk, cx, cy, 3, 2)
+    put(cx, cy, img, msk, 3)
+    frames.append(((cx, cy), PAL, img, msk))
+
+    # Frame 3: long diagonals only (arm=4), shrinking back
+    img, msk = blank(), blank_mask()
+    diag(img, msk, cx, cy, 4, 1)
+    put(cx, cy, img, msk, 3)
+    frames.append(((cx, cy), PAL, img, msk))
+
+    A.write_ani(path, frames, DISPLAY_RATE)
+    sz = os.path.getsize(path)
+    print(f"  {os.path.basename(path)}  {sz} bytes  ({W}x{H} 4-bit, {len(frames)} frames)")
 
 # ---------------------------------------------------------------------------
 # TITLE.BMP  320x60  8-bit

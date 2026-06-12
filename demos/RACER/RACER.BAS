@@ -110,14 +110,14 @@ smokeMode = 0
 IF INSTR(UCASE$(COMMAND$), "SMOKE") > 0 THEN smokeMode = 1
 
 ' ---- Title splash ------------------------------------------------------------
-' TITLE.GIF is 224x140 (centred on the 320x200 screen).
+' TITLE.GIF is 320x200 (full screen).
 ' DrawGif_Show loads the GIF using the library palette indices; SetupPalette
 ' below restores the game palette afterwards.
 DIM splFrmR  AS INTEGER
 DIM splKeyR  AS STRING
 DIM splXR    AS WORD
 DIM splYR    AS WORD
-splXR = 48 : splYR = 30
+splXR = 0 : splYR = 0
 CALL DrawGif_Show("TITLE.GIF", splXR, splYR)
 IF smokeMode = 1 THEN
     FOR splFrmR = 1 TO 20

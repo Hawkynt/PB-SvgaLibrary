@@ -287,6 +287,24 @@ DO
 
 LOOP
 
+' smoke cursor-pixel assertion: verify the cursor drew before cleanup.
+' hotspot (0,0) -> draw origin equals the logical cursor position.
+' Arrow pixel at (0,0) is opaque black (index 0) != PC_FELT (32).
+' smoke cursor-pixel assertion: verify the cursor drew before cleanup.
+' hotspot (0,0) -> draw origin equals the logical cursor position.
+' Arrow pixel at (0,0) is opaque black (index 0) != PC_FELT (32).
+DIM smokeOk AS BYTE
+DIM smokeCurX AS WORD, smokeCurY AS WORD
+DIM smokePixel AS BYTE
+smokeOk = 1
+IF gSmokeMode = 1 THEN
+    ' Verify that the ANI loaded successfully
+    IF gAniHandle = 255 THEN smokeOk = 0
+    CALL Cursor_GetPos(smokeCurX, smokeCurY)
+    smokePixel = Svga_GetPixel(smokeCurX, smokeCurY)
+    IF smokePixel = %PC_FELT THEN smokeOk = 0
+END IF
+
 ' cleanup and restore text mode
 CALL Cursor_Hide(0)
 CALL Cursor_Cleanup(0)
@@ -296,7 +314,7 @@ END IF
 
 CALL Svga_Close(0)
 
-IF gSmokeMode = 1 THEN
+IF gSmokeMode = 1 AND smokeOk = 1 THEN
     OPEN "SMOKE.OK" FOR OUTPUT AS #1
     PRINT #1, "OK " + Svga_Version$
     CLOSE #1
