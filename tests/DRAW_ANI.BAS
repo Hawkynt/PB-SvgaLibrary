@@ -515,3 +515,274 @@ SUB Test_ShowFrame_BadHandle
     CALL DrawAni_ShowFrame(0, 10, 10, 0)   ' IsLoaded = 0 --> also a no-op
     CALL Assert_IsTrue(1, "survived unloaded-slot ShowFrame")
 END SUB
+
+' =============================================================================
+' Binary helpers for building fixture files
+' =============================================================================
+FUNCTION LE16A(BYVAL v AS WORD) AS STRING
+    LE16A = CHR$(v AND 255) + CHR$((v \ 256) AND 255)
+END FUNCTION
+FUNCTION LE32A(BYVAL v AS LONG) AS STRING
+    LE32A = CHR$(v AND 255) + CHR$((v \ 256) AND 255) + _
+            CHR$((v \ 65536) AND 255) + CHR$((v \ 16777216) AND 255)
+END FUNCTION
+
+' Build a single-frame 4x4 4-bit CUR payload (as a string, not a file).
+' Palette: index 0=black(0), index 3=colour 3, index 7=colour 7, others=0.
+' XOR pattern (top-down screen order, stored bottom-up in file):
+'   row 0: pixels 3, 3, 3, 3   (all index 3)
+'   row 1: pixels 7, 7, 7, 7   (all index 7)
+'   row 2: pixels 3, 7, 3, 7
+'   row 3: pixels 7, 3, 7, 3
+' AND mask: all opaque (0).
+' Hotspot: (0, 0), kind=2 (CUR), width=4 height=4.
+FUNCTION MakeCurPayload4x4_4bit() AS STRING
+    DIM hdr AS STRING, entry AS STRING, bih AS STRING
+    DIM pal AS STRING, xorData AS STRING, andData AS STRING
+    DIM imageOffset AS LONG, bytesInRes AS LONG
+    DIM i AS INTEGER
+
+    imageOffset = 22   ' 6-byte CUR header + 16-byte directory entry
+    ' BIH(40) + palette(16*4=64) + XOR(4 bytes/row * 4 rows = 16) + AND(4 bytes/row * 4 rows = 16)
+    bytesInRes = 40 + 64 + 16 + 16
+
+    hdr   = LE16A(0) + LE16A(2) + LE16A(1)   ' reserved=0, kind=2 (CUR), count=1
+    entry = CHR$(4) + CHR$(4) + CHR$(16) + CHR$(0) + _
+            LE16A(0) + LE16A(0) + _           ' hotX=0, hotY=0
+            LE32A(bytesInRes) + LE32A(imageOffset)
+
+    ' BITMAPINFOHEADER: biHeight doubled (4 XOR + 4 AND rows)
+    bih = LE32A(40) + LE32A(4) + LE32A(8) + LE16A(1) + LE16A(4) + _
+          LE32A(0) + LE32A(0) + LE32A(0) + LE32A(0) + LE32A(0) + LE32A(0)
+
+    ' 16-entry BGRA palette: entry i = (B=i, G=i, R=i, A=0)
+    pal = ""
+    FOR i = 0 TO 15
+        pal = pal + CHR$(i) + CHR$(i) + CHR$(i) + CHR$(0)
+    NEXT i
+
+    ' XOR data (bottom-up: file-row 0 = screen row 3, file-row 3 = screen row 0)
+    ' Each row: 4 nibbles packed into 2 bytes, padded to 4 bytes (DWORD-aligned).
+    ' Screen row 3 (file-row 0): 7,3,7,3  -> nibbles: &H73 &H73 + 2 pad
+    ' Screen row 2 (file-row 1): 3,7,3,7  -> &H37 &H37 + 2 pad
+    ' Screen row 1 (file-row 2): 7,7,7,7  -> &H77 &H77 + 2 pad
+    ' Screen row 0 (file-row 3): 3,3,3,3  -> &H33 &H33 + 2 pad
+    xorData = CHR$(&H73) + CHR$(&H73) + CHR$(0) + CHR$(0)  ' file-row 0 (screen row 3)
+    xorData = xorData + CHR$(&H37) + CHR$(&H37) + CHR$(0) + CHR$(0)  ' screen row 2
+    xorData = xorData + CHR$(&H77) + CHR$(&H77) + CHR$(0) + CHR$(0)  ' screen row 1
+    xorData = xorData + CHR$(&H33) + CHR$(&H33) + CHR$(0) + CHR$(0)  ' screen row 0
+
+    ' AND mask: all opaque (bit=0)
+    andData = STRING$(16, CHR$(0))
+
+    MakeCurPayload4x4_4bit = hdr + entry + bih + pal + xorData + andData
+END FUNCTION
+
+' Write a spec-true 1-frame ANI file to disk.
+' The single icon chunk is a 4x4 4-bit CUR (see MakeCurPayload4x4_4bit).
+SUB MakeAniFile_1frame(BYVAL fileName AS STRING)
+    DIM iconPayload AS STRING
+    DIM anihPayload AS STRING
+    DIM ratePayload AS STRING
+    DIM listInner AS STRING, listChunk AS STRING
+    DIM anihChunk AS STRING, rateChunk AS STRING
+    DIM iconChunk AS STRING, riffBody AS STRING, riff AS STRING
+    DIM iconSize AS LONG, listSize AS LONG, riffBodySize AS LONG
+
+    iconPayload = MakeCurPayload4x4_4bit()
+    iconSize = LEN(iconPayload)
+
+    ' icon chunk: "icon" + LE32(size) + payload
+    iconChunk = "icon" + LE32A(iconSize) + iconPayload
+    ' WORD-align icon chunk (iconSize already even for our fixture)
+
+    ' LIST/fram inner: type tag "fram" + icon chunk(s)
+    listInner = "fram" + iconChunk
+    listSize = LEN(listInner)
+    listChunk = "LIST" + LE32A(listSize) + listInner
+
+    ' anih chunk: 36-byte ANIHeaderType
+    anihPayload = LE32A(36) + LE32A(1) + LE32A(1) + LE32A(4) + LE32A(4) + _
+                  LE32A(4) + LE32A(1) + LE32A(6) + LE32A(0)
+    anihChunk = "anih" + LE32A(36) + anihPayload
+
+    ' rate chunk: 1 DWORD
+    ratePayload = LE32A(6)
+    rateChunk = "rate" + LE32A(4) + ratePayload
+
+    ' Assemble RIFF body
+    riffBody = "ACON" + anihChunk + rateChunk + listChunk
+    riffBodySize = LEN(riffBody)
+    riff = "RIFF" + LE32A(riffBodySize) + riffBody
+
+    OPEN fileName FOR BINARY AS #7
+    PUT$ #7, riff
+    CLOSE #7
+END SUB
+
+' Helper: read one pixel from the VGA framebuffer at (x,y)
+FUNCTION GetP_Ani(BYVAL x AS WORD, BYVAL y AS WORD) AS INTEGER
+    DIM xv AS WORD, yv AS WORD, rv AS BYTE
+    xv = x : yv = y : rv = 0
+    CALL Vga_GetPixel(xv, yv, rv)
+    GetP_Ani = rv
+END FUNCTION
+
+' =============================================================================
+' LoadAnimation: spec-true ANI reads RIFF correctly (0-based fix)
+' =============================================================================
+SUB Test_LoadAnimation_SpecTrueANI
+    CALL Test_Case("LoadAnimation on spec-true ANI returns valid handle with correct frame count")
+    CALL ClearAllSlots
+    CALL MakeAniFile_1frame("TANI1.ANI")
+    DIM h AS BYTE
+    h = DrawAni_LoadAnimation("TANI1.ANI")
+    CALL Assert_AreNotEqual(h, 255, "handle <> 255 (load succeeded)")
+    CALL Assert_IsEqual(DrawAni_GetFrameCount(h), 1, "FrameCount = 1 from anih chunk")
+    CALL Assert_IsEqual(ANIAnimations(h).Wide, 4, "Wide = 4 from anih chunk")
+    CALL Assert_IsEqual(ANIAnimations(h).Height, 4, "Height = 4 from anih chunk")
+    CALL Assert_IsNotZero(ANIFrameOffStore(h, 0), "frame 0 offset recorded (not 0)")
+    CALL Assert_IsNotZero(ANIFrameSizStore(h, 0), "frame 0 size recorded (not 0)")
+    IF h < 8 THEN CALL DrawAni_FreeAnimation(h)
+END SUB
+
+' =============================================================================
+' LoadAnimation: file with wrong RIFF magic returns 255
+' =============================================================================
+SUB Test_LoadAnimation_BadMagic
+    CALL Test_Case("LoadAnimation returns 255 when RIFF magic is wrong")
+    CALL ClearAllSlots
+    OPEN "TBAD.ANI" FOR BINARY AS #8
+    PUT$ #8, "XXXX" + LE32A(4) + "ACON"
+    CLOSE #8
+    CALL Assert_IsEqual(DrawAni_LoadAnimation("TBAD.ANI"), 255, "bad magic -> 255")
+END SUB
+
+' =============================================================================
+' ShowFrame: decodes 4-bit CUR icon chunk and draws correct opaque pixels
+' =============================================================================
+SUB Test_ShowFrame_RealPixels
+    CALL Test_Case("ShowFrame draws decoded 4-bit icon pixels at correct screen positions")
+    CALL ClearAllSlots
+    ' Fill background with colour 99 so we can distinguish undrawn pixels
+    DIM bx AS WORD, by AS WORD
+    FOR by = 0 TO 9
+        FOR bx = 0 TO 9
+            CALL Vga_PutPixel(bx, by, 99)
+        NEXT bx
+    NEXT by
+
+    CALL MakeAniFile_1frame("TANI1.ANI")
+    DIM h AS BYTE
+    h = DrawAni_LoadAnimation("TANI1.ANI")
+    IF h = 255 THEN
+        CALL Assert_IsTrue(0, "load failed -- cannot test ShowFrame pixels")
+        EXIT SUB
+    END IF
+
+    ' Draw frame 0 at (0,0).  hotspot (0,0) -> no offset adjustment.
+    ' Screen row 0 = index 3 for all 4 columns.
+    ' Screen row 1 = index 7 for all 4 columns.
+    CALL DrawAni_ShowFrame(h, 0, 0, 0)
+
+    ' Row 0 (screen y=0): all pixels = palette index 3
+    CALL Assert_IsEqual(GetP_Ani(0, 0), 3, "ShowFrame row0 col0 = palette index 3")
+    CALL Assert_IsEqual(GetP_Ani(1, 0), 3, "ShowFrame row0 col1 = palette index 3")
+    CALL Assert_IsEqual(GetP_Ani(3, 0), 3, "ShowFrame row0 col3 = palette index 3")
+    ' Row 1 (screen y=1): all pixels = palette index 7
+    CALL Assert_IsEqual(GetP_Ani(0, 1), 7, "ShowFrame row1 col0 = palette index 7")
+    CALL Assert_IsEqual(GetP_Ani(3, 1), 7, "ShowFrame row1 col3 = palette index 7")
+    ' Row 2 (screen y=2): alternating 3,7,3,7
+    CALL Assert_IsEqual(GetP_Ani(0, 2), 3, "ShowFrame row2 col0 = 3")
+    CALL Assert_IsEqual(GetP_Ani(1, 2), 7, "ShowFrame row2 col1 = 7")
+    CALL Assert_IsEqual(GetP_Ani(2, 2), 3, "ShowFrame row2 col2 = 3")
+    CALL Assert_IsEqual(GetP_Ani(3, 2), 7, "ShowFrame row2 col3 = 7")
+    ' Row 3 (screen y=3): alternating 7,3,7,3
+    CALL Assert_IsEqual(GetP_Ani(0, 3), 7, "ShowFrame row3 col0 = 7")
+    CALL Assert_IsEqual(GetP_Ani(1, 3), 3, "ShowFrame row3 col1 = 3")
+
+    IF h < 8 THEN CALL DrawAni_FreeAnimation(h)
+END SUB
+
+' =============================================================================
+' ShowFrame transparency: AND-masked pixel is not overwritten
+' =============================================================================
+SUB Test_ShowFrame_Transparency
+    CALL Test_Case("ShowFrame respects AND mask: transparent pixel leaves background intact")
+    CALL ClearAllSlots
+
+    ' Build a 2x2 1-bit CUR payload: only top-left pixel (0,0) is opaque (colour 255);
+    ' the other 3 are transparent.
+    ' Pixel layout (screen order, top-down):
+    '   row 0: opaque pixel index 1 (=255), transparent pixel 0
+    '   row 1: transparent, transparent
+    ' AND mask (0=opaque, 1=transparent):
+    '   row 0: bit7=0 (opaque), bit6=1 (transparent) -> byte &H40; padded to 4 bytes
+    '   row 1: all transparent -> byte &HC0
+    ' XOR 1-bit: row 0 top-pixel=1 -> &H80; row 1 all 0 -> &H00
+    DIM hdr2 AS STRING, entry2 AS STRING, bih2 AS STRING
+    DIM pal2 AS STRING, xor2 AS STRING, and2 AS STRING
+    DIM iconPayload2 AS STRING
+    DIM anihPayload2 AS STRING, ratePayload2 AS STRING
+    DIM listInner2 AS STRING, listChunk2 AS STRING
+    DIM anihChunk2 AS STRING, rateChunk2 AS STRING
+    DIM iconChunk2 AS STRING, riffBody2 AS STRING, riff2 AS STRING
+    DIM iconSize2 AS LONG
+
+    hdr2   = LE16A(0) + LE16A(2) + LE16A(1)
+    ' XOR: 1bpp, 2px/row -> scanline = ((2*1+31)\32)*4 = 4 bytes
+    ' AND mask: 2px/row -> 4 bytes/row
+    ' BIH(40) + palette(2*4=8) + XOR(4*2=8) + AND(4*2=8) = 64
+    entry2 = CHR$(2) + CHR$(2) + CHR$(2) + CHR$(0) + _
+             LE16A(0) + LE16A(0) + LE32A(64) + LE32A(22)
+    bih2   = LE32A(40) + LE32A(2) + LE32A(4) + LE16A(1) + LE16A(1) + _
+             LE32A(0) + LE32A(0) + LE32A(0) + LE32A(0) + LE32A(0) + LE32A(0)
+    pal2   = CHR$(0)+CHR$(0)+CHR$(0)+CHR$(0) + CHR$(255)+CHR$(255)+CHR$(255)+CHR$(0)
+    ' XOR bottom-up: file-row 0 = screen row 1 (all 0) ; file-row 1 = screen row 0 (px0=1)
+    xor2   = CHR$(0)+CHR$(0)+CHR$(0)+CHR$(0) + CHR$(&H80)+CHR$(0)+CHR$(0)+CHR$(0)
+    ' AND bottom-up: file-row 0 = screen row 1 (all transparent) ; file-row 1 = screen row 0 (px0 opaque, px1 transparent)
+    and2   = CHR$(&HC0)+CHR$(0)+CHR$(0)+CHR$(0) + CHR$(&H40)+CHR$(0)+CHR$(0)+CHR$(0)
+    iconPayload2 = hdr2 + entry2 + bih2 + pal2 + xor2 + and2
+    iconSize2 = LEN(iconPayload2)
+
+    iconChunk2  = "icon" + LE32A(iconSize2) + iconPayload2
+    listInner2  = "fram" + iconChunk2
+    listChunk2  = "LIST" + LE32A(LEN(listInner2)) + listInner2
+    anihPayload2 = LE32A(36)+LE32A(1)+LE32A(1)+LE32A(2)+LE32A(2)+LE32A(1)+LE32A(1)+LE32A(6)+LE32A(0)
+    anihChunk2  = "anih" + LE32A(36) + anihPayload2
+    ratePayload2 = LE32A(6)
+    rateChunk2  = "rate" + LE32A(4) + ratePayload2
+    riffBody2   = "ACON" + anihChunk2 + rateChunk2 + listChunk2
+    riff2       = "RIFF" + LE32A(LEN(riffBody2)) + riffBody2
+
+    OPEN "TANI2.ANI" FOR BINARY AS #6
+    PUT$ #6, riff2
+    CLOSE #6
+
+    ' Fill (0,0)..(3,3) with background colour 42
+    DIM tx AS WORD, ty AS WORD
+    FOR ty = 0 TO 3
+        FOR tx = 0 TO 3
+            CALL Vga_PutPixel(tx, ty, 42)
+        NEXT tx
+    NEXT ty
+
+    DIM h2 AS BYTE
+    h2 = DrawAni_LoadAnimation("TANI2.ANI")
+    IF h2 = 255 THEN
+        CALL Assert_IsTrue(0, "load failed -- cannot test transparency")
+        EXIT SUB
+    END IF
+
+    CALL DrawAni_ShowFrame(h2, 0, 0, 0)
+
+    ' Pixel (0,0) is opaque with index 1 -> colour 255
+    CALL Assert_IsEqual(GetP_Ani(0, 0), 255, "opaque pixel (0,0) = 255 (index 1)")
+    ' Pixel (1,0) is transparent -> stays 42
+    CALL Assert_IsEqual(GetP_Ani(1, 0), 42, "transparent pixel (1,0) unchanged = 42")
+    ' Row 1: all transparent -> stay 42
+    CALL Assert_IsEqual(GetP_Ani(0, 1), 42, "transparent row1 (0,1) unchanged = 42")
+    CALL Assert_IsEqual(GetP_Ani(1, 1), 42, "transparent row1 (1,1) unchanged = 42")
+
+    IF h2 < 8 THEN CALL DrawAni_FreeAnimation(h2)
+END SUB

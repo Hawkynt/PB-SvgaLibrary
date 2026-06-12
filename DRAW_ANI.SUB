@@ -54,12 +54,15 @@ END TYPE
 %ANIM_STATE_FINISHED = 3
 
 DIM ANIAnimations(8) AS SHARED ANIContextType  ' Support up to 8 animations
-DIM ANIFrameStore(8) AS SHARED STRING
+DIM ANIFrameStore(8) AS SHARED STRING          ' Source file name per animation
 
 ' Animation arrays (moved out of TYPE due to PowerBASIC limitations)
-DIM ANIFrameOffsets(8, 99) AS SHARED LONG     ' Frame offsets (8 anims, 100 frames max)
+' Each 'icon' chunk payload (a complete CUR file) is cached as a string.
+' Max 8 animations x 16 frames.
+DIM ANIFrameOffStore(8, 15) AS SHARED LONG    ' Byte offset of icon payload in source file
+DIM ANIFrameSizStore(8, 15) AS SHARED LONG    ' Byte size of icon payload
 DIM ANISequenceData(8, 99) AS SHARED WORD     ' Animation sequences
-DIM ANIRateData(8, 99) AS SHARED WORD         ' Frame rate dataBuf
+DIM ANIRateData(8, 99) AS SHARED WORD         ' Frame rate data
 
 ' =============================================================================
 ' Load ANI animation file
@@ -95,9 +98,9 @@ FUNCTION DrawAni_LoadAnimation(BYVAL fileName AS STRING) AS BYTE
         EXIT FUNCTION
     END IF
 
-    ' Read and validate RIFF header
+    ' Read and validate RIFF header (PB 3.5 BINARY is 0-based)
     ChunkID = SPACE$(4)
-    GET FileHandle, 1, ChunkID
+    GET FileHandle, 0, ChunkID
     IF ChunkID <> "RIFF" THEN
         CLOSE FileHandle
         DrawAni_LoadAnimation = 255
@@ -127,16 +130,23 @@ FUNCTION DrawAni_LoadAnimation(BYVAL fileName AS STRING) AS BYTE
     ANIAnimations(ANIHandle).HotspotY = 16
     ANIAnimations(ANIHandle).LoopCount = 0   ' Infinite
     ANIAnimations(ANIHandle).TotalLoops = 0
+    ANIFrameStore(ANIHandle) = fileName
 
     ' Initialize animation management
     AnimationStates(ANIHandle) = %ANIM_STATE_STOPPED
     AnimationTimerIDs(ANIHandle) = 255       ' No timer assigned
     AnimationAutoCleanup(ANIHandle) = 0      ' Manual cleanup
 
-    ' Parse ANI chunks
-    FilePos = 12  ' After RIFF header
+    ' Clear frame offset/size tables for this slot
+    FOR I = 0 TO 15
+        ANIFrameOffStore(ANIHandle, I) = 0
+        ANIFrameSizStore(ANIHandle, I) = 0
+    NEXT I
+
+    ' Parse ANI chunks (positions are 0-based, chunk starts at 12)
+    FilePos = 12  ' After RIFF header (4) + size (4) + ACON (4)
     DO WHILE FilePos < LOF(FileHandle) - 8
-        SEEK FileHandle, FilePos + 1
+        SEEK FileHandle, FilePos
         GET FileHandle, , ChunkID
         GET FileHandle, , ChunkSize
 
@@ -144,10 +154,10 @@ FUNCTION DrawAni_LoadAnimation(BYVAL fileName AS STRING) AS BYTE
             CASE "anih"  ' Animation header
                 CALL DrawAni_ParseHeaderChunk(FileHandle, ANIHandle, ChunkSize)
 
-            CASE "seq "  ' Sequence dataBuf
+            CASE "seq "  ' Sequence data
                 CALL DrawAni_ParseSequenceChunk(FileHandle, ANIHandle, ChunkSize)
 
-            CASE "rate"  ' Rate dataBuf
+            CASE "rate"  ' Rate data
                 CALL DrawAni_ParseRateChunk(FileHandle, ANIHandle, ChunkSize)
 
             CASE "LIST"  ' List of frames
@@ -157,7 +167,7 @@ FUNCTION DrawAni_LoadAnimation(BYVAL fileName AS STRING) AS BYTE
                 ' Skip unknown chunks
         END SELECT
 
-        ' Move to next chunk (align to WORD boundary)
+        ' Move to next chunk (WORD-align)
         FilePos = FilePos + 8 + ChunkSize
         IF (ChunkSize AND 1) THEN FilePos = FilePos + 1
     LOOP
@@ -195,7 +205,6 @@ SUB DrawAni_ParseHeaderChunk(BYVAL fileHandle AS INTEGER, BYVAL aniHandle AS BYT
     ANIAnimations(aniHandle).Height = ANIHeader.Height
 
     ' Convert display rate (1/60 sec units) to 10ms ticks
-    ' 1/60 sec = 16.67ms = 1.67 ticks (round to 2)
     IF ANIHeader.DisplayRate > 0 THEN
         ANIAnimations(aniHandle).FrameDelay = (ANIHeader.DisplayRate * 167) \ 100
         IF ANIAnimations(aniHandle).FrameDelay < 1 THEN ANIAnimations(aniHandle).FrameDelay = 1
@@ -216,9 +225,8 @@ SUB DrawAni_ParseSequenceChunk(BYVAL fileHandle AS INTEGER, BYVAL aniHandle AS B
 
     SequenceCount = chunkSize \ 4  ' 4 bytes per sequence entry
 
-    ' Read sequence dataBuf using global arrays
     FOR I = 0 TO SequenceCount - 1
-        IF I < 100 THEN  ' Max 100 frames
+        IF I < 100 THEN
             GET fileHandle, , FrameIndex
             ANISequenceData(aniHandle, I) = FrameIndex
         END IF
@@ -235,23 +243,23 @@ END SUB
 ' =============================================================================
 SUB DrawAni_ParseRateChunk(BYVAL fileHandle AS INTEGER, BYVAL aniHandle AS BYTE, BYVAL chunkSize AS LONG)
     DIM RateCount AS WORD
-    DIM I AS WORD, Rate AS WORD
+    DIM I AS WORD, RateVal AS LONG
 
     RateCount = chunkSize \ 4  ' 4 bytes per rate entry
 
-    ' Read rate dataBuf using global arrays
     FOR I = 0 TO RateCount - 1
-        IF I < 100 THEN  ' Max 100 frames
-            GET fileHandle, , Rate
+        IF I < 100 THEN
+            GET fileHandle, , RateVal
             ' Convert 1/60 sec units to 10ms ticks
-            ANIRateData(aniHandle, I) = (Rate * 167) \ 100
+            ANIRateData(aniHandle, I) = (RateVal * 167) \ 100
             IF ANIRateData(aniHandle, I) < 1 THEN ANIRateData(aniHandle, I) = 1
         END IF
     NEXT I
 END SUB
 
 ' =============================================================================
-' Parse frame list (simplified - assumes ICO frames)
+' Parse frame list (LIST/fram): records the file offset and size of each
+' 'icon' chunk payload so DrawAni_ShowFrame can re-read them on demand.
 ' Parameters:
 '   FileHandle - Open file handle (BYVAL)
 '   ANIHandle - Animation handle (BYVAL)
@@ -260,61 +268,237 @@ END SUB
 ' =============================================================================
 SUB DrawAni_ParseFrameList(BYVAL fileHandle AS INTEGER, BYVAL aniHandle AS BYTE, BYVAL chunkSize AS LONG)
     DIM ListType AS STRING
-    DIM FrameCount AS WORD
-    DIM I AS WORD
-    DIM CurrentPos AS LONG
+    DIM SubID AS STRING
+    DIM SubSize AS LONG
+    DIM FrameIdx AS WORD
+    DIM ListEnd AS LONG
 
-    ' Read LIST type
     ListType = SPACE$(4)
     GET fileHandle, , ListType
-
     IF ListType <> "fram" THEN EXIT SUB
 
-    ' Parse individual frames (simplified) using global arrays
-    CurrentPos = SEEK(fileHandle)
-    FOR I = 0 TO ANIAnimations(aniHandle).FrameCount - 1
-        IF I < 100 THEN  ' Max 100 frames
-            ANIFrameOffsets(aniHandle, I) = CurrentPos
-            ' Skip to next frame (simplified - would need to parse each ICO)
-            CurrentPos = CurrentPos + 1000  ' Approximate frame size
+    ' Walk the sub-chunks inside LIST/fram; each should be an 'icon' chunk.
+    ' SEEK(fileHandle) is now positioned right after the 4-byte list type tag.
+    ' Positions are 0-based in PB 3.5 BINARY files.
+    ListEnd = SEEK(fileHandle) + (chunkSize - 4)  ' 0-based exclusive end
+    FrameIdx = 0
+
+    DO WHILE SEEK(fileHandle) < ListEnd - 7 AND FrameIdx < 16
+        SubID = SPACE$(4)
+        GET fileHandle, , SubID
+        GET fileHandle, , SubSize
+
+        IF SubID = "icon" THEN
+            ' SEEK(fileHandle) is now the 0-based offset of the icon payload
+            ANIFrameOffStore(aniHandle, FrameIdx) = SEEK(fileHandle)
+            ANIFrameSizStore(aniHandle, FrameIdx) = SubSize
+            FrameIdx = FrameIdx + 1
         END IF
-    NEXT I
+
+        ' Skip past the payload (WORD-aligned)
+        SEEK fileHandle, SEEK(fileHandle) + SubSize
+        IF (SubSize AND 1) THEN SEEK fileHandle, SEEK(fileHandle) + 1
+    LOOP
 END SUB
 
 ' =============================================================================
-' Display specific frame of ANI animation
+' Display specific frame of ANI animation by decoding its embedded CUR image.
 ' Parameters:
 '   AnimHandle - Animation handle (BYVAL)
-'   X, Y - Display position (BYVAL)
+'   X, Y - Display position relative to hotspot (BYVAL)
 '   FrameIndex - Frame to display (BYVAL)
 ' Returns: Nothing
 ' =============================================================================
 SUB DrawAni_ShowFrame(BYVAL animHandle AS BYTE, BYVAL x AS WORD, BYVAL y AS WORD, BYVAL frameIndex AS WORD)
     DIM ActualFrame AS WORD
+    DIM FileHandle AS INTEGER
+    DIM IconPayload AS STRING
+    DIM PayloadOff AS LONG
+    DIM PayloadSiz AS LONG
 
     IF animHandle > 7 OR ANIAnimations(animHandle).IsLoaded = 0 THEN EXIT SUB
     IF frameIndex >= ANIAnimations(animHandle).FrameCount THEN frameIndex = 0
 
-    ' Get actual frame index (consider sequence)
+    ' Resolve sequence mapping
     IF frameIndex < 100 AND ANISequenceData(animHandle, frameIndex) > 0 THEN
         ActualFrame = ANISequenceData(animHandle, frameIndex)
     ELSE
         ActualFrame = frameIndex
     END IF
 
-    ' Adjust position for hotspot
-    x = x - ANIAnimations(animHandle).HotspotX
-    y = y - ANIAnimations(animHandle).HotspotY
+    ' Locate the icon chunk payload for this frame
+    IF ActualFrame > 15 THEN ActualFrame = 0
+    PayloadOff = ANIFrameOffStore(animHandle, ActualFrame)
+    PayloadSiz = ANIFrameSizStore(animHandle, ActualFrame)
 
-    ' Draw frame (simplified - draws colored rectangle for now)
-    ' Full implementation would load and draw actual ICO frame dataBuf
-    DIM FrameColor AS BYTE
-    FrameColor = (ActualFrame * 32) MOD 256
+    IF PayloadOff = 0 OR PayloadSiz = 0 THEN
+        ' No real frame data loaded; nothing to draw
+        ANIAnimations(animHandle).CurrentFrame = frameIndex
+        EXIT SUB
+    END IF
 
-    CALL Svga_FillRect(x, y, x + ANIAnimations(animHandle).Wide - 1, y + ANIAnimations(animHandle).Height - 1, FrameColor)
-    CALL Svga_DrawRect(x, y, x + ANIAnimations(animHandle).Wide - 1, y + ANIAnimations(animHandle).Height - 1, 15)
+    ' Read icon payload from file
+    FileHandle = FREEFILE
+    OPEN ANIFrameStore(animHandle) FOR BINARY ACCESS READ AS FileHandle
+    IF LOF(FileHandle) < PayloadOff + PayloadSiz THEN
+        CLOSE FileHandle
+        ANIAnimations(animHandle).CurrentFrame = frameIndex
+        EXIT SUB
+    END IF
+    SEEK FileHandle, PayloadOff
+    IconPayload = SPACE$(PayloadSiz)
+    GET FileHandle, , IconPayload
+    CLOSE FileHandle
+
+    ' Decode the embedded CUR file and draw it at (x, y)
+    ' The hotspot for the frame is read from the CUR directory entry.
+    CALL DrawAni_RenderIconPayload(IconPayload, x, y)
 
     ANIAnimations(animHandle).CurrentFrame = frameIndex
+END SUB
+
+' =============================================================================
+' Decode and render an in-memory CUR/ICO file payload at screen position (x,y).
+' Hotspot from the CUR directory entry is subtracted from the draw position.
+' Parameters:
+'   Payload - Complete CUR file bytes (BYVAL)
+'   X, Y    - Position (hotspot-relative) (BYVAL)
+' Returns: Nothing
+' =============================================================================
+SUB DrawAni_RenderIconPayload(BYVAL payload AS STRING, BYVAL x AS WORD, BYVAL y AS WORD)
+    DIM Reserved AS WORD, Kind AS WORD, Count AS WORD
+    DIM EntW AS BYTE, EntH AS BYTE, EntCC AS BYTE, EntRsv AS BYTE
+    DIM HotX AS WORD, HotY AS WORD
+    DIM ImgSize AS LONG, ImgOff AS LONG
+    DIM BihSize AS LONG, BihW AS LONG, BihH AS LONG
+    DIM BihBpp AS WORD, PalEntries AS WORD
+    DIM ScanW AS WORD, MaskW AS WORD
+    DIM DrawW AS WORD, DrawH AS WORD
+    DIM PalOff AS LONG, XorOff AS LONG, AndOff AS LONG
+    DIM PX AS WORD, PY AS WORD
+    DIM SrcOff AS LONG, MskByteOff AS LONG
+    DIM PixByte AS BYTE, MskByte AS BYTE, MskBit AS BYTE
+    DIM PixVal AS BYTE
+    DIM ScreenX AS WORD, ScreenY AS WORD
+    DIM PalIdx AS BYTE
+    DIM BitShift AS BYTE
+
+    ' Minimum valid CUR payload: 6-byte header + 16-byte entry
+    IF LEN(payload) < 22 THEN EXIT SUB
+
+    Reserved = ASC(MID$(payload, 1, 1)) + ASC(MID$(payload, 2, 1)) * 256
+    Kind     = ASC(MID$(payload, 3, 1)) + ASC(MID$(payload, 4, 1)) * 256
+    Count    = ASC(MID$(payload, 5, 1)) + ASC(MID$(payload, 6, 1)) * 256
+
+    IF Reserved <> 0 OR Count = 0 THEN EXIT SUB
+
+    ' Read first directory entry (offset 6, 16 bytes)
+    EntW   = ASC(MID$(payload, 7, 1))
+    EntH   = ASC(MID$(payload, 8, 1))
+    EntCC  = ASC(MID$(payload, 9, 1))
+    ' EntRsv at byte 10 (index 10) -- skip
+    HotX   = ASC(MID$(payload, 11, 1)) + ASC(MID$(payload, 12, 1)) * 256
+    HotY   = ASC(MID$(payload, 13, 1)) + ASC(MID$(payload, 14, 1)) * 256
+    ImgSize = ASC(MID$(payload, 15, 1)) + ASC(MID$(payload, 16, 1)) * 256 _
+             + ASC(MID$(payload, 17, 1)) * 65536
+    ImgOff  = ASC(MID$(payload, 19, 1)) + ASC(MID$(payload, 20, 1)) * 256 _
+             + ASC(MID$(payload, 21, 1)) * 65536
+
+    ' Dimensions: 0 encodes 256 per ICO/CUR spec
+    DrawW = EntW : IF DrawW = 0 THEN DrawW = 256
+    DrawH = EntH : IF DrawH = 0 THEN DrawH = 256
+
+    ' Adjust draw position for hotspot (CUR only; Kind=2)
+    IF Kind = 2 THEN
+        x = x - HotX
+        y = y - HotY
+    END IF
+
+    ' Read biBitCount from BITMAPINFOHEADER at ImageOffset+14 (1-based in string)
+    ' ImgOff is 0-based file offset; convert to 1-based string index
+    DIM BihBase AS LONG
+    BihBase = ImgOff + 1  ' 1-based string offset of BIH start
+
+    IF BihBase + 15 > LEN(payload) THEN EXIT SUB
+    BihBpp = ASC(MID$(payload, BihBase + 14, 1)) + ASC(MID$(payload, BihBase + 15, 1)) * 256
+
+    ' Palette entry count from actual bit depth
+    IF BihBpp > 0 AND BihBpp <= 8 THEN
+        PalEntries = 1
+        FOR BitShift = 1 TO BihBpp
+            PalEntries = PalEntries * 2
+        NEXT BitShift
+    ELSE
+        PalEntries = 0
+    END IF
+
+    ' XOR pixel data starts at BIH (40 bytes) + colour table (PalEntries*4)
+    XorOff = BihBase + 40 + PalEntries * 4   ' 1-based
+    PalOff = BihBase + 40                     ' 1-based start of colour table
+
+    ' Scanline widths (DWORD-aligned)
+    ScanW = ((DrawW * BihBpp + 31) \ 32) * 4
+    MaskW = ((DrawW + 31) \ 32) * 4
+
+    ' AND mask immediately follows XOR data
+    AndOff = XorOff + ScanW * DrawH   ' 1-based
+
+    IF AndOff + MaskW * DrawH - 1 > LEN(payload) THEN EXIT SUB
+
+    ' Render pixel by pixel (XOR rows are bottom-up)
+    FOR PY = 0 TO DrawH - 1
+        ScreenY = y + PY
+        IF ScreenY >= SVGAScreenContext.YRes THEN EXIT FOR
+        IF ScreenY < 0 THEN GOTO NextAniRow
+
+        FOR PX = 0 TO DrawW - 1
+            ScreenX = x + PX
+            IF ScreenX >= SVGAScreenContext.XRes THEN EXIT FOR
+            IF ScreenX < 0 THEN GOTO NextAniCol
+
+            ' AND mask: bottom-up row (DrawH-1-PY)
+            MskByteOff = AndOff + (DrawH - 1 - PY) * MaskW + (PX \ 8)
+            MskByte = ASC(MID$(payload, MskByteOff, 1))
+            MskBit = (MskByte \ (2 ^ (7 - (PX AND 7)))) AND 1
+
+            IF MskBit = 0 THEN  ' Opaque pixel
+                ' XOR pixel: bottom-up row (DrawH-1-PY)
+                SELECT CASE BihBpp
+                    CASE 1
+                        SrcOff = XorOff + (DrawH - 1 - PY) * ScanW + (PX \ 8)
+                        PixByte = ASC(MID$(payload, SrcOff, 1))
+                        PalIdx = (PixByte \ (2 ^ (7 - (PX AND 7)))) AND 1
+                        PalIdx = PalIdx * 255  ' Map 1-bit: 0->black(0), 1->white(255)
+
+                    CASE 4
+                        SrcOff = XorOff + (DrawH - 1 - PY) * ScanW + (PX \ 2)
+                        PixByte = ASC(MID$(payload, SrcOff, 1))
+                        IF (PX AND 1) = 0 THEN
+                            PalIdx = (PixByte \ 16) AND 15
+                        ELSE
+                            PalIdx = PixByte AND 15
+                        END IF
+
+                    CASE 8
+                        SrcOff = XorOff + (DrawH - 1 - PY) * ScanW + PX
+                        PalIdx = ASC(MID$(payload, SrcOff, 1))
+
+                    CASE ELSE
+                        PalIdx = 0
+                END SELECT
+
+                ' For indexed VGA modes, write the palette index as the pixel value.
+                ' 1-bit was already converted to 0/255 above; 4-bit and 8-bit use
+                ' the raw index directly (maps to the VGA DAC slot).
+                PixVal = PalIdx
+
+                CALL Svga_PutPixel(ScreenX, ScreenY, PixVal)
+            END IF
+
+            NextAniCol:
+        NEXT PX
+        NextAniRow:
+    NEXT PY
 END SUB
 
 ' =============================================================================
@@ -413,7 +597,7 @@ FUNCTION DrawAni_IsPlaying(BYVAL animHandle AS BYTE) AS BYTE
     IF animHandle > 7 OR ANIAnimations(animHandle).IsLoaded = 0 THEN
         DrawAni_IsPlaying = 0
     ELSE
-        DrawAni_IsPlaying = (AnimationStates(animHandle) = %ANIM_STATE_PLAYING)  ' TotalLoops=0 also means "infinite" - the state machine disambiguates
+        DrawAni_IsPlaying = (AnimationStates(animHandle) = %ANIM_STATE_PLAYING)
     END IF
 END FUNCTION
 
@@ -429,7 +613,7 @@ SUB DrawAni_StopAnimation(BYVAL animHandle AS BYTE)
     ANIAnimations(animHandle).LoopCount = 0
     ANIAnimations(animHandle).TotalLoops = 0
     ANIAnimations(animHandle).CurrentFrame = 0
-    AnimationStates(animHandle) = %ANIM_STATE_STOPPED  ' mark stopped so DrawAni_IsPlaying does not read TotalLoops=0 as "infinite"
+    AnimationStates(animHandle) = %ANIM_STATE_STOPPED
 END SUB
 
 ' =============================================================================
@@ -520,9 +704,12 @@ SUB DrawAni_FreeAnimation(BYVAL animHandle AS BYTE)
     ' Clear global arrays for this animation
     DIM I AS WORD
     FOR I = 0 TO 99
-        ANIFrameOffsets(animHandle, I) = 0
         ANISequenceData(animHandle, I) = 0
         ANIRateData(animHandle, I) = 0
+    NEXT I
+    FOR I = 0 TO 15
+        ANIFrameOffStore(animHandle, I) = 0
+        ANIFrameSizStore(animHandle, I) = 0
     NEXT I
 
     ' Clear animation management state
@@ -548,11 +735,11 @@ SUB DrawAni_Show(BYVAL fileName AS STRING, BYVAL x AS WORD, BYVAL y AS WORD)
     ' Play animation once
     CALL DrawAni_StartAnimation(animHandle, x, y, 1, 0)
 
-    ' Simple display loop - in a real application this would be integrated with main loop
+    ' Simple display loop
     DIM startTime AS LONG
     startTime = Timer_GetTimerTick
 
-    DO WHILE DrawAni_IsPlaying(animHandle) AND (Timer_GetTimerTick - startTime) < 300  ' 3 second timeout
+    DO WHILE DrawAni_IsPlaying(animHandle) AND (Timer_GetTimerTick - startTime) < 300
         CALL DrawAni_UpdateAnimation(animHandle, x, y)
     LOOP
 
