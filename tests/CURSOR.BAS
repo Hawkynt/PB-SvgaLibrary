@@ -112,6 +112,167 @@ SUB Test_ShowHide_BackgroundRoundTrip
     !INT &H10
 END SUB
 
+' =============================================================================
+' CUR fixture builders (mirrors the pattern in DRAW_CUR.BAS)
+' =============================================================================
+FUNCTION CLE16(BYVAL v AS WORD) AS STRING
+    CLE16 = CHR$(v AND 255) + CHR$((v \ 256) AND 255)
+END FUNCTION
+FUNCTION CLE32(BYVAL v AS LONG) AS STRING
+    CLE32 = CHR$(v AND 255) + CHR$((v \ 256) AND 255) + _
+            CHR$((v \ 65536) AND 255) + CHR$((v \ 16777216) AND 255)
+END FUNCTION
+
+' Build a 4x4 1-bit CUR: hotspot (1,2), all XOR pixels = 1 (white=255), all mask opaque.
+' Entry ColorCount=2; BIH biBitCount=1; biHeight=8 (doubled).
+' XOR scanlineWidth = ((4*1+31)/32)*4 = 4 bytes/row; 4 rows = 16 bytes.
+' AND scanlineWidth = ((4+31)/32)*4 = 4 bytes/row; 4 rows = 16 bytes.
+' Palette: 2 BGRA entries: black + white.
+SUB MakeCset1bit(BYVAL fileName AS STRING)
+    DIM hdr AS STRING, entry AS STRING, bih AS STRING
+    DIM pal AS STRING, xorData AS STRING, andData AS STRING
+    hdr = CLE16(0) + CLE16(2) + CLE16(1)
+    ' imageOffset = 6 (header) + 16 (entry) = 22
+    entry = CHR$(4) + CHR$(4) + CHR$(2) + CHR$(0) + _
+            CLE16(1) + CLE16(2) + _
+            CLE32(80) + CLE32(22)
+    ' BIH: biHeight=8 (doubled), biBitCount=1
+    bih = CLE32(40) + CLE32(4) + CLE32(8) + CLE16(1) + CLE16(1) + _
+          CLE32(0) + CLE32(0) + CLE32(0) + CLE32(0) + CLE32(0) + CLE32(0)
+    pal = CHR$(0)+CHR$(0)+CHR$(0)+CHR$(0) + CHR$(255)+CHR$(255)+CHR$(255)+CHR$(0)
+    ' All pixels = 1 (white): 4 pixels = &HF0 (MSB-first 1111...); pad to 4 bytes.
+    ' 4 rows bottom-up, all identical.
+    xorData = STRING$(16, CHR$(&HF0))
+    andData = STRING$(16, CHR$(0))
+    OPEN fileName FOR BINARY AS #11
+    PUT$ #11, hdr + entry + bih + pal + xorData + andData
+    CLOSE #11
+END SUB
+
+' Build a 4x4 4-bit CUR: hotspot (0,0), all XOR pixels = 5 (index 5), all mask opaque.
+' Entry ColorCount=16; BIH biBitCount=4; biHeight=8 (doubled).
+' XOR scanlineWidth = ((4*4+31)/32)*4 = 4 bytes/row; packed: 2 nibbles per byte.
+' Palette: 16 BGRA entries (entry i = B=i*4, G=i*4, R=i*4, A=0).
+' All pixels = index 5 -> packed &H55 per 2 pixels; 2 bytes for 4 pixels + 2 pad.
+SUB MakeCset4bit(BYVAL fileName AS STRING)
+    DIM hdr AS STRING, entry AS STRING, bih AS STRING
+    DIM pal AS STRING, xorData AS STRING, andData AS STRING
+    DIM pi AS INTEGER
+    hdr = CLE16(0) + CLE16(2) + CLE16(1)
+    ' DIB: 40 + 64 (palette) + 16 (XOR) + 16 (AND) = 136
+    entry = CHR$(4) + CHR$(4) + CHR$(16) + CHR$(0) + _
+            CLE16(0) + CLE16(0) + _
+            CLE32(136) + CLE32(22)
+    bih = CLE32(40) + CLE32(4) + CLE32(8) + CLE16(1) + CLE16(4) + _
+          CLE32(0) + CLE32(0) + CLE32(0) + CLE32(0) + CLE32(0) + CLE32(0)
+    pal = ""
+    FOR pi = 0 TO 15
+        pal = pal + CHR$(pi*4) + CHR$(pi*4) + CHR$(pi*4) + CHR$(0)
+    NEXT pi
+    ' All pixels = 5: nibbles &H55; 4 pixels = 2 bytes (&H55 &H55); 2 pad bytes.
+    ' 4 rows, all the same.
+    xorData = STRING$(16, CHR$(&H55))
+    andData = STRING$(16, CHR$(0))
+    OPEN fileName FOR BINARY AS #12
+    PUT$ #12, hdr + entry + bih + pal + xorData + andData
+    CLOSE #12
+END SUB
+
+' =============================================================================
+' Cursor_Set tests: real CUR file parsing (1-bit and 4-bit)
+' =============================================================================
+
+SUB Test_CursorSet_1bit_Dimensions
+    CALL Test_Case("Cursor_Set loads 1-bit CUR: Wide/Height/hotspot set correctly")
+    !MOV AX, &H0013
+    !INT &H10
+    CALL Cursor_Init
+    CALL MakeCset1bit("CS1.CUR")
+    CALL Cursor_Set("CS1.CUR", 0)
+    CALL Assert_IsEqual(CursorSystemContext.Wide,     4, "1bit: Wide = 4")
+    CALL Assert_IsEqual(CursorSystemContext.Height,   4, "1bit: Height = 4")
+    CALL Assert_IsEqual(CursorSystemContext.HotspotX, 1, "1bit: HotspotX = 1")
+    CALL Assert_IsEqual(CursorSystemContext.HotspotY, 2, "1bit: HotspotY = 2")
+    CALL Assert_IsNotZero(LEN(CursorDataStore),  "1bit: CursorDataStore non-empty")
+    CALL Assert_IsNotZero(LEN(CursorMaskStore),  "1bit: CursorMaskStore non-empty")
+    CALL Assert_IsEqual(LEN(CursorDataStore), 16, "1bit: CursorDataStore = w*h = 16")
+    !MOV AX, &H0003
+    !INT &H10
+END SUB
+
+SUB Test_CursorSet_1bit_Show
+    CALL Test_Case("Cursor_Set+Show: 1-bit cursor pixels land on screen")
+    !MOV AX, &H0013
+    !INT &H10
+    CALL Cursor_Init
+    CALL MakeCset1bit("CS1.CUR")
+    ' Paint background with colour 7 under the cursor area
+    DIM bgx AS INTEGER, bgy AS INTEGER
+    FOR bgy = 20 TO 23
+        FOR bgx = 30 TO 33
+            CALL PutBg(bgx, bgy, 7)
+        NEXT bgx
+    NEXT bgy
+    ' hotspot (1,2); SetPos at (31,22) -> internal pos (30,20); cursor covers (30-33, 20-23)
+    CALL Cursor_Set("CS1.CUR", 0)
+    CALL Cursor_SetPos(31, 22)
+    CALL Cursor_Show
+    ' All pixels are index 1 (white -> 255) and mask=0 (opaque): must draw 255
+    CALL Assert_IsEqual(GetP(30, 20), 255, "1bit show: top-left pixel = 255")
+    CALL Assert_IsEqual(GetP(33, 23), 255, "1bit show: bottom-right pixel = 255")
+    !MOV AX, &H0003
+    !INT &H10
+END SUB
+
+SUB Test_CursorSet_4bit_Dimensions
+    CALL Test_Case("Cursor_Set loads 4-bit CUR: Wide/Height/hotspot set correctly")
+    !MOV AX, &H0013
+    !INT &H10
+    CALL Cursor_Init
+    CALL MakeCset4bit("CS4.CUR")
+    CALL Cursor_Set("CS4.CUR", 0)
+    CALL Assert_IsEqual(CursorSystemContext.Wide,     4, "4bit: Wide = 4")
+    CALL Assert_IsEqual(CursorSystemContext.Height,   4, "4bit: Height = 4")
+    CALL Assert_IsEqual(CursorSystemContext.HotspotX, 0, "4bit: HotspotX = 0")
+    CALL Assert_IsEqual(CursorSystemContext.HotspotY, 0, "4bit: HotspotY = 0")
+    CALL Assert_IsEqual(LEN(CursorDataStore), 16, "4bit: CursorDataStore = w*h = 16")
+    !MOV AX, &H0003
+    !INT &H10
+END SUB
+
+SUB Test_CursorSet_4bit_Show
+    CALL Test_Case("Cursor_Set+Show: 4-bit cursor pixels (index 5) land on screen")
+    !MOV AX, &H0013
+    !INT &H10
+    CALL Cursor_Init
+    CALL MakeCset4bit("CS4.CUR")
+    DIM bgx AS INTEGER, bgy AS INTEGER
+    FOR bgy = 40 TO 43
+        FOR bgx = 50 TO 53
+            CALL PutBg(bgx, bgy, 9)
+        NEXT bgx
+    NEXT bgy
+    ' hotspot (0,0); SetPos at (50,40) -> draws at (50,40)
+    CALL Cursor_Set("CS4.CUR", 0)
+    CALL Cursor_SetPos(50, 40)
+    CALL Cursor_Show
+    ' All opaque pixels = index 5
+    CALL Assert_IsEqual(GetP(50, 40), 5, "4bit show: top-left pixel = 5")
+    CALL Assert_IsEqual(GetP(53, 43), 5, "4bit show: bottom-right pixel = 5")
+    !MOV AX, &H0003
+    !INT &H10
+END SUB
+
+SUB Test_CursorSet_MissingFile
+    CALL Test_Case("Cursor_Set ignores missing file, leaves context unchanged")
+    CALL Cursor_Init
+    CursorSystemContext.Wide = 99
+    CursorSystemContext.Height = 88
+    CALL Cursor_Set("NOFILE.CUR", 0)
+    ' Width/Height come from the file; on failure Wide stays 99 (no modification)
+    CALL Assert_IsEqual(CursorSystemContext.Wide, 99, "missing file: Wide unchanged")
+END SUB
+
 SUB Test_Setup
 SVGAScreenContext.XRes = 320
 SVGAScreenContext.YRes = 200

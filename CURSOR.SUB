@@ -48,16 +48,17 @@ SUB Cursor_Set(BYVAL fileName AS STRING, BYVAL imageIndex AS WORD)
     DIM IconEntry AS IconDirEntryType
     DIM IconData AS STRING
     DIM MaskData AS STRING
-    DIM I AS WORD, J AS WORD
-    DIM PixelByte AS BYTE, MaskByte AS BYTE
     DIM FilePos AS LONG
+    DIM BihBitCount AS WORD
+    DIM PaletteEntries AS WORD
+    DIM BitShift AS BYTE
 
     IF CursorSystemContext.IsInitialized = 0 THEN CALL Cursor_Init
 
     ' Hide cursor if currently visible
     IF CursorSystemContext.IsVisible THEN CALL Cursor_Hide
 
-    ' Open cursor/icon file
+    ' Open cursor/icon file (BINARY positions are 0-based in PB 3.5)
     FileHandle = FREEFILE
     OPEN fileName FOR BINARY ACCESS READ AS FileHandle
     IF LOF(FileHandle) < 6 THEN
@@ -65,8 +66,8 @@ SUB Cursor_Set(BYVAL fileName AS STRING, BYVAL imageIndex AS WORD)
         EXIT SUB
     END IF
 
-    ' Read ICO/CUR header
-    GET FileHandle, 1, IconHeader.Reserved
+    ' Read ICO/CUR header from byte 0
+    GET FileHandle, 0, IconHeader.Reserved
     GET FileHandle, , IconHeader.Kind
     GET FileHandle, , IconHeader.Count
 
@@ -79,8 +80,8 @@ SUB Cursor_Set(BYVAL fileName AS STRING, BYVAL imageIndex AS WORD)
     ' Check if image index is valid
     IF imageIndex >= IconHeader.Count THEN imageIndex = 0
 
-    ' Seek to desired icon entry
-    SEEK FileHandle, 7 + (imageIndex * 16)
+    ' Seek to the directory entry for this image (entry 0 starts at byte 6)
+    SEEK FileHandle, 6 + (imageIndex * 16)
 
     ' Read icon directory entry
     GET FileHandle, , IconEntry.Wide
@@ -92,40 +93,50 @@ SUB Cursor_Set(BYVAL fileName AS STRING, BYVAL imageIndex AS WORD)
     GET FileHandle, , IconEntry.BytesInRes
     GET FileHandle, , IconEntry.ImageOffset
 
-    ' Handle cursor hotspot (CUR files store hotspot in Planes/BitCount fields)
-    IF IconHeader.Kind = 2 THEN  ' CUR file
+    ' CUR files store hotspot in Planes (hotX) and BitCount (hotY) directory fields
+    IF IconHeader.Kind = 2 THEN
         CursorSystemContext.HotspotX = IconEntry.Planes
         CursorSystemContext.HotspotY = IconEntry.BitCount
-    ELSE  ' ICO file
+    ELSE
         CursorSystemContext.HotspotX = IconEntry.Wide \ 2
         CursorSystemContext.HotspotY = IconEntry.Height \ 2
     END IF
 
-    ' Set cursor dimensions
+    ' Set cursor dimensions (0 encodes 256 in the ICO/CUR spec)
     CursorSystemContext.Wide = IconEntry.Wide
     CursorSystemContext.Height = IconEntry.Height
     IF CursorSystemContext.Wide = 0 THEN CursorSystemContext.Wide = 256
     IF CursorSystemContext.Height = 0 THEN CursorSystemContext.Height = 256
 
-    ' Seek to icon dataBuf
-    SEEK FileHandle, IconEntry.ImageOffset + 1
+    ' Read biBitCount from the BITMAPINFOHEADER.
+    ' biBitCount is at byte offset 14 within the 40-byte BIH.
+    ' For CUR files, IconEntry.BitCount holds the hotspot Y, not the bit depth.
+    SEEK FileHandle, IconEntry.ImageOffset + 14
+    GET FileHandle, , BihBitCount
 
-    ' Skip BITMAPINFOHEADER (40 bytes) and paletteV if present
-    FilePos = IconEntry.ImageOffset + 41  ' Skip header
-    IF IconEntry.BitCount <= 8 THEN
-        FilePos = FilePos + (2 ^ IconEntry.BitCount) * 4  ' Skip paletteV
+    ' Derive palette entry count from the actual bit depth
+    IF BihBitCount > 0 AND BihBitCount <= 8 THEN
+        PaletteEntries = 1
+        FOR BitShift = 1 TO BihBitCount
+            PaletteEntries = PaletteEntries * 2
+        NEXT BitShift
+    ELSE
+        PaletteEntries = 0
     END IF
+
+    ' Seek to XOR pixel data: past BIH (40 bytes) and colour table
+    FilePos = IconEntry.ImageOffset + 40 + PaletteEntries * 4
     SEEK FileHandle, FilePos
 
-    ' Calculate scanline widthVal (DWORD aligned)
+    ' XOR scanline width (DWORD-aligned) using the actual biBitCount
     DIM ScanlineWidth AS WORD
-    ScanlineWidth = ((CursorSystemContext.Wide * IconEntry.BitCount + 31) \ 32) * 4
+    ScanlineWidth = ((CursorSystemContext.Wide * BihBitCount + 31) \ 32) * 4
 
-    ' Read cursor image dataBuf
+    ' Read XOR pixel data (rows stored bottom-up)
     IconData = SPACE$(ScanlineWidth * CursorSystemContext.Height)
     GET FileHandle, , IconData
 
-    ' Read AND mask (1 bit per pixel, DWORD aligned)
+    ' AND mask: 1 bit per pixel, DWORD-aligned rows, also bottom-up
     DIM MaskScanlineWidth AS WORD
     MaskScanlineWidth = ((CursorSystemContext.Wide + 31) \ 32) * 4
     MaskData = SPACE$(MaskScanlineWidth * CursorSystemContext.Height)
@@ -133,8 +144,8 @@ SUB Cursor_Set(BYVAL fileName AS STRING, BYVAL imageIndex AS WORD)
 
     CLOSE FileHandle
 
-    ' Convert cursor dataBuf to 8-bit format for current graphics mode
-    CALL Cursor_ConvertCursorData(IconData, MaskData, IconEntry.BitCount, ScanlineWidth, MaskScanlineWidth)
+    ' Expand packed XOR pixels to one byte per pixel; unpack AND mask bits
+    CALL Cursor_ConvertCursorData(IconData, MaskData, BihBitCount, ScanlineWidth, MaskScanlineWidth)
 
     CursorDataStore = IconData
     CursorMaskStore = MaskData
