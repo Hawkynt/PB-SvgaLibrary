@@ -34,14 +34,21 @@ jobs:
       version: ${{ steps.v.outputs.version }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0                 # the build number is a commit count
+      # The source stays the single version authority (TYPES.SUB %SVGA_VERSION_*, exposed at runtime
+      # via Svga_Version$); the shared versioner reads those constants and appends the commit count
+      # of their folder, so the library version tracks its own churn instead of being hand-bumped.
+      - id: auto
+        uses: Hawkynt/RepositoryTemplate/stamp-version@v1
+        with:
+          mode: print
       - id: v
         run: |
-          # the source is the single version authority (TYPES.SUB %SVGA_VERSION_*,
-          # exposed at runtime via Svga_Version$); the input only overrides it
           V="${{ github.event.inputs.version }}"
-          [ -n "$V" ] || V=$(awk '/%SVGA_VERSION_MAJOR/{ma=$3} /%SVGA_VERSION_MINOR/{mi=$3} /%SVGA_VERSION_PATCH/{pa=$3} END{printf "%d.%d.%d", ma, mi, pa}' TYPES.SUB)
+          [ -n "$V" ] || V="${{ steps.auto.outputs.version }}"
           echo "version=$V" >> "$GITHUB_OUTPUT"
-          echo "Releasing v$V"
+          echo "Package version: $V"
 
   build:
     needs: version
@@ -58,12 +65,16 @@ jobs:
         with:
           name: ${{ needs.build.outputs.artifact-name }}
           path: dist
+      # The repo-level marker is the DATE, like every other Hawkynt repo — the library's own
+      # MAJOR.MINOR.PATCH.BUILD stays the package version and is quoted in the notes below.
+      - name: Compose release marker
+        run: echo "REL=v$(date -u +%Y%m%d)" >> "$GITHUB_ENV"
       - name: Compose release notes
         env:
           V: ${{ needs.version.outputs.version }}
         run: |
           cat > RELEASE_NOTES.md <<EOF
-          ## PB-SvgaLibrary v$V
+          ## PB-SvgaLibrary $REL (library v$V)
 
           The compiled **PowerBASIC 3.5 SVGA library**: \`SVGA.PBL\` plus its
           \`SVGA.BI\` interface (with \`SVGATYPE.BI\`/\`SVGADECL.BI\`), README and
@@ -73,7 +84,7 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v${{ needs.version.outputs.version }}
-          name: v${{ needs.version.outputs.version }}
+          tag_name: ${{ env.REL }}
+          name: ${{ env.REL }} (library v${{ needs.version.outputs.version }})
           files: dist/svga-library.zip
           body_path: RELEASE_NOTES.md

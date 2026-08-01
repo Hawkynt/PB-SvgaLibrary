@@ -34,14 +34,20 @@ jobs:
       date: ${{ steps.v.outputs.date }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0                 # the build number is a commit count
+      # The version lives in the source (TYPES.SUB %SVGA_VERSION_*) so the program itself, the
+      # artifacts and the releases can never disagree; the shared versioner appends the commit
+      # count of the declaring folder.
+      - id: auto
+        uses: Hawkynt/RepositoryTemplate/stamp-version@v1
+        with:
+          mode: print
       - id: v
         run: |
-          # the version lives in the source (TYPES.SUB %SVGA_VERSION_*) so the
-          # program itself, the artifacts and the releases can never disagree
-          V=$(awk '/%SVGA_VERSION_MAJOR/{ma=$3} /%SVGA_VERSION_MINOR/{mi=$3} /%SVGA_VERSION_PATCH/{pa=$3} END{printf "%d.%d.%d", ma, mi, pa}' TYPES.SUB)
-          echo "version=$V" >> "$GITHUB_OUTPUT"
+          echo "version=${{ steps.auto.outputs.version }}" >> "$GITHUB_OUTPUT"
           echo "date=$(date -u +%Y%m%d)" >> "$GITHUB_OUTPUT"
-          echo "Nightly for v$V"
+          echo "Nightly for v${{ steps.auto.outputs.version }}"
 
   build:
     needs: version
