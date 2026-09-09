@@ -21,6 +21,16 @@
 
 This library provides a comprehensive set of functions and subroutines for working with SVGA graphics in Power BASIC 3.5. It features heavily optimized assembly code for pixel operations, drawing primitives, and image manipulation across VGA, Mode-X, and VESA modes.
 
+## 🧭 Vision
+
+Power BASIC could reach VESA modes in principle and almost nobody did it in practice, because the
+interesting part — getting pixels onto a high-colour screen fast enough to be worth it — is assembly
+work that a BASIC programmer should not have to write twice. This library is that work, done once:
+VESA setup, bank switching and the inner loops, wrapped so the calling code stays BASIC.
+
+The bias throughout is toward speed on the hardware this actually targets. Where a clear routine and
+a fast one differ, the fast one wins and the reason is written down beside it.
+
 ## ✨ Features
 
 - **🎯 Micro-Optimized Assembly:** Hand-tuned x86 assembly for maximum performance
@@ -52,6 +62,32 @@ This library provides a comprehensive set of functions and subroutines for worki
 - **🏃 Advanced Cursor Management:** Automatic background backup/restore with transparency
 - **🎮 Sprite System:** Up to 32 sprites with real transparent pixel blits (colour 0 = transparent, direct-VRAM fast path in mode 13h), collision detection and priority rendering
 - **📜 Scrolling Engine:** Hardware-accelerated scrolling with parallax layers and effects
+
+## 📦 Installation
+
+Clone the repository and put the library sources where your Power BASIC 3.5 project can `$INCLUDE`
+them; there is no installer and nothing to register. A DOS machine or DOSBox with a VESA-capable
+video BIOS is what runs the result.
+
+## 🚀 Quick start
+
+### Recommended: link the precompiled library (`SVGA.PBL`)
+
+The full library is larger than PowerBASIC/DOS's 64 KB-per-compilation-unit code limit, so the whole thing cannot be `$INCLUDE`d into one program. The build therefore ships a linkable **`SVGA.PBL`** (every module compiled as a separate `$COMPILE UNIT`, packed into ≤64 KB code segments) together with the **`SVGA.BI`** interface. The release zip contains exactly what a consumer needs: `SVGA.PBL`, the `SVGA.BI` interface (plus the `SVGATYPE.BI`/`SVGADECL.BI` files it pulls in), this README and the LICENSE. Grab it from the [latest release](../../releases/latest) and:
+
+```basic
+$INCLUDE "SVGA.BI"      ' types, globals and DECLAREs
+$LINK "SVGA.PBL"        ' the compiled library (linked across several code segments)
+
+CALL Svga_Init(0)
+' Your code goes here
+```
+
+(`SVGA.PBL` is reproduced by `scripts/build-pbl.py`, which the CI build runs and then verifies by linking a pixel round-trip self-test.)
+
+### Alternative: source-include individual modules
+
+For a small program you can `$INCLUDE` only the `.SUB` modules you actually need (e.g. `TYPES.SUB`, `VGA.SUB`, `MODEX.SUB`). Including *everything* via `SVGA.SUB` will exceed the 64 KB unit limit — that is what `SVGA.PBL` is for.
 
 ## ⚡ Micro-Optimization Techniques
 
@@ -117,26 +153,6 @@ STOSW              ; Eliminates loop overhead
 - **Maximum Speed:** Eliminates loop overhead for fastest possible clear
 - **8086 Compatible:** Uses 16-bit operations for maximum compatibility
 - **Direct VGA Access:** Targets A000h segment for hardware speed
-
-## 🚀 Usage
-
-### Recommended: link the precompiled library (`SVGA.PBL`)
-
-The full library is larger than PowerBASIC/DOS's 64 KB-per-compilation-unit code limit, so the whole thing cannot be `$INCLUDE`d into one program. The build therefore ships a linkable **`SVGA.PBL`** (every module compiled as a separate `$COMPILE UNIT`, packed into ≤64 KB code segments) together with the **`SVGA.BI`** interface. The release zip contains exactly what a consumer needs: `SVGA.PBL`, the `SVGA.BI` interface (plus the `SVGATYPE.BI`/`SVGADECL.BI` files it pulls in), this README and the LICENSE. Grab it from the [latest release](../../releases/latest) and:
-
-```basic
-$INCLUDE "SVGA.BI"      ' types, globals and DECLAREs
-$LINK "SVGA.PBL"        ' the compiled library (linked across several code segments)
-
-CALL Svga_Init(0)
-' Your code goes here
-```
-
-(`SVGA.PBL` is reproduced by `scripts/build-pbl.py`, which the CI build runs and then verifies by linking a pixel round-trip self-test.)
-
-### Alternative: source-include individual modules
-
-For a small program you can `$INCLUDE` only the `.SUB` modules you actually need (e.g. `TYPES.SUB`, `VGA.SUB`, `MODEX.SUB`). Including *everything* via `SVGA.SUB` will exceed the 64 KB unit limit — that is what `SVGA.PBL` is for.
 
 ## 📖 Complete API Reference
 
